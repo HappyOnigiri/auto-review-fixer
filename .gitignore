@@ -136,3 +136,4 @@ Thumbs.db
 # Project specific
 .claude/worktrees/
 works/
+data/

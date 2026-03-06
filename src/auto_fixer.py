@@ -5,21 +5,17 @@ Fetches open PRs, gets unresolved reviews, and runs Claude to fix them.
 """
 
 import argparse
-import json
 import shlex
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from github_pr_fetcher import fetch_open_prs
-from pr_reviewer import (
-    fetch_pr_details,
-    filter_reviews_after_commit,
-    get_latest_commit_time,
-    get_review_comments,
-)
+from pr_reviewer import fetch_pr_details
+from review_db import init_db, is_processed, mark_processed, reset_all
 
 
 def load_repos_from_file(filepath: str) -> list[dict[str, str]]:
@@ -117,19 +113,9 @@ def prepare_repository(
     return works_dir
 
 
-def generate_prompt(pr_data: dict[str, Any]) -> str:
-    """Generate prompt for Claude from PR review."""
-    pr_number = pr_data.get("number")
-    title = pr_data.get("title")
-    reviews = pr_data.get("reviews", [])
-
-    # Get review body from all reviews
-    review_bodies = []
-    for review in reviews:
-        body = review.get("body", "")
-        if body:
-            review_bodies.append(body)
-
+def generate_prompt(pr_number: int, title: str, unresolved_reviews: list[dict[str, Any]]) -> str:
+    """Generate prompt for Claude from unresolved PR reviews."""
+    review_bodies = [r.get("body", "") for r in unresolved_reviews if r.get("body")]
     review_content = "\n\n".join(review_bodies)
 
     prompt = f"""以下は PR #{pr_number} "{title}" に対する CodeRabbit のレビューコメントです。
@@ -183,22 +169,18 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False) -> None:
             print(f"Error fetching PR details: {e}", file=sys.stderr)
             continue
 
-        # Get branch name and commits
+        # Get branch name
         branch_name = pr_data.get("headRefName")
         if not branch_name:
             print(f"Could not find branch name for PR #{pr_number}, skipping")
             continue
 
-        commits = pr_data.get("commits", [])
-        if not commits:
-            print(f"No commits found for PR #{pr_number}, skipping")
-            continue
-
-        # Filter reviews
-        latest_commit_time = get_latest_commit_time(commits)
+        # Filter reviews not yet processed
         reviews = pr_data.get("reviews", [])
-        review_comments = get_review_comments(reviews)
-        unresolved_reviews = filter_reviews_after_commit(review_comments, latest_commit_time)
+        unresolved_reviews = [
+            r for r in reviews
+            if r.get("id") and not is_processed(r["id"])
+        ]
 
         if not unresolved_reviews:
             print(f"No unresolved reviews for PR #{pr_number}")
@@ -214,7 +196,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False) -> None:
             continue
 
         # Generate prompt and execute Claude
-        prompt = generate_prompt(pr_data)
+        prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews)
 
         claude_cmd = [
             "claude",
@@ -234,6 +216,8 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False) -> None:
             try:
                 subprocess.run(claude_cmd, cwd=str(works_dir), check=True)
                 print("Claude execution completed")
+                for review in unresolved_reviews:
+                    mark_processed(review["id"], repo, pr_number)
             except subprocess.CalledProcessError as e:
                 print(f"Error executing Claude: {e}", file=sys.stderr)
 
@@ -264,8 +248,21 @@ def main():
         default="repos.txt",
         help="Repository list file (default: repos.txt)",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset processed reviews database",
+    )
 
     args = parser.parse_args()
+
+    load_dotenv()
+    init_db()
+
+    if args.reset:
+        reset_all()
+        print("Database reset complete")
+        return
 
     # Get repositories
     if args.repos:
