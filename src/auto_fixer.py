@@ -22,24 +22,45 @@ from pr_reviewer import (
 )
 
 
-def load_repos_from_file(filepath: str) -> list[str]:
-    """Load repository list from file, ignoring comments and empty lines."""
+def load_repos_from_file(filepath: str) -> list[dict[str, str]]:
+    """Load repository list from file with optional git user config.
+
+    Format: owner/repo:user.name:user.email
+    Example: HappyOnigiri/ComfyUI-Meld:Claude Bot:claude@anthropic.com
+    """
     repos = []
     try:
         with open(filepath, "r") as f:
             for line in f:
                 line = line.strip()
                 # Skip empty lines and comments
-                if line and not line.startswith("#"):
-                    repos.append(line)
+                if not line or line.startswith("#"):
+                    continue
+
+                # Parse repo entry
+                parts = line.split(":")
+                repo = parts[0]
+                user_name = parts[1] if len(parts) > 1 else None
+                user_email = parts[2] if len(parts) > 2 else None
+
+                repos.append({
+                    "repo": repo,
+                    "user_name": user_name,
+                    "user_email": user_email,
+                })
     except FileNotFoundError:
         print(f"Error: {filepath} not found", file=sys.stderr)
         sys.exit(1)
     return repos
 
 
-def prepare_repository(repo: str, branch_name: str) -> Path:
-    """Clone or update repository and checkout to the target branch."""
+def prepare_repository(
+    repo: str, branch_name: str, user_name: str = None, user_email: str = None
+) -> Path:
+    """Clone or update repository and checkout to the target branch.
+
+    Optionally sets local git config for user.name and user.email.
+    """
     repo_name = repo.split("/")[1]
     works_dir = Path("works") / repo_name
     works_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -52,8 +73,30 @@ def prepare_repository(repo: str, branch_name: str) -> Path:
         )
     else:
         print(f"Updating {repo}...")
+        # Clean any pending merge/conflicts
+        subprocess.run(
+            ["git", "reset", "--hard"],
+            cwd=works_dir,
+            check=True,
+        )
         subprocess.run(
             ["git", "fetch", "--all"],
+            cwd=works_dir,
+            check=True,
+        )
+
+    # Set local git config if provided
+    if user_name:
+        print(f"Setting git user.name to '{user_name}'...")
+        subprocess.run(
+            ["git", "config", "user.name", user_name],
+            cwd=works_dir,
+            check=True,
+        )
+    if user_email:
+        print(f"Setting git user.email to '{user_email}'...")
+        subprocess.run(
+            ["git", "config", "user.email", user_email],
             cwd=works_dir,
             check=True,
         )
@@ -64,8 +107,9 @@ def prepare_repository(repo: str, branch_name: str) -> Path:
         cwd=works_dir,
         check=True,
     )
+    # Reset to clean state before pulling
     subprocess.run(
-        ["git", "pull"],
+        ["git", "reset", "--hard", f"origin/{branch_name}"],
         cwd=works_dir,
         check=True,
     )
@@ -98,10 +142,21 @@ def generate_prompt(pr_data: dict[str, Any]) -> str:
     return prompt
 
 
-def process_repo(repo: str, dry_run: bool = False) -> None:
-    """Process a single repository for PR fixes."""
+def process_repo(repo_info: dict[str, str], dry_run: bool = False) -> None:
+    """Process a single repository for PR fixes.
+
+    Args:
+        repo_info: Dict with 'repo', 'user_name', 'user_email' keys
+        dry_run: If True, show command without executing
+    """
+    repo = repo_info["repo"]
+    user_name = repo_info.get("user_name")
+    user_email = repo_info.get("user_email")
+
     print(f"\n{'=' * 80}")
     print(f"Processing: {repo}")
+    if user_name or user_email:
+        print(f"Git user: {user_name or 'default'} <{user_email or 'default'}>")
     print("=" * 80)
 
     # Fetch open PRs
@@ -153,7 +208,7 @@ def process_repo(repo: str, dry_run: bool = False) -> None:
 
         # Prepare repository
         try:
-            works_dir = prepare_repository(repo, branch_name)
+            works_dir = prepare_repository(repo, branch_name, user_name, user_email)
         except Exception as e:
             print(f"Error preparing repository: {e}", file=sys.stderr)
             continue
@@ -214,7 +269,8 @@ def main():
 
     # Get repositories
     if args.repos:
-        repos = args.repos
+        # Convert CLI repos to dict format (no user config)
+        repos = [{"repo": r, "user_name": None, "user_email": None} for r in args.repos]
     else:
         # Try repos.txt in parent directory if not found in current directory
         repos_file = Path(args.file)
@@ -230,14 +286,14 @@ def main():
     if args.dry_run:
         print("[DRY RUN MODE]")
 
-    for repo in repos:
+    for repo_info in repos:
         try:
-            process_repo(repo, dry_run=args.dry_run)
+            process_repo(repo_info, dry_run=args.dry_run)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)
         except Exception as e:
-            print(f"Error processing {repo}: {e}", file=sys.stderr)
+            print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
             continue
 
     print("\nDone!")
