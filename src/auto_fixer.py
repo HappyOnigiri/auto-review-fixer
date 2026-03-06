@@ -220,7 +220,20 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False) -> None:
         else:
             print("\nExecuting Claude...")
             try:
-                subprocess.run(claude_cmd, cwd=str(works_dir), check=True)
+                process = subprocess.Popen(
+                    claude_cmd,
+                    cwd=str(works_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                for line in process.stdout:
+                    print(line, end="", flush=True)
+                process.wait()
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, claude_cmd)
                 print("Claude execution completed")
                 for review in unresolved_reviews:
                     mark_processed(review["id"], repo, pr_number)
