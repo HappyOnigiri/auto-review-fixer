@@ -57,6 +57,78 @@ def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
     return json.loads(result.stdout) if result.stdout else []
 
 
+def fetch_review_threads(repo: str, pr_number: int) -> dict[int, str]:
+    """Fetch unresolved review threads and return {comment_db_id: thread_node_id}."""
+    owner, name = repo.split("/")
+    query = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          comments(first: 1) {
+            nodes {
+              databaseId
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+    cmd = [
+        "gh", "api", "graphql",
+        "-f", f"query={query}",
+        "-F", f"owner={owner}",
+        "-F", f"name={name}",
+        "-F", f"number={pr_number}",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding="utf-8")
+    if result.returncode != 0:
+        print(f"Warning: failed to fetch review threads: {result.stderr}", file=sys.stderr)
+        return {}
+    data = json.loads(result.stdout) if result.stdout else {}
+    threads = (
+        data.get("data", {})
+        .get("repository", {})
+        .get("pullRequest", {})
+        .get("reviewThreads", {})
+        .get("nodes", [])
+    )
+    mapping: dict[int, str] = {}
+    for thread in threads:
+        if thread.get("isResolved"):
+            continue
+        comments = thread.get("comments", {}).get("nodes", [])
+        if comments and comments[0].get("databaseId"):
+            mapping[comments[0]["databaseId"]] = thread["id"]
+    return mapping
+
+
+def resolve_review_thread(thread_node_id: str) -> bool:
+    """Resolve a review thread by its GraphQL node ID. Returns True on success."""
+    mutation = """
+mutation($threadId: ID!) {
+  resolveReviewThread(input: {threadId: $threadId}) {
+    thread { id isResolved }
+  }
+}
+"""
+    cmd = [
+        "gh", "api", "graphql",
+        "-f", f"query={mutation}",
+        "-F", f"threadId={thread_node_id}",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding="utf-8")
+    if result.returncode != 0:
+        print(f"Warning: failed to resolve thread {thread_node_id}: {result.stderr}", file=sys.stderr)
+        return False
+    return True
+
+
 def get_latest_commit_time(commits: list[dict[str, Any]]) -> datetime:
     """Get the timestamp of the latest commit."""
     if not commits:

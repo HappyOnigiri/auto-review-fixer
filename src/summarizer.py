@@ -62,6 +62,7 @@ def summarize_reviews(
             [
                 "claude",
                 "--model", "claude-haiku-4-5-20251001",
+                "--dangerously-skip-permissions",
                 "-p", f"Read the file {prompt_path} and follow the instructions in it.",
             ],
             capture_output=True,
@@ -73,7 +74,11 @@ def summarize_reviews(
         Path(prompt_path).unlink(missing_ok=True)
 
     if result.returncode != 0:
-        print(f"Warning: summarization failed: {result.stderr}", file=sys.stderr)
+        print(f"Warning: summarization failed (exit {result.returncode})", file=sys.stderr)
+        if result.stderr:
+            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
+        if result.stdout:
+            print(f"  stdout: {result.stdout.strip()}", file=sys.stderr)
         return {}
 
     try:
@@ -91,4 +96,5 @@ def summarize_reviews(
         return summaries
     except Exception as e:
         print(f"Warning: failed to parse summarization response ({e})", file=sys.stderr)
+        print(f"  Raw response:\n{result.stdout.strip()}", file=sys.stderr)
         return {}

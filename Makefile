@@ -1,13 +1,10 @@
-.PHONY: run dry-run run-debug reset setup help
+.PHONY: run dry-run run-debug run-summarize-only reset setup help help-en
 
 help:
-	@echo "Auto Review Fixer - Makefile targets:"
-	@echo "  make setup    - Install dependencies and create .env template"
-	@echo "  make run      - Run auto review fixer with repos from repos.txt"
-	@echo "  make dry-run  - Show what would be executed without actually running"
-	@echo "  make run-debug - Run with detailed debug output (full prompts, summaries)"
-	@echo "  make reset    - Reset processed reviews database"
-	@echo "  make help     - Show this help message"
+	@cd src && python auto_fixer.py --list-commands
+
+help-en:
+	@cd src && python auto_fixer.py --list-commands-en
 
 setup:
 	pip install -r requirements.txt
@@ -28,6 +25,9 @@ dry-run:
 
 run-debug:
 	cd src && python auto_fixer.py --debug
+
+run-summarize-only:
+	cd src && python auto_fixer.py --summarize-only
 
 reset:
 	cd src && python auto_fixer.py --reset

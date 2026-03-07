@@ -14,7 +14,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from github_pr_fetcher import fetch_open_prs
-from pr_reviewer import fetch_pr_details, fetch_pr_review_comments
+from pr_reviewer import fetch_pr_details, fetch_pr_review_comments, fetch_review_threads, resolve_review_thread
 from review_db import init_db, is_processed, mark_processed, reset_all
 from summarizer import summarize_reviews
 
@@ -152,7 +152,7 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool = False) -> None:
+def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool = False, summarize_only: bool = False) -> None:
     """Process a single repository for PR fixes.
 
     Args:
@@ -202,21 +202,36 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
 
         # Filter reviews not yet processed
         reviews = pr_data.get("reviews", [])
-        unresolved_reviews = [
-            r for r in reviews
-            if r.get("id") and not is_processed(r["id"])
-        ]
+        unresolved_reviews = []
+        for r in reviews:
+            if not r.get("id"):
+                continue
+            processed = is_processed(r["id"])
+            if debug:
+                print(f"  [DB] review {r['id']}: {'processed' if processed else 'NOT processed'}")
+            if not processed:
+                unresolved_reviews.append(r)
 
         # Filter inline review comments (discussion_r<id>) not yet processed
+        # Also skip threads already resolved on GitHub
         try:
             review_comments = fetch_pr_review_comments(repo, pr_number)
         except Exception as e:
             print(f"Warning: could not fetch inline comments: {e}", file=sys.stderr)
             review_comments = []
-        unresolved_comments = [
-            c for c in review_comments
-            if c.get("id") and not is_processed(f"discussion_r{c['id']}")
-        ]
+        thread_map = fetch_review_threads(repo, pr_number)
+        unresolved_thread_ids = set(thread_map.keys())
+        unresolved_comments = []
+        for c in review_comments:
+            if not c.get("id"):
+                continue
+            rid = f"discussion_r{c['id']}"
+            processed = is_processed(rid)
+            in_thread = c["id"] in unresolved_thread_ids
+            if debug:
+                print(f"  [DB] comment {rid}: {'processed' if processed else 'NOT processed'}, thread_unresolved={in_thread}")
+            if not processed and in_thread:
+                unresolved_comments.append(c)
 
         if not unresolved_reviews and not unresolved_comments:
             print(f"No unresolved reviews for PR #{pr_number}")
@@ -261,10 +276,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments)
-            if debug and summaries:
-                print("\n[DEBUG] Haiku summaries:")
+            if (debug or summarize_only) and summaries:
+                print("\n[Haiku summaries]")
                 for sid, summary in summaries.items():
-                    print(f"  {sid}: {summary}")
+                    print(f"  {sid}:\n    {summary}")
+
+        if summarize_only:
+            print("\nSummarize-only mode: stopping here (no Sonnet execution, no DB update)")
+            return
 
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries)
@@ -300,14 +319,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                 process = subprocess.Popen(
                     claude_cmd,
                     cwd=str(works_dir),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
                 )
-                for line in process.stdout:
-                    print(line, end="", flush=True)
                 process.wait()
                 if process.returncode != 0:
                     raise subprocess.CalledProcessError(process.returncode, claude_cmd)
@@ -321,6 +333,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     mark_processed(rid, repo, pr_number,
                                    body=comment.get("body", ""),
                                    summary=summaries.get(rid, ""))
+                # Resolve inline comment threads on GitHub
+                if unresolved_comments:
+                    resolved = 0
+                    for comment in unresolved_comments:
+                        thread_id = thread_map.get(comment["id"])
+                        if thread_id and resolve_review_thread(thread_id):
+                            resolved += 1
+                    print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
             except subprocess.CalledProcessError as e:
                 print(f"Error executing Claude: {e}", file=sys.stderr)
             finally:
@@ -359,12 +379,73 @@ def main():
         help="Reset processed reviews database",
     )
     parser.add_argument(
+        "--list-commands",
+        action="store_true",
+        help="List available make commands in Japanese and exit",
+    )
+    parser.add_argument(
+        "--list-commands-en",
+        action="store_true",
+        help="List available make commands in English and exit",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print detailed debug information (full prompts, summaries, etc.)",
     )
+    parser.add_argument(
+        "--summarize-only",
+        action="store_true",
+        help="Run Haiku summarization only, print results, then exit without running Sonnet or updating DB",
+    )
 
     args = parser.parse_args()
+
+    if args.list_commands_en:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
+    and record results in DB. (normal production run)
+
+  make dry-run
+    Show commands and dummy summaries without calling Haiku or Sonnet.
+
+  make run-debug
+    Same as run, but also prints full Haiku summaries and the full prompt sent to Sonnet.
+
+  make run-summarize-only
+    Run Haiku summarization only and print results.
+    Does not run Sonnet or update DB. (for verification)
+
+  make reset
+    Reset the processed reviews DB (delete all records).
+
+  make setup
+    Install dependencies and create .env template.""")
+        return
+
+    if args.list_commands:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録（本番実行）
+
+  make dry-run
+    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
+
+  make run-debug
+    本番実行と同じだが、Haiku の要約全文と Sonnet へのプロンプト全文も表示
+
+  make run-summarize-only
+    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
+
+  make reset
+    処理済みレビューの DB をリセット（全件削除）
+
+  make setup
+    依存パッケージをインストールし .env テンプレートを作成""")
+        return
 
     load_dotenv()
     init_db()
@@ -394,10 +475,12 @@ def main():
         print("[DRY RUN MODE]")
     if args.debug:
         print("[DEBUG MODE]")
+    if args.summarize_only:
+        print("[SUMMARIZE ONLY MODE]")
 
     for repo_info in repos:
         try:
-            process_repo(repo_info, dry_run=args.dry_run, debug=args.debug)
+            process_repo(repo_info, dry_run=args.dry_run, debug=args.debug, summarize_only=args.summarize_only)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)
