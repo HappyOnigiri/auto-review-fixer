@@ -1,0 +1,41 @@
+name: Fix Reviews
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 30分ごとに実行
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: fix-reviews
+  cancel-in-progress: false
+
+jobs:
+  fix-reviews:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure git credentials
+        run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Run auto review fixer
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPOS: ${{ vars.REPOS }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: cd src && python auto_fixer.py
