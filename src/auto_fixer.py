@@ -388,7 +388,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments)
-            if (not silent or summarize_only) and summaries:
+            if summarize_only and summaries:
                 print("\n[Haiku summaries]")
                 for sid, summary in summaries.items():
                     print(f"  {sid}:\n    {summary}")
