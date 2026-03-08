@@ -2,12 +2,15 @@
 """Summarize PR review comments using Claude Haiku via CLI (single call)."""
 
 import json
-import re
+import os
+import shlex
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from ci_log import _log_endgroup, _log_group
 
 
 def summarize_reviews(
@@ -56,19 +59,30 @@ def summarize_reviews(
         f.write(prompt)
         prompt_path = f.name
 
+    env = os.environ.copy()
+    env.pop("CLAUDECODE", None)
+
+    haiku_cmd = [
+        "claude",
+        "--model", "haiku",
+        "--dangerously-skip-permissions",
+        "-p", f"Read the file {prompt_path} and follow the instructions in it.",
+    ]
+
     try:
         print("Summarizing reviews with Haiku...")
+        print()
+        _log_group("Haiku command details")
+        print(f"  command: {shlex.join(haiku_cmd)}")
+        print(f"  prompt file: {prompt_path}")
+        _log_endgroup()
         result = subprocess.run(
-            [
-                "claude",
-                "--model", "claude-haiku-4-5-20251001",
-                "--dangerously-skip-permissions",
-                "-p", f"Read the file {prompt_path} and follow the instructions in it.",
-            ],
+            haiku_cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=env,
         )
     finally:
         Path(prompt_path).unlink(missing_ok=True)
@@ -84,12 +98,32 @@ def summarize_reviews(
     try:
         text = result.stdout
         parsed = None
-        for match in re.finditer(r"\[.*?\]", text, re.DOTALL):
-            try:
-                parsed = json.loads(match.group())
-                break
-            except json.JSONDecodeError:
-                continue
+
+        # まず全体をそのままパース試行（トップレベルが list のみ許容）
+        try:
+            obj = json.loads(text.strip())
+            if isinstance(obj, list):
+                parsed = obj
+        except json.JSONDecodeError:
+            pass
+
+        # 失敗した場合、raw_decode で最初の有効な JSON 配列を探す
+        if parsed is None:
+            decoder = json.JSONDecoder()
+            pos = 0
+            while pos < len(text):
+                idx = text.find("[", pos)
+                if idx == -1:
+                    break
+                try:
+                    obj, _ = decoder.raw_decode(text, idx)
+                    if isinstance(obj, list):
+                        parsed = obj
+                        break
+                except json.JSONDecodeError:
+                    pass
+                pos = idx + 1
+
         if parsed is None:
             raise ValueError("No JSON array found in response")
         summaries = {

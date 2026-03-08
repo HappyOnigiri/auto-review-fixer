@@ -12,11 +12,64 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# --list-commands は DB 等の依存なしで表示するため、先に処理して exit
+if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--list-commands", action="store_true")
+    parser.add_argument("--list-commands-en", action="store_true")
+    args, _ = parser.parse_known_args()
+    if args.list_commands_en:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
+    and record results in DB. Shows debug-level logs (full prompts, summaries).
+
+  make run-silent
+    Same as run, but minimize log output (for CI).
+
+  make dry-run
+    Show commands and dummy summaries without calling Haiku or Sonnet.
+
+  make run-summarize-only
+    Run Haiku summarization only and print results.
+    Does not run Sonnet or update DB. (for verification)
+
+  make reset
+    Reset the processed reviews DB (delete all records).
+
+  make setup
+    Install dependencies and create .env template.""")
+        sys.exit(0)
+    if args.list_commands:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録。
+    デバッグレベルのログ（要約全文・プロンプト全文）を表示
+
+  make run-silent
+    本番実行と同じだが、ログを最小限に抑える（CI 向け）
+
+  make dry-run
+    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
+
+  make run-summarize-only
+    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
+
+  make reset
+    処理済みレビューの DB をリセット（全件削除）
+
+  make setup
+    依存パッケージをインストールし .env テンプレートを作成""")
+        sys.exit(0)
+
 from dotenv import load_dotenv
 
 from github_pr_fetcher import fetch_open_prs
 from pr_reviewer import fetch_pr_details, fetch_pr_review_comments, fetch_review_threads, resolve_review_thread
 from review_db import count_processed_for_pr, init_db, is_processed, mark_processed, reset_all
+from ci_log import _log_endgroup, _log_group
 from summarizer import summarize_reviews
 
 # REST API returns "coderabbitai[bot]", GraphQL returns "coderabbitai"
@@ -194,13 +247,13 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool = False, summarize_only: bool = False) -> None:
+def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> None:
     """Process a single repository for PR fixes.
 
     Args:
         repo_info: Dict with 'repo', 'user_name', 'user_email' keys
         dry_run: If True, show command without executing
-        debug: If True, print detailed information (full prompts, summaries, etc.)
+        silent: If True, minimize log output (default: False = show debug-level logs)
     """
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -251,7 +304,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             if not r.get("author", {}).get("login", "").startswith(CODERABBIT_BOT_LOGIN_PREFIX):
                 continue
             processed = is_processed(r["id"])
-            if debug:
+            if not silent:
                 print(f"  [DB] review {r['id']}: {'processed' if processed else 'NOT processed'}")
             if not processed:
                 unresolved_reviews.append(r)
@@ -274,7 +327,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             rid = f"discussion_r{c['id']}"
             processed = is_processed(rid)
             in_thread = c["id"] in unresolved_thread_ids
-            if debug:
+            if not silent:
                 print(f"  [DB] comment {rid}: {'processed' if processed else 'NOT processed'}, thread_unresolved={in_thread}")
             if not processed and in_thread:
                 unresolved_comments.append(c)
@@ -304,16 +357,20 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
 
         # Prepare repository
         try:
+            _log_group("Git repository setup")
             works_dir = prepare_repository(repo, branch_name, user_name, user_email)
+            _log_endgroup()
         except Exception as e:
+            _log_endgroup()
             print(f"Error preparing repository: {e}", file=sys.stderr)
             continue
 
         # Summarize reviews with Haiku before passing to Sonnet
+        print()
         if dry_run:
             # Show what the summarization command would look like
             print("\n[DRY RUN] Would summarize with Haiku:")
-            print("  command: claude --model claude-haiku-4-5-20251001 -p 'Read the file <temp>.md ...'")
+            print("  command: claude --model haiku -p 'Read the file <temp>.md ...'")
             print(f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)")
             # Build dummy summaries without calling claude
             summaries: dict[str, str] = {}
@@ -328,7 +385,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments)
-            if (debug or summarize_only) and summaries:
+            if (not silent or summarize_only) and summaries:
                 print("\n[Haiku summaries]")
                 for sid, summary in summaries.items():
                     print(f"  {sid}:\n    {summary}")
@@ -340,7 +397,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries, round_number=round_number)
 
-        if debug:
+        if not silent:
             print("\n[DEBUG] Full prompt for Sonnet:")
             print("-" * 60)
             print(prompt)
@@ -367,12 +424,38 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             prompt_file.unlink(missing_ok=True)
         else:
             print("\nExecuting Claude...")
+            _log_group("Sonnet command details")
+            print(f"  cwd: {works_dir}")
+            print(f"  command: {shlex.join(claude_cmd)}")
+            print(f"  prompt file: {prompt_file}")
+            if not silent:
+                print("-" * 60)
+                print(prompt)
+                print("-" * 60)
+            _log_endgroup()
             try:
+                # Record HEAD before Claude runs to detect new commits afterward
+                head_result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=str(works_dir),
+                    capture_output=True,
+                    text=True,
+                )
+                if head_result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        head_result.returncode, ["git", "rev-parse", "HEAD"],
+                        output=head_result.stdout, stderr=head_result.stderr,
+                    )
+                head_before = head_result.stdout.strip()
+
+                claude_env = os.environ.copy()
+                claude_env.pop("CLAUDECODE", None)
                 process = subprocess.Popen(
                     claude_cmd,
                     cwd=str(works_dir),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=claude_env,
                 )
                 stdout, stderr = process.communicate()
                 if process.returncode != 0:
@@ -381,6 +464,21 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                         output=stdout, stderr=stderr,
                     )
                 print("Claude execution completed")
+
+                # Show commits added by Claude
+                new_commits = subprocess.run(
+                    ["git", "log", "--oneline", f"{head_before}..HEAD"],
+                    cwd=str(works_dir),
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                print()
+                if new_commits:
+                    print("New commit(s) added:")
+                    for line in new_commits.splitlines():
+                        print(f"  {line}")
+                else:
+                    print("No new commits added")
                 # Claude の終了コード 0 を「セッション完了」として全件 mark_processed する。
                 # 「修正不要」と判断したコメントも既読化することで再処理ループを防ぐ。
                 # Claude が実際に修正・push したかどうかはコード上で検証しない。
@@ -406,6 +504,10 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
             except subprocess.CalledProcessError as e:
                 print(f"Error executing Claude: {e}", file=sys.stderr)
+                if e.output:
+                    print(f"  stdout: {e.output.decode(errors='replace').strip()}", file=sys.stderr)
+                if e.stderr:
+                    print(f"  stderr: {e.stderr.decode(errors='replace').strip()}", file=sys.stderr)
             finally:
                 prompt_file.unlink(missing_ok=True)
 
@@ -416,6 +518,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
 
 
 def main():
+    # CI環境ではPythonのstdout/stderrがフルバッファモードになり、
+    # subprocessの直接fd書き込みと順序が逆転する。
+    # ラインバッファモードにして出力順序を保証する。
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(
         description="Auto Review Fixer - Automatically fix CodeRabbit reviews"
     )
@@ -452,9 +562,9 @@ def main():
         help="List available make commands in English and exit",
     )
     parser.add_argument(
-        "--debug",
+        "--silent",
         action="store_true",
-        help="Print detailed debug information (full prompts, summaries, etc.)",
+        help="Minimize log output (default: show debug-level logs)",
     )
     parser.add_argument(
         "--summarize-only",
@@ -463,52 +573,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    if args.list_commands_en:
-        print("""Auto Review Fixer - Makefile targets:
-
-  make run
-    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
-    and record results in DB. (normal production run)
-
-  make dry-run
-    Show commands and dummy summaries without calling Haiku or Sonnet.
-
-  make run-debug
-    Same as run, but also prints full Haiku summaries and the full prompt sent to Sonnet.
-
-  make run-summarize-only
-    Run Haiku summarization only and print results.
-    Does not run Sonnet or update DB. (for verification)
-
-  make reset
-    Reset the processed reviews DB (delete all records).
-
-  make setup
-    Install dependencies and create .env template.""")
-        return
-
-    if args.list_commands:
-        print("""Auto Review Fixer - Makefile targets:
-
-  make run
-    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録（本番実行）
-
-  make dry-run
-    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
-
-  make run-debug
-    本番実行と同じだが、Haiku の要約全文と Sonnet へのプロンプト全文も表示
-
-  make run-summarize-only
-    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
-
-  make reset
-    処理済みレビューの DB をリセット（全件削除）
-
-  make setup
-    依存パッケージをインストールし .env テンプレートを作成""")
-        return
 
     load_dotenv()
     init_db()
@@ -539,14 +603,12 @@ def main():
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
         print("[DRY RUN MODE]")
-    if args.debug:
-        print("[DEBUG MODE]")
     if args.summarize_only:
         print("[SUMMARIZE ONLY MODE]")
 
     for repo_info in repos:
         try:
-            process_repo(repo_info, dry_run=args.dry_run, debug=args.debug, summarize_only=args.summarize_only)
+            process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)

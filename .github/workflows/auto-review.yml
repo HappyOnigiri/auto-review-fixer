@@ -24,7 +24,7 @@ jobs:
 
       - name: Run auto review fixer
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           REPOS: ${{ vars.REPOS }}
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
