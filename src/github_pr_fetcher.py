@@ -38,8 +38,7 @@ def fetch_open_prs(repo: str, limit: int = 20) -> list[dict[str, Any]]:
     result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
 
     if result.returncode != 0:
-        print(f"Error fetching PRs: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Error fetching PRs for '{repo}': {result.stderr.strip()}")
 
     return json.loads(result.stdout)
 
@@ -53,7 +52,7 @@ def format_pr_output(prs: list[dict[str, Any]]) -> str:
     for pr in prs:
         author = pr.get("author", {}).get("login", "Unknown")
         created = pr.get("createdAt", "Unknown")[:10]  # Date only
-        labels = ", ".join([l.get("name", "") for l in pr.get("labels", [])])
+        labels = ", ".join([label.get("name", "") for label in pr.get("labels", [])])
         labels_str = f" [{labels}]" if labels else ""
 
         output += f"#{pr['number']}: {pr['title']}\n"
@@ -69,7 +68,12 @@ def main():
         sys.exit(1)
 
     repo = sys.argv[1]
-    limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    try:
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    except ValueError:
+        print(f"Error: limit must be an integer, got '{sys.argv[2]}'", file=sys.stderr)
+        print("Usage: python github_pr_fetcher.py <repo> [limit]")
+        sys.exit(1)
 
     prs = fetch_open_prs(repo, limit)
     print(format_pr_output(prs))

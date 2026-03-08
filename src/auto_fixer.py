@@ -35,6 +35,10 @@ def load_repos_from_env() -> list[dict[str, str]]:
             continue
         parts = entry.split(":")
         repo = parts[0]
+        segments = repo.split("/")
+        if len(segments) != 2 or not segments[0] or not segments[1]:
+            print(f"Warning: skipping invalid repo entry '{repo}' (expected owner/name)", file=sys.stderr)
+            continue
         user_name = parts[1] if len(parts) > 1 else None
         user_email = parts[2] if len(parts) > 2 else None
         repos.append({"repo": repo, "user_name": user_name, "user_email": user_email})
@@ -49,7 +53,7 @@ def load_repos_from_file(filepath: str) -> list[dict[str, str]]:
     """
     repos = []
     try:
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 # Skip empty lines and comments
@@ -168,11 +172,11 @@ def generate_prompt(
 
     if round_number >= 2:
         instruction = (
-            "以下は PR #{pr_number} \"{title}\" に対する CodeRabbit のレビューコメントです（第{round}ラウンド）。\n"
+            f'以下は PR #{pr_number} "{title}" に対する CodeRabbit のレビューコメントです（第{round_number}ラウンド）。\n'
             "このPRはすでに一度修正済みです。クリティカルな問題（バグ、セキュリティ、ビルドエラー）のみ修正してください。\n"
             "軽微なスタイル提案や好みの問題はスキップして構いません。\n"
             "修正後は git commit して push してください。"
-        ).format(pr_number=pr_number, title=title, round=round_number)
+        )
     else:
         instruction = (
             f'以下は PR #{pr_number} "{title}" に対する CodeRabbit のレビューコメントです。\n'
@@ -182,7 +186,7 @@ def generate_prompt(
 
     prompt = f"""{instruction}
 
-{"".join(chr(10) + s for s in sections)}
+{"\n".join(sections)}
 """
     return prompt
 
@@ -360,10 +364,15 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                 process = subprocess.Popen(
                     claude_cmd,
                     cwd=str(works_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
-                process.wait()
+                stdout, stderr = process.communicate()
                 if process.returncode != 0:
-                    raise subprocess.CalledProcessError(process.returncode, claude_cmd)
+                    raise subprocess.CalledProcessError(
+                        process.returncode, claude_cmd,
+                        output=stdout, stderr=stderr,
+                    )
                 print("Claude execution completed")
                 for review in unresolved_reviews:
                     mark_processed(review["id"], repo, pr_number,

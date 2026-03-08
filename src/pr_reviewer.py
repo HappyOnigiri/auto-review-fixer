@@ -171,7 +171,10 @@ def filter_reviews_after_commit(
     """Filter reviews that are newer than the latest commit."""
     filtered = []
     for review in reviews:
-        review_time = datetime.fromisoformat(review["createdAt"].replace("Z", "+00:00"))
+        try:
+            review_time = datetime.fromisoformat(review["createdAt"].replace("Z", "+00:00"))
+        except (ValueError, TypeError, KeyError):
+            continue
         if review_time > latest_commit_time:
             filtered.append(review)
     return filtered
@@ -227,8 +230,9 @@ def format_review_output(pr_data: dict[str, Any]) -> str:
     if all_reviews:
         output += "\n" + "=" * 80 + "\n"
         output += "\n[ALL REVIEWS]\n"
+        new_review_ids = {r.get("id") for r in new_reviews}
         for i, review in enumerate(all_reviews, 1):
-            is_new = review in new_reviews
+            is_new = review.get("id") in new_review_ids
             marker = "[NEW] " if is_new else "      "
             output += f"\n{marker}Review {i} - {review['author']} ({review['createdAt']})\n"
             output += f"State: {review.get('state', 'N/A')}\n"

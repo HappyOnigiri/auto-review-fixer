@@ -83,10 +83,15 @@ def summarize_reviews(
 
     try:
         text = result.stdout
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if not match:
+        parsed = None
+        for match in re.finditer(r"\[.*?\]", text, re.DOTALL):
+            try:
+                parsed = json.loads(match.group())
+                break
+            except json.JSONDecodeError:
+                continue
+        if parsed is None:
             raise ValueError("No JSON array found in response")
-        parsed = json.loads(match.group())
         summaries = {
             item["id"]: item["summary"]
             for item in parsed

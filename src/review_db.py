@@ -8,6 +8,7 @@ Connection mode is determined by environment variables:
 """
 
 import os
+import sys
 from pathlib import Path
 
 import libsql
@@ -63,8 +64,12 @@ def init_db():
     for col in ("body TEXT", "summary TEXT"):
         try:
             conn.execute(f"ALTER TABLE processed_reviews ADD COLUMN {col}")
-        except Exception:
-            pass  # Column already exists
+        except Exception as e:
+            if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
+                pass  # Column already exists, safe to ignore
+            else:
+                print(f"Warning: unexpected error adding column '{col}': {type(e).__name__}: {e}", file=sys.stderr)
+                raise
     conn.commit()
 
 

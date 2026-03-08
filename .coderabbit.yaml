@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
 language: "ja-JP"
-tone_instructions: "PRのサマリーとレビューコメントは日本語で提供してください。"
+tone_instructions: "PRのサマリー、レビューコメント、およびAIエージェント向けプロンプトはすべて日本語で提供してください。"
 
 reviews:
   profile: "chill"
