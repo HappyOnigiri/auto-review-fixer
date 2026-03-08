@@ -247,7 +247,7 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> None:
+def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int] | None:
     """Process a single repository for PR fixes.
 
     Args:
@@ -336,6 +336,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
             print(f"No unresolved reviews for PR #{pr_number}")
             continue
 
+        commits_added = False
         # Determine round number for this PR (1-based)
         past_count = count_processed_for_pr(repo, pr_number)
         round_number = past_count + 1
@@ -392,13 +393,13 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
 
         if summarize_only:
             print("\nSummarize-only mode: stopping here (no Sonnet execution, no DB update)")
-            return
+            return None
 
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries, round_number=round_number)
 
         if not silent:
-            print("\n[DEBUG] Full prompt for Sonnet:")
+            print("\nFull prompt for Sonnet:")
             print("-" * 60)
             print(prompt)
             print("-" * 60)
@@ -477,6 +478,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                     print("New commit(s) added:")
                     for line in new_commits.splitlines():
                         print(f"  {line}")
+                    commits_added = True
                 else:
                     print("No new commits added")
                 # Claude の終了コード 0 を「セッション完了」として全件 mark_processed する。
@@ -512,9 +514,10 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                 prompt_file.unlink(missing_ok=True)
 
         # Process only the first PR with unresolved reviews
-        return
+        return (repo, pr_number) if commits_added else None
 
     print(f"No unresolved reviews found in any PR for {repo}")
+    return None
 
 
 def main():
@@ -606,9 +609,12 @@ def main():
     if args.summarize_only:
         print("[SUMMARIZE ONLY MODE]")
 
+    commits_added_to: list[tuple[str, int]] = []
     for repo_info in repos:
         try:
-            process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
+            result = process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
+            if result:
+                commits_added_to.append(result)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)
@@ -616,6 +622,12 @@ def main():
             print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
             continue
 
+    if commits_added_to:
+        print("\n" + "=" * 60)
+        print("コミットを追加した PR 一覧:")
+        for repo, pr_number in commits_added_to:
+            print(f"  - {repo} PR #{pr_number}")
+        print("=" * 60)
     print("\nDone!")
 
 
