@@ -1,7 +1,9 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci help help-en
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix help help-en
 
 # Use venv Python when available (for make test/ci without activating)
 PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
+REPOMIX_VERSION ?= 1.12.0
+.DEFAULT_GOAL := run
 
 help:
 	@cd src && python auto_fixer.py --list-commands
@@ -40,4 +42,6 @@ test:
 
 ci: test
 
-.DEFAULT_GOAL := run
+repomix:
+	@mkdir -p tmp/repomix
+	npx --yes repomix@$(REPOMIX_VERSION) -o tmp/repomix/repomix-output.xml --quiet
