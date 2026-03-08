@@ -61,7 +61,7 @@ def summarize_reviews(
         result = subprocess.run(
             [
                 "claude",
-                "--model", "claude-haiku-4-5-20251001",
+                "--model", "haiku",
                 "--dangerously-skip-permissions",
                 "-p", f"Read the file {prompt_path} and follow the instructions in it.",
             ],

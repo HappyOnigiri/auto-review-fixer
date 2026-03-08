@@ -313,7 +313,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
         if dry_run:
             # Show what the summarization command would look like
             print("\n[DRY RUN] Would summarize with Haiku:")
-            print("  command: claude --model claude-haiku-4-5-20251001 -p 'Read the file <temp>.md ...'")
+            print("  command: claude --model haiku -p 'Read the file <temp>.md ...'")
             print(f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)")
             # Build dummy summaries without calling claude
             summaries: dict[str, str] = {}
@@ -406,6 +406,10 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
             except subprocess.CalledProcessError as e:
                 print(f"Error executing Claude: {e}", file=sys.stderr)
+                if e.output:
+                    print(f"  stdout: {e.output.decode(errors='replace').strip()}", file=sys.stderr)
+                if e.stderr:
+                    print(f"  stderr: {e.stderr.decode(errors='replace').strip()}", file=sys.stderr)
             finally:
                 prompt_file.unlink(missing_ok=True)
 
