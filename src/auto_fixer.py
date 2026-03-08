@@ -249,7 +249,7 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int, str] | None:
+def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int, str | None] | None:
     """Process a single repository for PR fixes.
 
     Args:
@@ -338,7 +338,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
             print(f"No unresolved reviews for PR #{pr_number}")
             continue
 
-        commits_added = False
+        commits_added: str | None = None
         # Determine round number for this PR (1-based)
         past_count = count_processed_for_pr(repo, pr_number)
         round_number = past_count + 1
@@ -388,10 +388,11 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
-            if summarize_only and summaries:
-                print("\n[Haiku summaries]")
-                for sid, summary in summaries.items():
-                    print(f"  {sid}:\n    {summary}")
+
+        if summarize_only and summaries:
+            print("\n[Haiku summaries]")
+            for sid, summary in summaries.items():
+                print(f"  {sid}:\n    {summary}")
 
         if summarize_only:
             print("\nSummarize-only mode: stopping here (no Sonnet execution, no DB update)")
