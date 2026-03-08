@@ -138,3 +138,9 @@ Thumbs.db
 works/
 data/
 repos.txt
+
+# Env
+.envrc
+
+# Tmp
+tmp/
