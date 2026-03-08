@@ -435,12 +435,18 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
             _log_endgroup()
             try:
                 # Record HEAD before Claude runs to detect new commits afterward
-                head_before = subprocess.run(
+                head_result = subprocess.run(
                     ["git", "rev-parse", "HEAD"],
                     cwd=str(works_dir),
                     capture_output=True,
                     text=True,
-                ).stdout.strip()
+                )
+                if head_result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        head_result.returncode, ["git", "rev-parse", "HEAD"],
+                        output=head_result.stdout, stderr=head_result.stderr,
+                    )
+                head_before = head_result.stdout.strip()
 
                 claude_env = os.environ.copy()
                 claude_env.pop("CLAUDECODE", None)
@@ -515,8 +521,10 @@ def main():
     # CI環境ではPythonのstdout/stderrがフルバッファモードになり、
     # subprocessの直接fd書き込みと順序が逆転する。
     # ラインバッファモードにして出力順序を保証する。
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(line_buffering=True)
 
     parser = argparse.ArgumentParser(
         description="Auto Review Fixer - Automatically fix CodeRabbit reviews"
