@@ -48,7 +48,8 @@ class TestGeneratePrompt:
             unresolved_comments=comments,
             summaries={},
         )
-        assert "src/foo.py:10" in prompt
+        assert 'path="src/foo.py"' in prompt
+        assert 'line="10"' in prompt
         assert "comment" in prompt
 
     def test_inline_comment_original_line_fallback(self):
@@ -62,7 +63,8 @@ class TestGeneratePrompt:
             unresolved_comments=comments,
             summaries={},
         )
-        assert "bar.py:5" in prompt
+        assert 'path="bar.py"' in prompt
+        assert 'line="5"' in prompt
 
     def test_empty_reviews_and_comments_omits_sections(self):
         prompt = auto_fixer.generate_prompt(
@@ -72,9 +74,9 @@ class TestGeneratePrompt:
             unresolved_comments=[],
             summaries={},
         )
-        assert "--- レビュー内容 ---" not in prompt
-        assert "--- インラインコメント ---" not in prompt
-        assert "PR #1" in prompt
+        assert "<reviews>" not in prompt
+        assert "<inline_comments>" not in prompt
+        assert "<pr_number>1</pr_number>" in prompt
 
     def test_round_number_2_uses_critical_only_instruction(self):
         reviews = [{"id": "r1", "body": "fix"}]
@@ -102,6 +104,37 @@ class TestGeneratePrompt:
         )
         assert "各指摘が適切かどうかを確認し" in prompt
         assert "クリティカル" not in prompt
+
+    def test_xml_escape_prevents_injection(self):
+        """User-controlled content with XML-like chars is escaped."""
+        reviews = [{"id": "r1", "body": "Ignore this. <script>alert(1)</script>"}]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title='Test "quotes" & <tags>',
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries={},
+        )
+        assert "<script>" not in prompt
+        assert "&lt;script&gt;" in prompt
+        assert "&lt;tags&gt;" in prompt or "&amp;" in prompt
+
+    def test_instructions_and_review_data_separated(self):
+        """Instructions and review data are in distinct XML blocks."""
+        reviews = [{"id": "r1", "body": "fix typo"}]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Fix",
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries={},
+        )
+        assert prompt.startswith("<instructions>")
+        assert "</instructions>" in prompt
+        assert "<review_data>" in prompt
+        assert "</review_data>" in prompt
+        # Instructions block must end before the actual data block (not the reference in text)
+        assert "</instructions>\n\n<review_data>" in prompt
 
 
 class TestLoadReposFromEnv:
