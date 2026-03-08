@@ -400,12 +400,6 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries, round_number=round_number)
 
-        if not silent:
-            print("\nFull prompt for Sonnet:")
-            print("-" * SEPARATOR_LEN)
-            print(prompt)
-            print("-" * SEPARATOR_LEN)
-
         # Write prompt to a file to avoid Windows command-line length limits
         prompt_file = works_dir / "_review_prompt.md"
         prompt_file.write_text(prompt, encoding="utf-8")
