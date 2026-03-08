@@ -17,6 +17,21 @@ _conn = None
 _turso_mode = False
 
 
+def _get_db_path() -> Path:
+    """Return DB file path. REVIEW_DB_PATH env overrides default (for tests)."""
+    override = os.environ.get("REVIEW_DB_PATH", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).parent.parent / "data" / "reviews.db"
+
+
+def reset_connection():
+    """Reset module-level connection state. Use in tests to get a fresh DB."""
+    global _conn, _turso_mode
+    _conn = None
+    _turso_mode = False
+
+
 def get_connection():
     """Connect to Turso Cloud or local SQLite (singleton)."""
     global _conn, _turso_mode
@@ -26,7 +41,7 @@ def get_connection():
     url = os.environ.get("TURSO_DATABASE_URL", "")
     auth_token = os.environ.get("TURSO_AUTH_TOKEN", "")
 
-    db_path = Path(__file__).parent.parent / "data" / "reviews.db"
+    db_path = _get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     if url and auth_token:

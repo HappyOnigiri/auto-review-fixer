@@ -1,2 +1,3 @@
 libsql
 python-dotenv
+pytest

@@ -1,0 +1,262 @@
+"""Unit tests for auto_fixer module."""
+
+import os
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+import auto_fixer
+
+
+class TestGeneratePrompt:
+    """Tests for generate_prompt()."""
+
+    def test_summary_overrides_raw_body(self):
+        reviews = [{"id": "r1", "body": "raw body"}]
+        summaries = {"r1": "summarized"}
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Test PR",
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries=summaries,
+        )
+        assert "summarized" in prompt
+        assert "raw body" not in prompt
+
+    def test_raw_body_when_no_summary(self):
+        reviews = [{"id": "r1", "body": "raw body"}]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Test PR",
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries={},
+        )
+        assert "raw body" in prompt
+
+    def test_inline_comment_path_and_line(self):
+        comments = [
+            {"id": 42, "path": "src/foo.py", "line": 10, "body": "comment"}
+        ]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Test",
+            unresolved_reviews=[],
+            unresolved_comments=comments,
+            summaries={},
+        )
+        assert "src/foo.py:10" in prompt
+        assert "comment" in prompt
+
+    def test_inline_comment_original_line_fallback(self):
+        comments = [
+            {"id": 42, "path": "bar.py", "original_line": 5, "body": "x"}
+        ]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Test",
+            unresolved_reviews=[],
+            unresolved_comments=comments,
+            summaries={},
+        )
+        assert "bar.py:5" in prompt
+
+    def test_empty_reviews_and_comments_omits_sections(self):
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="Empty",
+            unresolved_reviews=[],
+            unresolved_comments=[],
+            summaries={},
+        )
+        assert "--- レビュー内容 ---" not in prompt
+        assert "--- インラインコメント ---" not in prompt
+        assert "PR #1" in prompt
+
+    def test_round_number_2_uses_critical_only_instruction(self):
+        reviews = [{"id": "r1", "body": "fix"}]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=2,
+            title="Second",
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries={},
+            round_number=2,
+        )
+        assert "第2ラウンド" in prompt
+        assert "クリティカルな問題" in prompt
+        assert "軽微なスタイル提案" in prompt
+
+    def test_round_number_1_default_instruction(self):
+        reviews = [{"id": "r1", "body": "fix"}]
+        prompt = auto_fixer.generate_prompt(
+            pr_number=1,
+            title="First",
+            unresolved_reviews=reviews,
+            unresolved_comments=[],
+            summaries={},
+            round_number=1,
+        )
+        assert "各指摘が適切かどうかを確認し" in prompt
+        assert "クリティカル" not in prompt
+
+
+class TestLoadReposFromEnv:
+    """Tests for load_repos_from_env()."""
+
+    def test_empty_returns_empty_list(self):
+        with patch.dict(os.environ, {"REPOS": ""}, clear=False):
+            assert auto_fixer.load_repos_from_env() == []
+
+    def test_valid_single_repo(self):
+        with patch.dict(os.environ, {"REPOS": "owner/repo"}, clear=False):
+            repos = auto_fixer.load_repos_from_env()
+            assert len(repos) == 1
+            assert repos[0]["repo"] == "owner/repo"
+            assert repos[0]["user_name"] is None
+            assert repos[0]["user_email"] is None
+
+    def test_valid_repo_with_user_config(self):
+        with patch.dict(
+            os.environ,
+            {"REPOS": "owner/repo:User Name:user@example.com"},
+            clear=False,
+        ):
+            repos = auto_fixer.load_repos_from_env()
+            assert len(repos) == 1
+            assert repos[0]["repo"] == "owner/repo"
+            assert repos[0]["user_name"] == "User Name"
+            assert repos[0]["user_email"] == "user@example.com"
+
+    def test_invalid_repo_format_skipped(self):
+        with patch.dict(
+            os.environ,
+            {"REPOS": "invalid,owner/repo,bad/"},
+            clear=False,
+        ):
+            repos = auto_fixer.load_repos_from_env()
+            assert len(repos) == 1
+            assert repos[0]["repo"] == "owner/repo"
+
+    def test_multiple_repos(self):
+        with patch.dict(
+            os.environ,
+            {"REPOS": "a/b,c/d:name:email"},
+            clear=False,
+        ):
+            repos = auto_fixer.load_repos_from_env()
+            assert len(repos) == 2
+            assert repos[0]["repo"] == "a/b"
+            assert repos[1]["repo"] == "c/d"
+            assert repos[1]["user_name"] == "name"
+            assert repos[1]["user_email"] == "email"
+
+
+class TestLoadReposFromFile:
+    """Tests for load_repos_from_file()."""
+
+    def test_valid_file(self, tmp_path):
+        f = tmp_path / "repos.txt"
+        f.write_text("owner/repo:User:user@x.com\n")
+        repos = auto_fixer.load_repos_from_file(str(f))
+        assert len(repos) == 1
+        assert repos[0]["repo"] == "owner/repo"
+        assert repos[0]["user_name"] == "User"
+        assert repos[0]["user_email"] == "user@x.com"
+
+    def test_skips_empty_lines_and_comments(self, tmp_path):
+        f = tmp_path / "repos.txt"
+        f.write_text("""
+# comment
+owner/repo
+
+a/b:name:email
+""")
+        repos = auto_fixer.load_repos_from_file(str(f))
+        assert len(repos) == 2
+        assert repos[0]["repo"] == "owner/repo"
+        assert repos[1]["repo"] == "a/b"
+
+    def test_file_not_found_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_repos_from_file("/nonexistent/path/repos.txt")
+        assert exc_info.value.code == 1
+
+
+class TestProcessRepo:
+    """Thin orchestration tests for process_repo(). All external deps mocked."""
+
+    def test_empty_prs_returns_early(self, capsys):
+        """No open PRs -> early return, no git/claude calls."""
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=[]),
+            patch("auto_fixer.subprocess.run") as mock_run,
+            patch("auto_fixer.subprocess.Popen") as mock_popen,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"})
+            out = capsys.readouterr().out
+            assert "No open PRs found" in out
+            mock_run.assert_not_called()
+            mock_popen.assert_not_called()
+
+    def test_dry_run_no_external_commands(self, tmp_path, capsys):
+        """dry_run=True -> no Haiku/Sonnet, no git clone."""
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix", "author": {"login": "coderabbitai[bot]"}}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.is_processed", return_value=False),
+            patch("auto_fixer.count_processed_for_pr", return_value=0),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer.summarize_reviews") as mock_summarize,
+            patch("auto_fixer.subprocess.Popen") as mock_popen,
+            patch("auto_fixer.mark_processed"),
+            patch("auto_fixer.resolve_review_thread"),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, dry_run=True)
+            mock_summarize.assert_not_called()
+            mock_popen.assert_not_called()
+            out = capsys.readouterr().out
+            assert "[DRY RUN]" in out
+
+    def test_summarize_only_stops_before_sonnet_and_db(self, tmp_path, capsys):
+        """summarize_only=True -> no Sonnet, no mark_processed."""
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix", "author": {"login": "coderabbitai"}}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.is_processed", return_value=False),
+            patch("auto_fixer.count_processed_for_pr", return_value=0),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
+            patch("auto_fixer.subprocess.Popen") as mock_popen,
+            patch("auto_fixer.mark_processed") as mock_mark,
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, summarize_only=True
+            )
+            mock_popen.assert_not_called()
+            mock_mark.assert_not_called()
+            out = capsys.readouterr().out
+            assert "Summarize-only mode" in out
