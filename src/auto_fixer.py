@@ -19,6 +19,9 @@ from pr_reviewer import fetch_pr_details, fetch_pr_review_comments, fetch_review
 from review_db import count_processed_for_pr, init_db, is_processed, mark_processed, reset_all
 from summarizer import summarize_reviews
 
+# REST API returns "coderabbitai[bot]", GraphQL returns "coderabbitai"
+CODERABBIT_BOT_LOGIN_PREFIX = "coderabbitai"
+
 
 def load_repos_from_env() -> list[dict[str, str]]:
     """Load repository list from REPOS environment variable.
@@ -239,11 +242,13 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             print(f"Could not find branch name for PR #{pr_number}, skipping")
             continue
 
-        # Filter reviews not yet processed
+        # Filter reviews not yet processed (bot reviews only)
         reviews = pr_data.get("reviews", [])
         unresolved_reviews = []
         for r in reviews:
             if not r.get("id"):
+                continue
+            if not r.get("author", {}).get("login", "").startswith(CODERABBIT_BOT_LOGIN_PREFIX):
                 continue
             processed = is_processed(r["id"])
             if debug:
@@ -263,6 +268,8 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
         unresolved_comments = []
         for c in review_comments:
             if not c.get("id"):
+                continue
+            if not c.get("user", {}).get("login", "").startswith(CODERABBIT_BOT_LOGIN_PREFIX):
                 continue
             rid = f"discussion_r{c['id']}"
             processed = is_processed(rid)
@@ -374,6 +381,12 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                         output=stdout, stderr=stderr,
                     )
                 print("Claude execution completed")
+                # Claude の終了コード 0 を「セッション完了」として全件 mark_processed する。
+                # 「修正不要」と判断したコメントも既読化することで再処理ループを防ぐ。
+                # Claude が実際に修正・push したかどうかはコード上で検証しない。
+                # これは意図した仕様: Claude 自身がコメントへの対応要否を判断する。
+                # exit code 非ゼロの場合は mark_processed を呼ばないため、
+                # エラー時の再試行は保証される。
                 for review in unresolved_reviews:
                     mark_processed(review["id"], repo, pr_number,
                                    body=review.get("body", ""),
