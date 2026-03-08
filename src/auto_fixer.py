@@ -19,6 +19,18 @@ from pr_reviewer import fetch_pr_details, fetch_pr_review_comments, fetch_review
 from review_db import count_processed_for_pr, init_db, is_processed, mark_processed, reset_all
 from summarizer import summarize_reviews
 
+_IS_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def _log_group(title: str) -> None:
+    if _IS_CI:
+        print(f"::group::{title}")
+
+
+def _log_endgroup() -> None:
+    if _IS_CI:
+        print("::endgroup::")
+
 # REST API returns "coderabbitai[bot]", GraphQL returns "coderabbitai"
 CODERABBIT_BOT_LOGIN_PREFIX = "coderabbitai"
 
@@ -367,12 +379,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             prompt_file.unlink(missing_ok=True)
         else:
             print("\nExecuting Claude...")
+            _log_group("Sonnet command details")
             print(f"  cwd: {works_dir}")
             print(f"  command: {shlex.join(claude_cmd)}")
             print(f"  prompt file: {prompt_file}")
             print("-" * 60)
             print(prompt)
             print("-" * 60)
+            _log_endgroup()
             try:
                 claude_env = os.environ.copy()
                 claude_env.pop("CLAUDECODE", None)

@@ -10,6 +10,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+_IS_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def _log_group(title: str) -> None:
+    if _IS_CI:
+        print(f"::group::{title}")
+
+
+def _log_endgroup() -> None:
+    if _IS_CI:
+        print("::endgroup::")
+
 
 def summarize_reviews(
     reviews: list[dict[str, Any]],
@@ -69,11 +81,13 @@ def summarize_reviews(
 
     try:
         print("Summarizing reviews with Haiku...")
+        _log_group("Haiku command details")
         print(f"  command: {shlex.join(haiku_cmd)}")
         print(f"  prompt file: {prompt_path}")
         print("-" * 60)
         print(prompt)
         print("-" * 60)
+        _log_endgroup()
         result = subprocess.run(
             haiku_cmd,
             capture_output=True,
