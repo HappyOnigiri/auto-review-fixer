@@ -261,22 +261,22 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
     user_name = repo_info.get("user_name")
     user_email = repo_info.get("user_email")
 
-    print(f"\n{'=' * 80}")
+    print(f"\n{'=' * SEPARATOR_LEN}")
     print(f"Processing: {repo}")
     if user_name or user_email:
         print(f"Git user: {user_name or 'default'} <{user_email or 'default'}>")
-    print("=" * 80)
+    print("=" * SEPARATOR_LEN)
 
     # Fetch open PRs
     try:
         prs = fetch_open_prs(repo)
     except Exception as e:
         print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
-        return
+        return None
 
     if not prs:
         print(f"No open PRs found in {repo}")
-        return
+        return None
 
     print(f"Found {len(prs)} open PR(s)")
 
@@ -387,7 +387,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                     label = f"{path} " if path else ""
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
-            summaries = summarize_reviews(unresolved_reviews, unresolved_comments)
+            summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
             if summarize_only and summaries:
                 print("\n[Haiku summaries]")
                 for sid, summary in summaries.items():

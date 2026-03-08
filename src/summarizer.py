@@ -18,6 +18,7 @@ SEPARATOR_LEN = 60
 def summarize_reviews(
     reviews: list[dict[str, Any]],
     comments: list[dict[str, Any]],
+    silent: bool = False,
 ) -> dict[str, str]:
     """Return {id: summary} for all reviews and inline comments.
 
@@ -77,9 +78,10 @@ def summarize_reviews(
         _log_group("Haiku command details")
         print(f"  command: {shlex.join(haiku_cmd)}")
         print(f"  prompt file: {prompt_path}")
-        print("-" * SEPARATOR_LEN)
-        print(Path(prompt_path).read_text(encoding="utf-8"))
-        print("-" * SEPARATOR_LEN)
+        if not silent:
+            print("-" * SEPARATOR_LEN)
+            print(Path(prompt_path).read_text(encoding="utf-8"))
+            print("-" * SEPARATOR_LEN)
         _log_endgroup()
         result = subprocess.run(
             haiku_cmd,
