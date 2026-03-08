@@ -388,6 +388,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             print("-" * 60)
             _log_endgroup()
             try:
+                # Record HEAD before Claude runs to detect new commits afterward
+                head_before = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=str(works_dir),
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+
                 claude_env = os.environ.copy()
                 claude_env.pop("CLAUDECODE", None)
                 process = subprocess.Popen(
@@ -404,6 +412,20 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                         output=stdout, stderr=stderr,
                     )
                 print("Claude execution completed")
+
+                # Show commits added by Claude
+                new_commits = subprocess.run(
+                    ["git", "log", "--oneline", f"{head_before}..HEAD"],
+                    cwd=str(works_dir),
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                if new_commits:
+                    print(f"New commit(s) added:")
+                    for line in new_commits.splitlines():
+                        print(f"  {line}")
+                else:
+                    print("No new commits added")
                 # Claude の終了コード 0 を「セッション完了」として全件 mark_processed する。
                 # 「修正不要」と判断したコメントも既読化することで再処理ループを防ぐ。
                 # Claude が実際に修正・push したかどうかはコード上で検証しない。
