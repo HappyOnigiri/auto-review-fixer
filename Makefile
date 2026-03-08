@@ -1,4 +1,4 @@
-.PHONY: run dry-run run-debug run-summarize-only reset setup help help-en
+.PHONY: run-silent dry-run run-debug run-summarize-only reset setup help help-en
 
 help:
 	@cd src && python auto_fixer.py --list-commands
@@ -17,7 +17,7 @@ setup:
 		echo ".env already exists, skipping."; \
 	fi
 
-run:
+run-silent:
 	cd src && python auto_fixer.py
 
 dry-run:
@@ -32,4 +32,4 @@ run-summarize-only:
 reset:
 	cd src && python auto_fixer.py --reset
 
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := run-debug
