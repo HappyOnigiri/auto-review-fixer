@@ -1,11 +1,8 @@
-name: Test
+name: Auto Review Test
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
   pull_request:
-    branches: [main, master]
 
 permissions:
   contents: read
