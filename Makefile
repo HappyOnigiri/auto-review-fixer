@@ -1,4 +1,7 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup help help-en
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci help help-en
+
+# Use venv Python when available (for make test/ci without activating)
+PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
 help:
 	@cd src && python auto_fixer.py --list-commands
@@ -31,5 +34,10 @@ run-summarize-only:
 
 reset:
 	cd src && python auto_fixer.py --reset
+
+test:
+	TURSO_DATABASE_URL= TURSO_AUTH_TOKEN= PYTHONPATH=src $(PYTHON) -m pytest -q
+
+ci: test
 
 .DEFAULT_GOAL := run
