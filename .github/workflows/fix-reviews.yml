@@ -10,6 +10,9 @@ concurrency:
   group: fix-reviews
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   fix-reviews:
     runs-on: ubuntu-latest
@@ -24,7 +27,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Install Claude CLI
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g @anthropic-ai/claude-code@2.1.58
 
       - name: Configure git credentials
         run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
