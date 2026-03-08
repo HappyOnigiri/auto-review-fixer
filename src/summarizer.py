@@ -2,6 +2,7 @@
 """Summarize PR review comments using Claude Haiku via CLI (single call)."""
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -56,6 +57,9 @@ def summarize_reviews(
         f.write(prompt)
         prompt_path = f.name
 
+    env = os.environ.copy()
+    env.pop("CLAUDECODE", None)
+
     try:
         print("Summarizing reviews with Haiku...")
         result = subprocess.run(
@@ -69,6 +73,7 @@ def summarize_reviews(
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=env,
         )
     finally:
         Path(prompt_path).unlink(missing_ok=True)

@@ -368,11 +368,14 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
         else:
             print("\nExecuting Claude...")
             try:
+                claude_env = os.environ.copy()
+                claude_env.pop("CLAUDECODE", None)
                 process = subprocess.Popen(
                     claude_cmd,
                     cwd=str(works_dir),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=claude_env,
                 )
                 stdout, stderr = process.communicate()
                 if process.returncode != 0:
