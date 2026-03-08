@@ -249,7 +249,7 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int] | None:
+def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int, str] | None:
     """Process a single repository for PR fixes.
 
     Args:
@@ -471,10 +471,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                 ).stdout.strip()
                 print()
                 if new_commits:
-                    print("New commit(s) added:")
-                    for line in new_commits.splitlines():
-                        print(f"  {line}")
-                    commits_added = True
+                    commits_added = new_commits
                 else:
                     print("No new commits added")
                 # Claude の終了コード 0 を「セッション完了」として全件 mark_processed する。
@@ -510,7 +507,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool 
                 prompt_file.unlink(missing_ok=True)
 
         # Process only the first PR with unresolved reviews
-        return (repo, pr_number) if commits_added else None
+        return (repo, pr_number, commits_added) if commits_added else None
 
     print(f"No unresolved reviews found in any PR for {repo}")
     return None
@@ -605,7 +602,7 @@ def main():
     if args.summarize_only:
         print("[SUMMARIZE ONLY MODE]")
 
-    commits_added_to: list[tuple[str, int]] = []
+    commits_added_to: list[tuple[str, int, str]] = []
     for repo_info in repos:
         try:
             result = process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
@@ -621,8 +618,10 @@ def main():
     if commits_added_to:
         print("\n" + "=" * SEPARATOR_LEN)
         print("コミットを追加した PR 一覧:")
-        for repo, pr_number in commits_added_to:
+        for repo, pr_number, new_commits in commits_added_to:
             print(f"  - {repo} PR #{pr_number}")
+            for line in new_commits.splitlines():
+                print(f"      {line}")
         print("=" * SEPARATOR_LEN)
     print("\nDone!")
 
