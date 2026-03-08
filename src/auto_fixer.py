@@ -12,6 +12,58 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# --list-commands は DB 等の依存なしで表示するため、先に処理して exit
+if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--list-commands", action="store_true")
+    parser.add_argument("--list-commands-en", action="store_true")
+    args, _ = parser.parse_known_args()
+    if args.list_commands_en:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
+    and record results in DB. Shows debug-level logs (full prompts, summaries).
+
+  make run-silent
+    Same as run, but minimize log output (for CI).
+
+  make dry-run
+    Show commands and dummy summaries without calling Haiku or Sonnet.
+
+  make run-summarize-only
+    Run Haiku summarization only and print results.
+    Does not run Sonnet or update DB. (for verification)
+
+  make reset
+    Reset the processed reviews DB (delete all records).
+
+  make setup
+    Install dependencies and create .env template.""")
+        sys.exit(0)
+    if args.list_commands:
+        print("""Auto Review Fixer - Makefile targets:
+
+  make run
+    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録。
+    デバッグレベルのログ（要約全文・プロンプト全文）を表示
+
+  make run-silent
+    本番実行と同じだが、ログを最小限に抑える（CI 向け）
+
+  make dry-run
+    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
+
+  make run-summarize-only
+    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
+
+  make reset
+    処理済みレビューの DB をリセット（全件削除）
+
+  make setup
+    依存パッケージをインストールし .env テンプレートを作成""")
+        sys.exit(0)
+
 from dotenv import load_dotenv
 
 from github_pr_fetcher import fetch_open_prs
@@ -513,53 +565,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    if args.list_commands_en:
-        print("""Auto Review Fixer - Makefile targets:
-
-  make run
-    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
-    and record results in DB. Shows debug-level logs (full prompts, summaries).
-
-  make run-silent
-    Same as run, but minimize log output (for CI).
-
-  make dry-run
-    Show commands and dummy summaries without calling Haiku or Sonnet.
-
-  make run-summarize-only
-    Run Haiku summarization only and print results.
-    Does not run Sonnet or update DB. (for verification)
-
-  make reset
-    Reset the processed reviews DB (delete all records).
-
-  make setup
-    Install dependencies and create .env template.""")
-        return
-
-    if args.list_commands:
-        print("""Auto Review Fixer - Makefile targets:
-
-  make run
-    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録。
-    デバッグレベルのログ（要約全文・プロンプト全文）を表示
-
-  make run-silent
-    本番実行と同じだが、ログを最小限に抑える（CI 向け）
-
-  make dry-run
-    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
-
-  make run-summarize-only
-    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
-
-  make reset
-    処理済みレビューの DB をリセット（全件削除）
-
-  make setup
-    依存パッケージをインストールし .env テンプレートを作成""")
-        return
 
     load_dotenv()
     init_db()
