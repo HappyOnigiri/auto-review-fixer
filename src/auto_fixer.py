@@ -195,13 +195,13 @@ def generate_prompt(
     return prompt
 
 
-def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool = False, summarize_only: bool = False) -> None:
+def process_repo(repo_info: dict[str, str], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> None:
     """Process a single repository for PR fixes.
 
     Args:
         repo_info: Dict with 'repo', 'user_name', 'user_email' keys
         dry_run: If True, show command without executing
-        debug: If True, print detailed information (full prompts, summaries, etc.)
+        silent: If True, minimize log output (default: False = show debug-level logs)
     """
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -252,7 +252,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             if not r.get("author", {}).get("login", "").startswith(CODERABBIT_BOT_LOGIN_PREFIX):
                 continue
             processed = is_processed(r["id"])
-            if debug:
+            if not silent:
                 print(f"  [DB] review {r['id']}: {'processed' if processed else 'NOT processed'}")
             if not processed:
                 unresolved_reviews.append(r)
@@ -275,7 +275,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             rid = f"discussion_r{c['id']}"
             processed = is_processed(rid)
             in_thread = c["id"] in unresolved_thread_ids
-            if debug:
+            if not silent:
                 print(f"  [DB] comment {rid}: {'processed' if processed else 'NOT processed'}, thread_unresolved={in_thread}")
             if not processed and in_thread:
                 unresolved_comments.append(c)
@@ -333,7 +333,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
                     summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments)
-            if (debug or summarize_only) and summaries:
+            if (not silent or summarize_only) and summaries:
                 print("\n[Haiku summaries]")
                 for sid, summary in summaries.items():
                     print(f"  {sid}:\n    {summary}")
@@ -345,7 +345,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries, round_number=round_number)
 
-        if debug:
+        if not silent:
             print("\n[DEBUG] Full prompt for Sonnet:")
             print("-" * 60)
             print(prompt)
@@ -376,7 +376,7 @@ def process_repo(repo_info: dict[str, str], dry_run: bool = False, debug: bool =
             print(f"  cwd: {works_dir}")
             print(f"  command: {shlex.join(claude_cmd)}")
             print(f"  prompt file: {prompt_file}")
-            if debug:
+            if not silent:
                 print("-" * 60)
                 print(prompt)
                 print("-" * 60)
@@ -502,9 +502,9 @@ def main():
         help="List available make commands in English and exit",
     )
     parser.add_argument(
-        "--debug",
+        "--silent",
         action="store_true",
-        help="Print detailed debug information (full prompts, summaries, etc.)",
+        help="Minimize log output (default: show debug-level logs)",
     )
     parser.add_argument(
         "--summarize-only",
@@ -519,13 +519,13 @@ def main():
 
   make run
     Summarize unresolved reviews with Haiku, fix and push with Sonnet,
-    and record results in DB. (normal production run)
+    and record results in DB. Shows debug-level logs (full prompts, summaries).
+
+  make run-silent
+    Same as run, but minimize log output (for CI).
 
   make dry-run
     Show commands and dummy summaries without calling Haiku or Sonnet.
-
-  make run-debug
-    Same as run, but also prints full Haiku summaries and the full prompt sent to Sonnet.
 
   make run-summarize-only
     Run Haiku summarization only and print results.
@@ -542,13 +542,14 @@ def main():
         print("""Auto Review Fixer - Makefile targets:
 
   make run
-    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録（本番実行）
+    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録。
+    デバッグレベルのログ（要約全文・プロンプト全文）を表示
+
+  make run-silent
+    本番実行と同じだが、ログを最小限に抑える（CI 向け）
 
   make dry-run
     Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
-
-  make run-debug
-    本番実行と同じだが、Haiku の要約全文と Sonnet へのプロンプト全文も表示
 
   make run-summarize-only
     Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
@@ -589,14 +590,12 @@ def main():
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
         print("[DRY RUN MODE]")
-    if args.debug:
-        print("[DEBUG MODE]")
     if args.summarize_only:
         print("[SUMMARIZE ONLY MODE]")
 
     for repo_info in repos:
         try:
-            process_repo(repo_info, dry_run=args.dry_run, debug=args.debug, summarize_only=args.summarize_only)
+            process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)

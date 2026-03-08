@@ -29,4 +29,4 @@ jobs:
           REPOS: ${{ vars.REPOS }}
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-        run: cd src && python auto_fixer.py
+        run: cd src && python auto_fixer.py --silent
