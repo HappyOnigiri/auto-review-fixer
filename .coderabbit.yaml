@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "ja-JP"
+tone_instructions: "PRのサマリーとレビューコメントは日本語で提供してください。"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
+  review_status: true
+  enable_prompt_for_ai_agents: true
+  in_progress_fortune: false
