@@ -205,7 +205,7 @@ def format_review_output(pr_data: dict[str, Any]) -> str:
     new_comments = filter_reviews_after_commit(all_comments, latest_commit_time)
 
     # Display summary
-    output += f"\n[Review Summary]\n"
+    output += "\n[Review Summary]\n"
     output += f"  Total Reviews: {len(all_reviews)}\n"
     output += f"  New Reviews (after latest commit): {len(new_reviews)}\n"
     output += f"  Total Comments: {len(all_comments)}\n"
