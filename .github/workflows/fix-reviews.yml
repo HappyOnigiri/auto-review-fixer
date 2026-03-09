@@ -3,8 +3,8 @@ name: Fix Reviews
 on:
   workflow_dispatch:
   schedule:
-    # 30分ごとに実行
-    - cron: "*/30 * * * *"
+    # 30分ごとに実行。混雑時間を避ける。
+    - cron: "14,44 * * * *"
 
 concurrency:
   group: fix-reviews
