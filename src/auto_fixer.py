@@ -238,14 +238,14 @@ def setup_claude_settings(works_dir: Path) -> None:
     existing: dict[str, Any] = {}
     if settings_file.exists():
         try:
-            parsed = json.loads(settings_file.read_text())
+            parsed = json.loads(settings_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             parsed = {}
         if isinstance(parsed, dict):
             existing = parsed
 
     settings = _deep_merge(existing, settings)
-    settings_file.write_text(json.dumps(settings, indent=2) + "\n")
+    settings_file.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     exclude_file = works_dir / ".git" / "info" / "exclude"
     exclude_file.parent.mkdir(parents=True, exist_ok=True)

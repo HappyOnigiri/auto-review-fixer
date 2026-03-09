@@ -276,6 +276,20 @@ class TestSetupClaudeSettings:
         lines = [line for line in exclude_file.read_text().splitlines() if line == ".claude/settings.local.json"]
         assert len(lines) == 1
 
+    def test_existing_settings_merged(self, tmp_path):
+        works_dir = self._make_works_dir(tmp_path)
+        claude_dir = works_dir / ".claude"
+        claude_dir.mkdir(exist_ok=True)
+        existing = {"customKey": "customValue", "includeCoAuthoredBy": True}
+        (claude_dir / "settings.local.json").write_text(json.dumps(existing), encoding="utf-8")
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REFIX_CLAUDE_SETTINGS", None)
+            auto_fixer.setup_claude_settings(works_dir)
+        settings = json.loads((claude_dir / "settings.local.json").read_text(encoding="utf-8"))
+        assert settings["customKey"] == "customValue"
+        assert settings["includeCoAuthoredBy"] is False
+        assert settings["attribution"] == {"commit": "", "pr": ""}
+
     def test_invalid_env_json_raises(self, tmp_path):
         works_dir = self._make_works_dir(tmp_path)
         with patch.dict(os.environ, {"REFIX_CLAUDE_SETTINGS": "{not-json"}, clear=False):
