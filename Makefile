@@ -47,7 +47,8 @@ repomix:
 	npx --yes repomix@$(REPOMIX_VERSION) -o tmp/repomix/repomix-output.xml --quiet
 
 install-hooks:
-	@HOOKS_DIR=$$(git config --get core.hooksPath 2>/dev/null || git rev-parse --git-path hooks) && \
+	@HOOKS_DIR="$$(git config --path --get core.hooksPath 2>/dev/null || true)"; \
+	if [ -z "$$HOOKS_DIR" ]; then HOOKS_DIR="$$(git rev-parse --git-path hooks)"; fi; \
 	mkdir -p "$$HOOKS_DIR" && \
 	install -m 755 scripts/githooks/pre-commit "$$HOOKS_DIR/pre-commit" && \
 	echo "Git hooks installed."
