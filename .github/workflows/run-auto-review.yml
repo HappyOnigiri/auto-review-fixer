@@ -36,6 +36,6 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           REPOS: ${{ vars.REPOS }}
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          REFIX_TURSO_DATABASE_URL: ${{ secrets.REFIX_TURSO_DATABASE_URL }}
+          REFIX_TURSO_AUTH_TOKEN: ${{ secrets.REFIX_TURSO_AUTH_TOKEN }}
         run: cd src && python auto_fixer.py

@@ -22,18 +22,18 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
         print("""Auto Review Fixer - Makefile targets:
 
   make run
-    Summarize unresolved reviews with Haiku, fix and push with Sonnet,
-    and record results in DB. Shows debug-level logs (full prompts, summaries).
+    Summarize unresolved reviews with Claude, fix and push, and record results in DB.
+    Shows debug-level logs (full prompts, summaries).
 
   make run-silent
     Same as run, but minimize log output.
 
   make dry-run
-    Show commands and dummy summaries without calling Haiku or Sonnet.
+    Show commands and dummy summaries without calling Claude.
 
   make run-summarize-only
-    Run Haiku summarization only and print results.
-    Does not run Sonnet or update DB. (for verification)
+    Run summarization only and print results.
+    Does not run fix model or update DB. (for verification)
 
   make reset
     Reset the processed reviews DB (delete all records).
@@ -45,17 +45,17 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
         print("""Auto Review Fixer - Makefile targets:
 
   make run
-    未処理レビューを Haiku で要約し Sonnet で修正・push して DB に記録。
+    未処理レビューを Claude で要約・修正・push して DB に記録。
     デバッグレベルのログ（要約全文・プロンプト全文）を表示
 
   make run-silent
     本番実行と同じだが、ログを最小限に抑える
 
   make dry-run
-    Haiku/Sonnet を呼ばず、実行コマンドとダミー要約を表示
+    Claude を呼ばず、実行コマンドとダミー要約を表示
 
   make run-summarize-only
-    Haiku による要約のみ実行して結果を表示（Sonnet 実行・DB 更新なし）
+    要約のみ実行して結果を表示（修正モデル実行・DB 更新なし）
 
   make reset
     処理済みレビューの DB をリセット（全件削除）
@@ -407,12 +407,13 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 print(f"Error preparing repository: {e}", file=sys.stderr)
                 continue
 
-        # Summarize reviews with Haiku before passing to Sonnet
+        # Summarize reviews before passing to code-fix model
+        summarize_model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
         print()
         if dry_run:
             # Show what the summarization command would look like
-            print("\n[DRY RUN] Would summarize with Haiku:")
-            print("  command: claude --model haiku -p 'Read the file <temp>.md ...'")
+            print("\n[DRY RUN] Would summarize:")
+            print(f"  command: claude --model {summarize_model} -p 'Read the file <temp>.md ...'")
             print(f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)")
             # Build dummy summaries without calling claude
             summaries: dict[str, str] = {}
@@ -429,12 +430,12 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
 
         if summarize_only and summaries:
-            print("\n[Haiku summaries]")
+            print("\n[summaries]")
             for sid, summary in summaries.items():
                 print(f"  {sid}:\n    {summary}")
 
         if summarize_only:
-            print("\nSummarize-only mode: stopping here (no Sonnet execution, no DB update)")
+            print("\nSummarize-only mode: stopping here (no fix execution, no DB update)")
             return None
 
         # Generate prompt and execute Claude
@@ -444,10 +445,11 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
         prompt_file = works_dir / "_review_prompt.md"
         prompt_file.write_text(prompt, encoding="utf-8")
 
+        fix_model = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
         claude_cmd = [
             "claude",
             "--model",
-            "sonnet",
+            fix_model,
             "--dangerously-skip-permissions",
             "-p",
             "Read the file _review_prompt.md for instructions and follow them. Delete the file when done.",
@@ -461,7 +463,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             prompt_file.unlink(missing_ok=True)
         else:
             print("\nExecuting Claude...")
-            _log_group("Sonnet command details")
+            _log_group("Claude command details")
             print(f"  cwd: {works_dir}")
             print(f"  command: {shlex.join(claude_cmd)}")
             print(f"  prompt file: {prompt_file}")
@@ -605,7 +607,7 @@ def main():
     parser.add_argument(
         "--summarize-only",
         action="store_true",
-        help="Run Haiku summarization only, print results, then exit without running Sonnet or updating DB",
+        help="Run summarization only, print results, then exit without running fix model or updating DB",
     )
 
     args = parser.parse_args()

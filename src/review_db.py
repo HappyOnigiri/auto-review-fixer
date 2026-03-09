@@ -3,7 +3,7 @@
 Review DB - Turso Cloud / local SQLite connection and processed review tracking.
 
 Connection mode is determined by environment variables:
-- Both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN set → Turso Cloud
+- Both REFIX_TURSO_DATABASE_URL and REFIX_TURSO_AUTH_TOKEN set → Turso Cloud
 - Otherwise → local SQLite at data/reviews.db
 """
 
@@ -38,8 +38,8 @@ def get_connection():
     if _conn is not None:
         return _conn
 
-    url = os.environ.get("TURSO_DATABASE_URL", "")
-    auth_token = os.environ.get("TURSO_AUTH_TOKEN", "")
+    url = os.environ.get("REFIX_TURSO_DATABASE_URL", "")
+    auth_token = os.environ.get("REFIX_TURSO_AUTH_TOKEN", "")
 
     db_path = _get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)

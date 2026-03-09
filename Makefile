@@ -14,10 +14,7 @@ help-en:
 setup:
 	pip install -r requirements.txt
 	@if [ ! -f .env ]; then \
-		echo "# Turso Cloud settings (leave unset to use local SQLite)" > .env; \
-		echo "# TURSO_DATABASE_URL=libsql://your-db-name.turso.io" >> .env; \
-		echo "# TURSO_AUTH_TOKEN=your-auth-token" >> .env; \
-		echo ".env template created."; \
+		cp .env.sample .env && echo ".env created from .env.sample"; \
 	else \
 		echo ".env already exists, skipping."; \
 	fi
@@ -38,7 +35,7 @@ reset:
 	cd src && python auto_fixer.py --reset
 
 test:
-	TURSO_DATABASE_URL= TURSO_AUTH_TOKEN= PYTHONPATH=src $(PYTHON) -m pytest -q
+	REFIX_TURSO_DATABASE_URL= REFIX_TURSO_AUTH_TOKEN= PYTHONPATH=src $(PYTHON) -m pytest -q
 
 ci: test
 

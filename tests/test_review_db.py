@@ -11,8 +11,8 @@ import review_db
 @pytest.fixture(autouse=True)
 def isolate_db(tmp_path, monkeypatch):
     """Use a temp SQLite DB and reset connection for each test."""
-    monkeypatch.delenv("TURSO_DATABASE_URL", raising=False)
-    monkeypatch.delenv("TURSO_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("REFIX_TURSO_DATABASE_URL", raising=False)
+    monkeypatch.delenv("REFIX_TURSO_AUTH_TOKEN", raising=False)
     db_file = tmp_path / "reviews_test.db"
     monkeypatch.setenv("REVIEW_DB_PATH", str(db_file))
     review_db.reset_connection()

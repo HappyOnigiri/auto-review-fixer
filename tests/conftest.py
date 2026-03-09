@@ -12,5 +12,5 @@ if str(_src) not in sys.path:
 
 def pytest_configure(config):
     """Ensure Turso env vars are unset during tests to avoid cloud DB connection."""
-    os.environ.pop("TURSO_DATABASE_URL", None)
-    os.environ.pop("TURSO_AUTH_TOKEN", None)
+    os.environ.pop("REFIX_TURSO_DATABASE_URL", None)
+    os.environ.pop("REFIX_TURSO_AUTH_TOKEN", None)

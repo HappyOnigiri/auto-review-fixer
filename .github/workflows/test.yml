@@ -20,6 +20,6 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run tests
         env:
-          TURSO_DATABASE_URL: ""
-          TURSO_AUTH_TOKEN: ""
+          REFIX_TURSO_DATABASE_URL: ""
+          REFIX_TURSO_AUTH_TOKEN: ""
         run: make test
