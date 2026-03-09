@@ -117,7 +117,8 @@ class TestGeneratePrompt:
         )
         assert "<script>" not in prompt
         assert "&lt;script&gt;" in prompt
-        assert "&lt;tags&gt;" in prompt or "&amp;" in prompt
+        assert "&lt;tags&gt;" in prompt
+        assert "&amp;" in prompt
 
     def test_instructions_and_review_data_separated(self):
         """Instructions and review data are in distinct XML blocks."""
