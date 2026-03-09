@@ -7,11 +7,31 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
 from ci_log import _log_endgroup, _log_group
 from constants import SEPARATOR_LEN
+
+
+def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -> None:
+    """Print raw summarizer output in a foldable log group."""
+    _log_group(f"Summarizer raw output (exit {returncode})")
+    token = uuid.uuid4().hex
+    sys.stdout.write(f"::stop-commands::{token}\n")
+    sys.stdout.write("  --- stdout ---\n")
+    out = stdout if stdout else "(empty)"
+    sys.stdout.write(out)
+    if not out.endswith("\n"):
+        sys.stdout.write("\n")
+    sys.stdout.write("  --- stderr ---\n")
+    err = stderr if stderr else "(empty)"
+    sys.stdout.write(err)
+    if not err.endswith("\n"):
+        sys.stdout.write("\n")
+    sys.stdout.write(f"::{token}::\n")
+    _log_endgroup()
 
 
 def summarize_reviews(
@@ -99,14 +119,11 @@ def summarize_reviews(
     finally:
         Path(prompt_path).unlink(missing_ok=True)
 
+    if not silent:
+        _print_raw_summarizer_output(result.stdout, result.stderr, returncode=result.returncode)
+
     if result.returncode != 0:
         print(f"Warning: summarization failed (exit {result.returncode})", file=sys.stderr)
-        if not silent:
-            print("  要約失敗時の出力:", file=sys.stderr)
-            print("  --- stdout ---", file=sys.stderr)
-            print(result.stdout.strip() if result.stdout else "(empty)", file=sys.stderr)
-            print("  --- stderr ---", file=sys.stderr)
-            print(result.stderr.strip() if result.stderr else "(empty)", file=sys.stderr)
         return {}
 
     try:
@@ -149,7 +166,4 @@ def summarize_reviews(
         return summaries
     except Exception as e:
         print(f"Warning: failed to parse summarization response ({e})", file=sys.stderr)
-        if not silent:
-            print("  要約失敗時の出力:", file=sys.stderr)
-            print(f"  ---\n{result.stdout.strip()}\n  ---", file=sys.stderr)
         return {}
