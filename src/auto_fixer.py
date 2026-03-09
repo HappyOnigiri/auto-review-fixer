@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -763,6 +764,8 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         print("No new commits added")
                     # mark_processed の前に、worktreeがクリーンかつ新規commitがremoteに反映済みであることを確認する。
                     # 未pushのcommitや未commitの変更が残っている場合、次のPRのreset --hardで失われるため。
+                    # dirty判定前にprompt_fileを削除して誤検知を防ぐ。
+                    prompt_file.unlink(missing_ok=True)
                     should_mark_processed = True
                     dirty_check = subprocess.run(
                         ["git", "status", "--porcelain"],
@@ -774,9 +777,32 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         print("Warning: git status failed; skipping mark_processed to allow retry.", file=sys.stderr)
                         should_mark_processed = False
                     elif dirty_check.stdout.strip():
-                        print("Warning: worktree has uncommitted changes; skipping mark_processed to allow retry.", file=sys.stderr)
-                        should_mark_processed = False
-                    elif new_commits:
+                        print("Cleaning worktree (uncommitted work files; per assumption: correct work is committed).")
+                        git_path = shutil.which("git")
+                        if git_path is None:
+                            print("Warning: git not found in PATH; skipping cleanup and mark_processed.", file=sys.stderr)
+                            should_mark_processed = False
+                        else:
+                            try:
+                                subprocess.run(
+                                    [git_path, "reset", "--hard", "HEAD"],
+                                    cwd=str(works_dir),
+                                    check=True,
+                                    capture_output=True,
+                                )
+                                subprocess.run(
+                                    [git_path, "clean", "-fd"],
+                                    cwd=str(works_dir),
+                                    check=True,
+                                    capture_output=True,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                print(
+                                    f"Warning: git clean failed; skipping mark_processed to allow retry: {e}",
+                                    file=sys.stderr,
+                                )
+                                should_mark_processed = False
+                    if should_mark_processed and new_commits:
                         unpushed_check = subprocess.run(
                             ["git", "log", f"origin/{branch_name}..HEAD", "--oneline"],
                             cwd=str(works_dir),
