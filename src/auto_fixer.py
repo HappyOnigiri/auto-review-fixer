@@ -217,7 +217,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def setup_claude_settings(works_dir: Path) -> None:
-    """Write .claude/settings.json into works_dir and exclude it via .git/info/exclude."""
+    """Write .claude/settings.local.json into works_dir and exclude it via .git/info/exclude."""
     settings = dict(DEFAULT_REFIX_CLAUDE_SETTINGS)
     raw = os.environ.get("REFIX_CLAUDE_SETTINGS", "")
     if raw:
@@ -233,11 +233,11 @@ def setup_claude_settings(works_dir: Path) -> None:
 
     claude_dir = works_dir / ".claude"
     claude_dir.mkdir(exist_ok=True)
-    (claude_dir / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+    (claude_dir / "settings.local.json").write_text(json.dumps(settings, indent=2) + "\n")
 
     exclude_file = works_dir / ".git" / "info" / "exclude"
     exclude_file.parent.mkdir(parents=True, exist_ok=True)
-    exclude_entry = ".claude/"
+    exclude_entry = ".claude/settings.local.json"
     content = exclude_file.read_text() if exclude_file.exists() else ""
     if exclude_entry not in content.splitlines():
         with exclude_file.open("a") as f:

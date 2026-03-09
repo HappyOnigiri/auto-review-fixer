@@ -236,7 +236,7 @@ class TestSetupClaudeSettings:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("REFIX_CLAUDE_SETTINGS", None)
             auto_fixer.setup_claude_settings(works_dir)
-        settings = json.loads((works_dir / ".claude" / "settings.json").read_text())
+        settings = json.loads((works_dir / ".claude" / "settings.local.json").read_text())
         assert settings["includeCoAuthoredBy"] is False
         assert settings["attribution"] == {"commit": "", "pr": ""}
 
@@ -245,7 +245,7 @@ class TestSetupClaudeSettings:
         override = json.dumps({"includeCoAuthoredBy": True})
         with patch.dict(os.environ, {"REFIX_CLAUDE_SETTINGS": override}, clear=False):
             auto_fixer.setup_claude_settings(works_dir)
-        settings = json.loads((works_dir / ".claude" / "settings.json").read_text())
+        settings = json.loads((works_dir / ".claude" / "settings.local.json").read_text())
         assert settings["includeCoAuthoredBy"] is True
         assert "attribution" in settings
 
@@ -254,7 +254,7 @@ class TestSetupClaudeSettings:
         override = json.dumps({"attribution": {"commit": "custom"}})
         with patch.dict(os.environ, {"REFIX_CLAUDE_SETTINGS": override}, clear=False):
             auto_fixer.setup_claude_settings(works_dir)
-        settings = json.loads((works_dir / ".claude" / "settings.json").read_text())
+        settings = json.loads((works_dir / ".claude" / "settings.local.json").read_text())
         assert settings["attribution"]["commit"] == "custom"
         assert settings["attribution"]["pr"] == ""
 
@@ -264,16 +264,16 @@ class TestSetupClaudeSettings:
             os.environ.pop("REFIX_CLAUDE_SETTINGS", None)
             auto_fixer.setup_claude_settings(works_dir)
         exclude = (works_dir / ".git" / "info" / "exclude").read_text()
-        assert ".claude/" in exclude
+        assert ".claude/settings.local.json" in exclude
 
     def test_exclude_not_duplicated(self, tmp_path):
         works_dir = self._make_works_dir(tmp_path)
         exclude_file = works_dir / ".git" / "info" / "exclude"
-        exclude_file.write_text(".claude/\n")
+        exclude_file.write_text(".claude/settings.local.json\n")
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("REFIX_CLAUDE_SETTINGS", None)
             auto_fixer.setup_claude_settings(works_dir)
-        lines = [line for line in exclude_file.read_text().splitlines() if line == ".claude/"]
+        lines = [line for line in exclude_file.read_text().splitlines() if line == ".claude/settings.local.json"]
         assert len(lines) == 1
 
 
