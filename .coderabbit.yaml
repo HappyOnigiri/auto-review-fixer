@@ -13,7 +13,36 @@ reviews:
   review_status: true
   enable_prompt_for_ai_agents: true
   in_progress_fortune: false
-  
+  path_filters:
+    - "**"
+    - "!.venv/**"
+    - "!.pytest_cache/**"
+    - "!**/__pycache__/**"
+    - "!**/*.py[cod]"
+    - "!data/**"
+    - "!tmp/**"
+    - "!works/**"
+    - "!.claude/**"
+    - "!.env"
+    - "!.env.*"
+    - "!repos.txt"
+
+  tools:
+    ruff:
+      enabled: true
+    actionlint:
+      enabled: true
+    checkmake:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+
   auto_review:
     enabled: true
     auto_incremental_review: true
