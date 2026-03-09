@@ -18,9 +18,9 @@ def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -
     """Print raw summarizer output in a foldable log group."""
     _log_group(f"Summarizer raw output (exit {returncode})")
     print("  --- stdout ---")
-    print(stdout.strip() if stdout else "(empty)")
+    print(stdout if stdout else "(empty)")
     print("  --- stderr ---")
-    print(stderr.strip() if stderr else "(empty)")
+    print(stderr if stderr else "(empty)")
     _log_endgroup()
 
 
