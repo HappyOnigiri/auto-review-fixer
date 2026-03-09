@@ -412,7 +412,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
         print()
         if dry_run:
             # Show what the summarization command would look like
-            print(f"\n[DRY RUN] Would summarize with {summarize_model}:")
+            print("\n[DRY RUN] Would summarize:")
             print(f"  command: claude --model {summarize_model} -p 'Read the file <temp>.md ...'")
             print(f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)")
             # Build dummy summaries without calling claude
@@ -430,13 +430,12 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
 
         if summarize_only and summaries:
-            print(f"\n[{summarize_model} summaries]")
+            print("\n[summaries]")
             for sid, summary in summaries.items():
                 print(f"  {sid}:\n    {summary}")
 
         if summarize_only:
-            fix_model_display = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
-            print(f"\nSummarize-only mode: stopping here (no {fix_model_display} execution, no DB update)")
+            print("\nSummarize-only mode: stopping here (no fix execution, no DB update)")
             return None
 
         # Generate prompt and execute Claude

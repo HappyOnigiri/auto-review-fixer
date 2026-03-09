@@ -73,7 +73,7 @@ def summarize_reviews(
     ]
 
     try:
-        print(f"Summarizing reviews with {model}...")
+        print("Summarizing reviews...")
         print()
         _log_group("Summarizer command details")
         print(f"  command: {shlex.join(summarizer_cmd)}")
