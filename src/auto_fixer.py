@@ -348,7 +348,7 @@ def generate_prompt(
     return f"{instructions}\n\n{review_data}"
 
 
-def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> tuple[str, int, str | None] | None:
+def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> list[tuple[str, int, str | None]]:
     """Process a single repository for PR fixes.
 
     Args:
@@ -371,15 +371,17 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
         prs = fetch_open_prs(repo)
     except Exception as e:
         print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
-        return None
+        return []
 
     if not prs:
         print(f"No open PRs found in {repo}")
-        return None
+        return []
 
     print(f"Found {len(prs)} open PR(s)")
 
-    # Find first PR with unresolved reviews
+    commits_added_to: list[tuple[str, int, str | None]] = []
+    processed_count = 0
+    # Process all PRs with unresolved reviews
     for pr in prs:
         pr_number = pr.get("number")
         print(f"\nChecking PR #{pr_number}: {pr.get('title')}")
@@ -446,6 +448,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
 
         total = len(unresolved_reviews) + len(unresolved_comments)
         print(f"Found {total} unresolved review(s)/comment(s) - processing this PR")
+        processed_count += 1
 
         for i, r in enumerate(unresolved_reviews, 1):
             preview = (r.get("body") or "")[:100].replace("\n", " ")
@@ -496,8 +499,8 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 print(f"  {sid}:\n    {summary}")
 
         if summarize_only:
-            print("\nSummarize-only mode: stopping here (no fix execution, no DB update)")
-            return None
+            print("\nSummarize-only mode: no fix execution, no DB update (continuing to next PR)")
+            continue
 
         # Generate prompt and execute Claude
         prompt = generate_prompt(pr_number, pr_data.get("title", ""), unresolved_reviews, unresolved_comments, summaries, round_number=round_number)
@@ -609,11 +612,12 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             finally:
                 prompt_file.unlink(missing_ok=True)
 
-        # Process only the first PR with unresolved reviews
-        return (repo, pr_number, commits_added) if commits_added else None
+        if commits_added:
+            commits_added_to.append((repo, pr_number, commits_added))
 
-    print(f"No unresolved reviews found in any PR for {repo}")
-    return None
+    if processed_count == 0:
+        print(f"No unresolved reviews found in any PR for {repo}")
+    return commits_added_to
 
 
 def main():
@@ -705,12 +709,12 @@ def main():
     if args.summarize_only:
         print("[SUMMARIZE ONLY MODE]")
 
-    commits_added_to: list[tuple[str, int, str]] = []
+    commits_added_to: list[tuple[str, int, str | None]] = []
     for repo_info in repos:
         try:
-            result = process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
-            if result:
-                commits_added_to.append(result)
+            results = process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
+            if results:
+                commits_added_to.extend(results)
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)
