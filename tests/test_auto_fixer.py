@@ -237,7 +237,7 @@ class TestProcessRepo:
             mock_popen.assert_not_called()
 
     def test_dry_run_no_external_commands(self, tmp_path, capsys):
-        """dry_run=True -> no Haiku/Sonnet, no git clone."""
+        """dry_run=True -> no Claude API calls, no git clone."""
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
@@ -265,8 +265,8 @@ class TestProcessRepo:
             out = capsys.readouterr().out
             assert "[DRY RUN]" in out
 
-    def test_summarize_only_stops_before_sonnet_and_db(self, tmp_path, capsys):
-        """summarize_only=True -> no Sonnet, no mark_processed."""
+    def test_summarize_only_stops_before_fix_and_db(self, tmp_path, capsys):
+        """summarize_only=True -> no fix model, no mark_processed."""
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
