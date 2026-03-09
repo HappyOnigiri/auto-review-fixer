@@ -21,7 +21,7 @@ def summarize_reviews(
 ) -> dict[str, str]:
     """Return {id: summary} for all reviews and inline comments.
 
-    Uses a single claude CLI call with Haiku model.
+    Uses a single claude CLI call. Model: REFIX_MODEL_SUMMARIZE (default: haiku).
     Falls back to empty dict on failure (caller uses original body).
     """
     items = []
@@ -64,18 +64,19 @@ def summarize_reviews(
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
 
-    haiku_cmd = [
+    model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
+    summarizer_cmd = [
         "claude",
-        "--model", "haiku",
+        "--model", model,
         "--dangerously-skip-permissions",
         "-p", f"Read the file {prompt_path} and follow the instructions in it.",
     ]
 
     try:
-        print("Summarizing reviews with Haiku...")
+        print(f"Summarizing reviews with {model}...")
         print()
-        _log_group("Haiku command details")
-        print(f"  command: {shlex.join(haiku_cmd)}")
+        _log_group("Summarizer command details")
+        print(f"  command: {shlex.join(summarizer_cmd)}")
         print(f"  prompt file: {prompt_path}")
         if not silent:
             print("-" * SEPARATOR_LEN)
@@ -84,7 +85,7 @@ def summarize_reviews(
         _log_endgroup()
         try:
             result = subprocess.run(
-                haiku_cmd,
+                summarizer_cmd,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

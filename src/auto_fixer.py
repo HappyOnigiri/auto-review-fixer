@@ -407,12 +407,13 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 print(f"Error preparing repository: {e}", file=sys.stderr)
                 continue
 
-        # Summarize reviews with Haiku before passing to Sonnet
+        # Summarize reviews before passing to code-fix model
+        summarize_model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
         print()
         if dry_run:
             # Show what the summarization command would look like
-            print("\n[DRY RUN] Would summarize with Haiku:")
-            print("  command: claude --model haiku -p 'Read the file <temp>.md ...'")
+            print(f"\n[DRY RUN] Would summarize with {summarize_model}:")
+            print(f"  command: claude --model {summarize_model} -p 'Read the file <temp>.md ...'")
             print(f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)")
             # Build dummy summaries without calling claude
             summaries: dict[str, str] = {}
@@ -429,7 +430,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
 
         if summarize_only and summaries:
-            print("\n[Haiku summaries]")
+            print(f"\n[{summarize_model} summaries]")
             for sid, summary in summaries.items():
                 print(f"  {sid}:\n    {summary}")
 
@@ -444,10 +445,11 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
         prompt_file = works_dir / "_review_prompt.md"
         prompt_file.write_text(prompt, encoding="utf-8")
 
+        fix_model = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
         claude_cmd = [
             "claude",
             "--model",
-            "sonnet",
+            fix_model,
             "--dangerously-skip-permissions",
             "-p",
             "Read the file _review_prompt.md for instructions and follow them. Delete the file when done.",
@@ -461,7 +463,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             prompt_file.unlink(missing_ok=True)
         else:
             print("\nExecuting Claude...")
-            _log_group("Sonnet command details")
+            _log_group("Claude command details")
             print(f"  cwd: {works_dir}")
             print(f"  command: {shlex.join(claude_cmd)}")
             print(f"  prompt file: {prompt_file}")
