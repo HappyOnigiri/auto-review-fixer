@@ -649,7 +649,15 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         text=True,
                         env=claude_env,
                     )
-                    record_pr_attempt(repo, pr_number)
+                    try:
+                        record_pr_attempt(repo, pr_number)
+                    except Exception:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                        raise
                     stdout, stderr = process.communicate()
                     if process.returncode != 0:
                         raise subprocess.CalledProcessError(
