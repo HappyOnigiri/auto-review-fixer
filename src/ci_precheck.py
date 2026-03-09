@@ -105,7 +105,7 @@ def parse_repos_from_env(repos_env: str) -> list[str]:
             continue
         repo_spec = entry.split(":", 2)[0]
         owner_name = repo_spec.split("/", 1)
-        if len(owner_name) != 2 or not owner_name[0] or not owner_name[1]:
+        if repo_spec.count("/") != 1 or not owner_name[0] or not owner_name[1]:
             print(
                 f"Warning: skipping invalid repo entry '{repo_spec}' (expected owner/name)",
                 file=sys.stderr,
