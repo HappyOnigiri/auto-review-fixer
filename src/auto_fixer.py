@@ -369,6 +369,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
     commits_added_to: list[tuple[str, int, str | None]] = []
     processed_count = 0
     fetch_failed = False
+    pr_fetch_failed = False
 
     # Fetch open PRs
     try:
@@ -393,6 +394,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 pr_data = fetch_pr_details(repo, pr_number)
             except Exception as e:
                 print(f"Error fetching PR details: {e}", file=sys.stderr)
+                pr_fetch_failed = True
                 continue
 
             # Get branch name
@@ -420,9 +422,15 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             try:
                 review_comments = fetch_pr_review_comments(repo, pr_number)
             except Exception as e:
-                print(f"Warning: could not fetch inline comments: {e}", file=sys.stderr)
-                review_comments = []
-            thread_map = fetch_review_threads(repo, pr_number)
+                print(f"Error: could not fetch inline comments: {e}", file=sys.stderr)
+                pr_fetch_failed = True
+                continue
+            try:
+                thread_map = fetch_review_threads(repo, pr_number)
+            except Exception as e:
+                print(f"Error: could not fetch review threads: {e}", file=sys.stderr)
+                pr_fetch_failed = True
+                continue
             unresolved_thread_ids = set(thread_map.keys())
             unresolved_comments = []
             for c in review_comments:
@@ -593,25 +601,26 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         mark_processed(review["id"], repo, pr_number,
                                        body=review.get("body", ""),
                                        summary=summaries.get(review["id"], ""))
-                    for comment in unresolved_comments:
-                        rid = f"discussion_r{comment['id']}"
-                        mark_processed(rid, repo, pr_number,
-                                       body=comment.get("body", ""),
-                                       summary=summaries.get(rid, ""))
-                    # Resolve inline comment threads on GitHub
+                    # Resolve inline comment threads on GitHub and mark processed only on success
                     if unresolved_comments:
                         resolved = 0
                         for comment in unresolved_comments:
+                            rid = f"discussion_r{comment['id']}"
                             thread_id = thread_map.get(comment["id"])
                             if thread_id and resolve_review_thread(thread_id):
                                 resolved += 1
+                                mark_processed(rid, repo, pr_number,
+                                               body=comment.get("body", ""),
+                                               summary=summaries.get(rid, ""))
                         print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
                 except subprocess.CalledProcessError as e:
                     print(f"Error executing Claude: {e}", file=sys.stderr)
                     if e.output:
-                        print(f"  stdout: {e.output.decode(errors='replace').strip()}", file=sys.stderr)
+                        output_str = e.output.decode(errors='replace') if isinstance(e.output, (bytes, bytearray)) else e.output
+                        print(f"  stdout: {output_str.strip()}", file=sys.stderr)
                     if e.stderr:
-                        print(f"  stderr: {e.stderr.decode(errors='replace').strip()}", file=sys.stderr)
+                        stderr_str = e.stderr.decode(errors='replace') if isinstance(e.stderr, (bytes, bytearray)) else e.stderr
+                        print(f"  stderr: {stderr_str.strip()}", file=sys.stderr)
                 finally:
                     prompt_file.unlink(missing_ok=True)
 
@@ -621,7 +630,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             print(f"Error processing PR #{pr.get('number', '?')} (id={pr.get('id', '?')}): {e}", file=sys.stderr)
             continue
 
-    if processed_count == 0 and not fetch_failed:
+    if processed_count == 0 and not fetch_failed and not pr_fetch_failed:
         print(f"No unresolved reviews found in any PR for {repo}")
     return commits_added_to
 
