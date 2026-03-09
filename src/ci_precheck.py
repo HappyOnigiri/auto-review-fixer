@@ -269,6 +269,17 @@ def _write_github_output(key: str, value: str) -> None:
         f.write(f"{key}={value}\n")
 
 
+def _write_github_output_target_prs(target_prs: list[str]) -> None:
+    """Write target_prs to GITHUB_OUTPUT (multiline format)."""
+    output_file = os.environ.get("GITHUB_OUTPUT", "").strip()
+    if not output_file:
+        return
+    with open(output_file, "a", encoding="utf-8") as f:
+        f.write("target_prs<<EOF\n")
+        f.write("\n".join(target_prs))
+        f.write("\nEOF\n")
+
+
 def main() -> int:
     repos_env = os.environ.get("REPOS")
     if repos_env is None:
@@ -285,6 +296,7 @@ def main() -> int:
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
         _write_github_output("should_run", "true")
+        _write_github_output_target_prs([])
         return 0
 
     if not repos:
@@ -292,6 +304,7 @@ def main() -> int:
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
         _write_github_output("should_run", "false")
+        _write_github_output_target_prs([])
         return 0
 
     print(f"Precheck repositories: {len(repos)}")
@@ -305,6 +318,7 @@ def main() -> int:
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
         _write_github_output("should_run", "true")
+        _write_github_output_target_prs([])
         return 0
 
     print(f"has_open_pr={str(result.has_open_pr).lower()}")
@@ -317,6 +331,7 @@ def main() -> int:
     _write_github_output("has_open_pr", str(result.has_open_pr).lower())
     _write_github_output("has_review_target", str(result.has_review_target).lower())
     _write_github_output("should_run", str(result.should_run).lower())
+    _write_github_output_target_prs(result.target_prs)
     return 0
 
 

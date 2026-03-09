@@ -31,6 +31,12 @@ jobs:
           echo "has_open_pr=${{ steps.precheck.outputs.has_open_pr }}"
           echo "has_review_target=${{ steps.precheck.outputs.has_review_target }}"
 
+      - name: Display detected PRs
+        if: steps.precheck.outputs.should_run == 'true'
+        run: |
+          echo "Detected review targets:"
+          echo '${{ steps.precheck.outputs.target_prs }}' | sed 's/^/  - /'
+
       - uses: actions/setup-python@v5
         if: steps.precheck.outputs.should_run == 'true'
         with:
