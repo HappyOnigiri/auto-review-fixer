@@ -203,7 +203,7 @@ class TestLoadReposFromEnv:
             assert repos[1]["user_name"] == "name"
             assert repos[1]["user_email"] == "email"
 
-    def test_wildcard_owner_expands_all_repositories(self):
+    def test_owner_slash_star_expands_all_repositories(self):
         gh_result = Mock(returncode=0, stdout='[{"nameWithOwner":"owner/r1"},{"nameWithOwner":"owner/r2"}]', stderr="")
         with (
             patch.dict(
