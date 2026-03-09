@@ -205,12 +205,23 @@ def prepare_repository(
     return works_dir
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge override into a copy of base, preserving nested keys."""
+    result = dict(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def setup_claude_settings(works_dir: Path) -> None:
     """Write .claude/settings.json into works_dir and exclude it via .git/info/exclude."""
     settings = dict(DEFAULT_REFIX_CLAUDE_SETTINGS)
     raw = os.environ.get("REFIX_CLAUDE_SETTINGS", "")
     if raw:
-        settings.update(json.loads(raw))
+        settings = _deep_merge(settings, json.loads(raw))
 
     claude_dir = works_dir / ".claude"
     claude_dir.mkdir(exist_ok=True)

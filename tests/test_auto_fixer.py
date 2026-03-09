@@ -250,6 +250,16 @@ class TestSetupClaudeSettings:
         assert settings["includeCoAuthoredBy"] is True
         assert "attribution" in settings
 
+    def test_env_override_deep_merges_nested(self, tmp_path):
+        import json as _json
+        works_dir = self._make_works_dir(tmp_path)
+        override = _json.dumps({"attribution": {"commit": "custom"}})
+        with patch.dict(os.environ, {"REFIX_CLAUDE_SETTINGS": override}, clear=False):
+            auto_fixer.setup_claude_settings(works_dir)
+        settings = json.loads((works_dir / ".claude" / "settings.json").read_text())
+        assert settings["attribution"]["commit"] == "custom"
+        assert settings["attribution"]["pr"] == ""
+
     def test_exclude_entry_added(self, tmp_path):
         works_dir = self._make_works_dir(tmp_path)
         with patch.dict(os.environ, {}, clear=False):
@@ -265,7 +275,7 @@ class TestSetupClaudeSettings:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("REFIX_CLAUDE_SETTINGS", None)
             auto_fixer.setup_claude_settings(works_dir)
-        lines = [l for l in exclude_file.read_text().splitlines() if l == ".claude/"]
+        lines = [line for line in exclude_file.read_text().splitlines() if line == ".claude/"]
         assert len(lines) == 1
 
 
