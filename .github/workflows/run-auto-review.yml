@@ -1,20 +1,17 @@
-name: Fix Reviews
+name: Run auto review
 
 on:
   workflow_dispatch:
-  schedule:
-    # 30分ごとに実行
-    - cron: "*/30 * * * *"
 
 concurrency:
-  group: fix-reviews
+  group: run-auto-review
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  fix-reviews:
+  run-auto-review:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
