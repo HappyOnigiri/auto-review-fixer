@@ -5,12 +5,18 @@ Fetches open PRs, gets unresolved reviews, and runs Claude to fix them.
 """
 
 import argparse
+import json
 import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+DEFAULT_REFIX_CLAUDE_SETTINGS: dict[str, Any] = {
+    "attribution": {"commit": "", "pr": ""},
+    "includeCoAuthoredBy": False,
+}
 
 # --list-commands は DB 等の依存なしで表示するため、先に処理して exit
 if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
@@ -194,7 +200,62 @@ def prepare_repository(
         check=True,
     )
 
+    setup_claude_settings(works_dir)
+
     return works_dir
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge override into a copy of base, preserving nested keys."""
+    result = dict(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def setup_claude_settings(works_dir: Path) -> None:
+    """Write .claude/settings.local.json into works_dir and exclude it via .git/info/exclude."""
+    settings = dict(DEFAULT_REFIX_CLAUDE_SETTINGS)
+    raw = os.environ.get("REFIX_CLAUDE_SETTINGS", "")
+    if raw:
+        try:
+            override = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError("REFIX_CLAUDE_SETTINGS が無効な JSON です") from e
+        if not isinstance(override, dict):
+            raise ValueError(
+                f"REFIX_CLAUDE_SETTINGS は JSON オブジェクトでなければなりません (実際: {type(override).__name__})"
+            )
+        settings = _deep_merge(settings, override)
+
+    claude_dir = works_dir / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+    settings_file = claude_dir / "settings.local.json"
+
+    existing: dict[str, Any] = {}
+    if settings_file.exists():
+        try:
+            parsed = json.loads(settings_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            existing = parsed
+
+    settings = _deep_merge(existing, settings)
+    settings_file.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    exclude_file = works_dir / ".git" / "info" / "exclude"
+    exclude_file.parent.mkdir(parents=True, exist_ok=True)
+    exclude_entry = ".claude/settings.local.json"
+    content = exclude_file.read_text(encoding="utf-8") if exclude_file.exists() else ""
+    if exclude_entry not in content.splitlines():
+        with exclude_file.open("a") as f:
+            if content and not content.endswith("\n"):
+                f.write("\n")
+            f.write(exclude_entry + "\n")
 
 
 def _xml_escape(text: str) -> str:
