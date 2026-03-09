@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -202,6 +202,74 @@ class TestLoadReposFromEnv:
             assert repos[1]["repo"] == "c/d"
             assert repos[1]["user_name"] == "name"
             assert repos[1]["user_email"] == "email"
+
+    def test_wildcard_owner_expands_all_repositories(self):
+        gh_result = Mock(returncode=0, stdout='[{"nameWithOwner":"owner/r1"},{"nameWithOwner":"owner/r2"}]', stderr="")
+        with (
+            patch.dict(
+                os.environ,
+                {"REPOS": "owner/*:User Name:user@example.com"},
+                clear=False,
+            ),
+            patch("auto_fixer.subprocess.run", return_value=gh_result) as mock_run,
+        ):
+            repos = auto_fixer.load_repos_from_env()
+
+        assert repos == [
+            {"repo": "owner/r1", "user_name": "User Name", "user_email": "user@example.com"},
+            {"repo": "owner/r2", "user_name": "User Name", "user_email": "user@example.com"},
+        ]
+        mock_run.assert_called_once_with(
+            [
+                "gh",
+                "repo",
+                "list",
+                "owner",
+                "--limit",
+                "1000",
+                "--json",
+                "nameWithOwner",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
+
+    def test_invalid_partial_wildcard_skipped(self):
+        with (
+            patch.dict(os.environ, {"REPOS": "owner/re*"}, clear=False),
+            patch("auto_fixer.subprocess.run") as mock_run,
+        ):
+            repos = auto_fixer.load_repos_from_env()
+
+        assert repos == []
+        mock_run.assert_not_called()
+
+    def test_wildcard_expansion_error_raises(self):
+        gh_result = Mock(returncode=1, stdout="", stderr="boom")
+        with (
+            patch.dict(os.environ, {"REPOS": "owner/*"}, clear=False),
+            patch("auto_fixer.subprocess.run", return_value=gh_result),
+        ):
+            with pytest.raises(RuntimeError):
+                auto_fixer.load_repos_from_env()
+
+
+class TestMain:
+    def test_repos_env_empty_exits_with_error(self, capsys):
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py"]),
+            patch.dict(os.environ, {"REPOS": "   "}, clear=False),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.init_db"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "REPOS is set but empty" in err
 
 
 class TestLoadReposFromFile:
