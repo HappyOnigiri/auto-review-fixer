@@ -47,6 +47,57 @@ class TestSummarizeReviews:
             )
             assert result == {"a": "b"}
 
+    def test_success_logs_raw_output_in_foldable_group(self, capsys):
+        """Successful summarization also prints raw output in group logs."""
+        fake_stdout = '[{"id": "r1", "summary": "s1"}]'
+        with (
+            patch("summarizer.subprocess.run") as mock_run,
+            patch("summarizer._log_group") as mock_group,
+            patch("summarizer._log_endgroup") as mock_endgroup,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr="raw-stderr",
+            )
+            result = summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+                silent=False,
+            )
+
+        assert result == {"r1": "s1"}
+        mock_group.assert_any_call("Summarizer raw output (exit 0)")
+        mock_endgroup.assert_called()
+        out = capsys.readouterr().out
+        assert "--- stdout ---" in out
+        assert fake_stdout in out
+        assert "--- stderr ---" in out
+        assert "raw-stderr" in out
+
+    def test_success_silent_does_not_log_raw_output(self):
+        """Silent mode suppresses raw output logs even on success."""
+        fake_stdout = '[{"id": "r1", "summary": "s1"}]'
+        with (
+            patch("summarizer.subprocess.run") as mock_run,
+            patch("summarizer._log_group") as mock_group,
+            patch("summarizer._log_endgroup") as mock_endgroup,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr="raw-stderr",
+            )
+            result = summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+                silent=True,
+            )
+
+        assert result == {"r1": "s1"}
+        mock_group.assert_called_once_with("Summarizer command details")
+        mock_endgroup.assert_called_once()
+
     def test_returncode_nonzero_returns_empty_dict(self):
         """Failed subprocess returns {}."""
         with patch("summarizer.subprocess.run") as mock_run:
