@@ -47,7 +47,6 @@ class TestCheckReviewTargets:
     def test_detects_open_pr_without_review_target(self):
         with (
             patch("ci_precheck._list_open_pr_numbers", return_value=[1]),
-            patch("ci_precheck._pr_has_coderabbit_review", return_value=False),
             patch("ci_precheck._pr_has_unresolved_coderabbit_thread", return_value=False),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
@@ -60,8 +59,7 @@ class TestCheckReviewTargets:
     def test_detects_review_target(self):
         with (
             patch("ci_precheck._list_open_pr_numbers", return_value=[1, 2]),
-            patch("ci_precheck._pr_has_coderabbit_review", side_effect=[False, True]),
-            patch("ci_precheck._pr_has_unresolved_coderabbit_thread", return_value=False),
+            patch("ci_precheck._pr_has_unresolved_coderabbit_thread", side_effect=[False, True]),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
 

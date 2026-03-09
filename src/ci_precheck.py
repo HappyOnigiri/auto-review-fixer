@@ -162,37 +162,6 @@ def _list_open_pr_numbers(repo: str, limit: int = 1000) -> list[int]:
     return numbers
 
 
-def _pr_has_coderabbit_review(repo: str, pr_number: int) -> bool:
-    data = _run_gh_json(
-        [
-            "gh",
-            "pr",
-            "view",
-            str(pr_number),
-            "--repo",
-            repo,
-            "--json",
-            "reviews",
-        ]
-    )
-    if not isinstance(data, dict):
-        return False
-    reviews = data.get("reviews", [])
-    if not isinstance(reviews, list):
-        return False
-
-    for review in reviews:
-        if not isinstance(review, dict):
-            continue
-        if not review.get("id"):
-            continue
-        author = review.get("author", {})
-        login = author.get("login") if isinstance(author, dict) else None
-        if isinstance(login, str) and login.startswith(CODERABBIT_BOT_LOGIN_PREFIX):
-            return True
-    return False
-
-
 def _pr_has_unresolved_coderabbit_thread(repo: str, pr_number: int) -> bool:
     owner, name = repo.split("/", 1)
     query = """
@@ -282,10 +251,7 @@ def check_review_targets(repos: list[str]) -> PrecheckResult:
             continue
         has_open_pr = True
         for pr_number in pr_numbers:
-            if _pr_has_coderabbit_review(repo, pr_number) or _pr_has_unresolved_coderabbit_thread(
-                repo,
-                pr_number,
-            ):
+            if _pr_has_unresolved_coderabbit_thread(repo, pr_number):
                 target_prs.append(f"{repo}#{pr_number}")
 
     return PrecheckResult(
