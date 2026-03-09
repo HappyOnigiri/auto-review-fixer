@@ -28,19 +28,105 @@ reviews:
     - "!repos.txt"
 
   tools:
-    ruff:
-      enabled: true
     actionlint:
       enabled: true
+    ast-grep:
+      enabled: false
+    biome:
+      enabled: false
+    blinter:
+      enabled: false
+    brakeman:
+      enabled: false
+    buf:
+      enabled: false
     checkmake:
       enabled: true
-    yamllint:
+    checkov:
+      enabled: false
+    circleci:
+      enabled: false
+    clang:
+      enabled: false
+    clippy:
+      enabled: false
+    cppcheck:
+      enabled: false
+    detekt:
+      enabled: false
+    dotenvLint:
+      enabled: false
+    emberTemplateLint:
+      enabled: false
+    eslint:
+      enabled: false
+    flake8:
+      enabled: false
+    fortitudeLint:
+      enabled: false
+    github-checks:
+      enabled: false
+    gitleaks:
       enabled: true
+    golangci-lint:
+      enabled: false
+    hadolint:
+      enabled: false
+    htmlhint:
+      enabled: false
+    languagetool:
+      enabled: false
+    luacheck:
+      enabled: false
     markdownlint:
       enabled: true
+    opengrep:
+      enabled: false
+    osvScanner:
+      enabled: false
+    oxc:
+      enabled: false
+    phpcs:
+      enabled: false
+    phpmd:
+      enabled: false
+    phpstan:
+      enabled: false
+    pmd:
+      enabled: false
+    prismaLint:
+      enabled: false
+    psscriptanalyzer:
+      enabled: false
+    pylint:
+      enabled: false
+    regal:
+      enabled: false
+    rubocop:
+      enabled: false
+    ruff:
+      enabled: true
+    semgrep:
+      enabled: false
     shellcheck:
       enabled: true
-    gitleaks:
+    shopifyThemeCheck:
+      enabled: false
+    smartyLint:
+      enabled: false
+    sqlfluff:
+      enabled: false
+    stylelint:
+      enabled: false
+    swiftlint:
+      enabled: false
+    tflint:
+      enabled: false
+    trivy:
+      enabled: false
+    trufflehog:
+      enabled: false
+    yamllint:
       enabled: true
 
   auto_review:
