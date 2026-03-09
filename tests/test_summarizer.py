@@ -75,6 +75,34 @@ class TestSummarizeReviews:
         assert "--- stderr ---" in out
         assert "raw-stderr" in out
 
+    def test_raw_output_preserves_leading_trailing_whitespace(self, capsys):
+        """Raw output preserves leading/trailing whitespace without stripping."""
+        fake_stdout = '\n  [{"id": "r1", "summary": "s1"}]  \n'
+        fake_stderr = "\nerr\n"
+        with (
+            patch("summarizer.subprocess.run") as mock_run,
+            patch("summarizer._log_group"),
+            patch("summarizer._log_endgroup"),
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr=fake_stderr,
+            )
+            summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+                silent=False,
+            )
+        out = capsys.readouterr().out
+        stdout_marker = "  --- stdout ---\n"
+        stderr_marker = "  --- stderr ---\n"
+        idx_stdout = out.index(stdout_marker) + len(stdout_marker)
+        idx_stderr = out.index(stderr_marker)
+        assert out[idx_stdout:idx_stderr] == fake_stdout
+        idx_stderr_content = idx_stderr + len(stderr_marker)
+        assert out[idx_stderr_content : idx_stderr_content + len(fake_stderr)] == fake_stderr
+
     def test_success_silent_does_not_log_raw_output(self):
         """Silent mode suppresses raw output logs even on success."""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'
