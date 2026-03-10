@@ -47,7 +47,9 @@ def summarize_reviews(
     """Return {id: summary} for all reviews and inline comments.
 
     Uses a single claude CLI call. Model: REFIX_MODEL_SUMMARIZE (default: haiku).
-    Falls back to empty dict on failure (caller uses original body).
+    Raises ClaudeUsageLimitError on usage limit detection.
+    Raises ClaudeCommandFailedError on non-zero exit code or subprocess error.
+    Falls back to empty dict only on JSON parse failure.
     """
     items = []
     for r in reviews:
