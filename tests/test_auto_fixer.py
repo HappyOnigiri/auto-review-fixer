@@ -571,6 +571,16 @@ class TestProcessRepo:
         process_mock = Mock(returncode=0)
         process_mock.communicate.return_value = ("ok", "")
 
+        captured_prompts: list[str] = []
+
+        def popen_side_effect(cmd, **kwargs):
+            cwd = kwargs.get("cwd", "")
+            if cwd:
+                pf = Path(cwd) / "_review_prompt.md"
+                if pf.exists():
+                    captured_prompts.append(pf.read_text())
+            return process_mock
+
         with (
             patch("auto_fixer.fetch_open_prs", return_value=prs),
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
@@ -585,7 +595,7 @@ class TestProcessRepo:
                 return_value={"r1": "review summary", "discussion_r10": "comment summary"},
             ),
             patch("auto_fixer.subprocess.run", side_effect=_run_side_effect),
-            patch("auto_fixer.subprocess.Popen", return_value=process_mock) as mock_popen,
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect) as mock_popen,
             patch("auto_fixer.record_pr_attempt") as mock_record_attempt,
             patch("auto_fixer.mark_processed") as mock_mark_processed,
             patch("auto_fixer.resolve_review_thread", return_value=True) as mock_resolve_thread,
@@ -593,6 +603,9 @@ class TestProcessRepo:
             auto_fixer.process_repo({"repo": "owner/repo"})
 
         assert mock_popen.call_count == 1
+        assert len(captured_prompts) == 1
+        assert "review summary" in captured_prompts[0]
+        assert "comment summary" in captured_prompts[0]
         mock_record_attempt.assert_called_once_with("owner/repo", 1)
         mock_resolve_thread.assert_called_once_with("thread-node-id")
         mock_mark_processed.assert_has_calls(
