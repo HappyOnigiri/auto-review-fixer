@@ -22,6 +22,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           REPOS: ${{ vars.REPOS }}
+          REFIX_TURSO_DATABASE_URL: ${{ secrets.REFIX_TURSO_DATABASE_URL }}
+          REFIX_TURSO_AUTH_TOKEN: ${{ secrets.REFIX_TURSO_AUTH_TOKEN }}
         run: python src/ci_precheck.py
 
       - name: Early exit when no review targets
