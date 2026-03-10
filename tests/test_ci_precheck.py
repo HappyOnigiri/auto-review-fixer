@@ -287,6 +287,45 @@ class TestGetPrStatusAndIds:
         assert "discussion_r1" in ids
         assert "discussion_r2" in ids
 
+    def test_both_review_and_inline_ids_collected(self):
+        """Both PRR_* review IDs and unresolved discussion_r* IDs should all be returned."""
+        graphql_response = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviews": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {"id": "PRR_xxx", "author": {"login": "coderabbitai[bot]"}},
+                            ],
+                        },
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {
+                                    "isResolved": False,
+                                    "comments": {
+                                        "pageInfo": {"hasNextPage": False},
+                                        "nodes": [
+                                            {
+                                                "databaseId": 12345,
+                                                "author": {"login": "coderabbitai[bot]"},
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    }
+                }
+            }
+        }
+        with patch("ci_precheck._run_gh_json", return_value=graphql_response):
+            status, ids = ci_precheck._get_pr_status_and_ids("owner/repo", 1)
+        assert status == "target"
+        assert "PRR_xxx" in ids
+        assert "discussion_r12345" in ids
+
 
 class TestFilterTargetsByDb:
     """Tests for DB verification filtering."""

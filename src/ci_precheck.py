@@ -253,17 +253,28 @@ query($threadId: ID!, $commentAfter: String) {
         return cmd
 
     def _fetch_all_thread_comments(thread_id: str) -> list[dict[str, Any]]:
-        """Fetch all comments for a thread (handles pagination when >100 comments)."""
+        """Fetch all comments for a thread (handles pagination when >100 comments).
+
+        Raises:
+            RuntimeError: If the GraphQL response payload is malformed or missing expected fields.
+        """
         all_comments: list[dict[str, Any]] = []
         comment_after: str | None = None
         while True:
-            data = _run_gh_json(_build_thread_comments_cmd(thread_id, comment_after))
+            cmd = _build_thread_comments_cmd(thread_id, comment_after)
+            data = _run_gh_json(cmd)
             node_data = data.get("data", {}).get("node", {})
             if not isinstance(node_data, dict):
-                break
+                raise RuntimeError(
+                    f"Unexpected thread_comments payload for thread {thread_id}: "
+                    f"node is not a dict (type={type(node_data).__name__}), cmd={cmd!r}"
+                )
             comments_data = node_data.get("comments", {})
             if not isinstance(comments_data, dict):
-                break
+                raise RuntimeError(
+                    f"Unexpected thread_comments payload for thread {thread_id}: "
+                    f"comments is not a dict (type={type(comments_data).__name__}), cmd={cmd!r}"
+                )
             nodes = comments_data.get("nodes", [])
             if isinstance(nodes, list):
                 all_comments.extend(nodes)
@@ -272,7 +283,10 @@ query($threadId: ID!, $commentAfter: String) {
                 break
             comment_after = page_info.get("endCursor")
             if not comment_after:
-                break
+                raise RuntimeError(
+                    f"Unexpected thread_comments payload for thread {thread_id}: "
+                    f"hasNextPage=true but endCursor is missing, cmd={cmd!r}"
+                )
         return all_comments
 
     # Phase 1: Check review-level CodeRabbit reviews (paginated)
@@ -282,7 +296,10 @@ query($threadId: ID!, $commentAfter: String) {
         data = _run_gh_json(_build_cmd(reviews_query, after_cursor))
         pr_data = data.get("data", {}).get("repository", {}).get("pullRequest", {})
         if not isinstance(pr_data, dict):
-            return ("skip:no_coderabbit", [])
+            raise RuntimeError(
+                f"Unexpected Phase 1 payload for {repo}#{pr_number}: "
+                f"pullRequest is not a dict (type={type(pr_data).__name__})"
+            )
         reviews_data = pr_data.get("reviews", {})
         if isinstance(reviews_data, dict):
             review_nodes = reviews_data.get("nodes", [])
@@ -299,7 +316,10 @@ query($threadId: ID!, $commentAfter: String) {
             if not after_cursor:
                 break
         else:
-            break
+            raise RuntimeError(
+                f"Unexpected Phase 1 payload for {repo}#{pr_number}: "
+                f"reviews is not a dict (type={type(reviews_data).__name__})"
+            )
 
     # Phase 2: Check review threads (paginated)
     has_any_coderabbit = bool(ids)
