@@ -137,15 +137,14 @@ def summarize_reviews(
     if not silent:
         _print_raw_summarizer_output(result.stdout, result.stderr, returncode=result.returncode)
 
-    if is_claude_usage_limit_error(result.stdout, result.stderr):
-        raise ClaudeUsageLimitError(
-            phase="summarization",
-            returncode=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
-
     if result.returncode != 0:
+        if is_claude_usage_limit_error(result.stdout, result.stderr):
+            raise ClaudeUsageLimitError(
+                phase="summarization",
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
         raise ClaudeCommandFailedError(
             phase="summarization",
             returncode=result.returncode,

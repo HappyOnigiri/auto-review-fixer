@@ -499,14 +499,14 @@ def _run_claude_prompt(
             env=claude_env,
         )
         stdout, stderr = process.communicate()
-        if is_claude_usage_limit_error(stdout, stderr):
-            raise ClaudeUsageLimitError(
-                phase=phase_label,
-                returncode=process.returncode,
-                stdout=stdout,
-                stderr=stderr,
-            )
         if process.returncode != 0:
+            if is_claude_usage_limit_error(stdout, stderr):
+                raise ClaudeUsageLimitError(
+                    phase=phase_label,
+                    returncode=process.returncode,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
             raise ClaudeCommandFailedError(
                 phase=phase_label,
                 returncode=process.returncode,

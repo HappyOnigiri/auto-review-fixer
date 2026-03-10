@@ -718,3 +718,31 @@ class TestRunClaudePrompt:
                     silent=True,
                     phase_label="review-fix",
                 )
+
+    def test_success_output_with_limit_phrase_does_not_raise(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = (
+            "markers include: claude usage limit reached",
+            "",
+        )
+        process.returncode = 0
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                side_effect=[
+                    Mock(returncode=0, stdout="abc123\n", stderr=""),
+                    Mock(returncode=0, stdout="", stderr=""),
+                ],
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            result = auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                model="sonnet",
+                silent=True,
+                phase_label="review-fix",
+            )
+            assert result == ""

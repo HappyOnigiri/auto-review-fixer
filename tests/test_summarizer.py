@@ -155,6 +155,24 @@ class TestSummarizeReviews:
                     [],
                 )
 
+    def test_usage_limit_phrase_in_success_output_does_not_raise(self):
+        """Success output containing marker phrase should not be misclassified."""
+        fake_stdout = (
+            "note: claude usage limit reached is one of known markers\n"
+            '[{"id": "r1", "summary": "ok"}]'
+        )
+        with patch("summarizer.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr="",
+            )
+            result = summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+            )
+            assert result == {"r1": "ok"}
+
     def test_failure_logs_raw_output_in_foldable_group(self, capsys):
         """Failed summarization (returncode=1) prints raw output then raises."""
         fake_stdout = "some partial output"
