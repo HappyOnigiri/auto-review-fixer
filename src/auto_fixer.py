@@ -516,7 +516,7 @@ def _run_claude_prompt(
         print(f"Claude execution completed ({phase_label})")
 
         new_commits_result = subprocess.run(
-            ["git", "log", "--oneline", f"{head_before}..HEAD"],
+            ["git", "log", "--oneline", "--first-parent", f"{head_before}..HEAD"],
             cwd=str(works_dir),
             capture_output=True,
             text=True,
@@ -525,7 +525,7 @@ def _run_claude_prompt(
         if new_commits_result.returncode != 0:
             raise subprocess.CalledProcessError(
                 new_commits_result.returncode,
-                ["git", "log", "--oneline", f"{head_before}..HEAD"],
+                ["git", "log", "--oneline", "--first-parent", f"{head_before}..HEAD"],
                 output=new_commits_result.stdout,
                 stderr=new_commits_result.stderr,
             )
