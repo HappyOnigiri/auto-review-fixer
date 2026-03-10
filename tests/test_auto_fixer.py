@@ -809,6 +809,8 @@ class TestProcessRepo:
             patch("auto_fixer._set_pr_running_label") as mock_set_running,
             patch("auto_fixer._update_done_label_if_completed"),
             patch("auto_fixer.record_pr_attempt"),
+            patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout="", stderr="")),
+            patch("auto_fixer.mark_processed"),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
 
