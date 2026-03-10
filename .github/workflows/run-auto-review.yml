@@ -24,34 +24,15 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install -r requirements.txt
 
-      - name: Precheck review targets
-        id: precheck
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          REPOS: ${{ vars.REPOS }}
-          REFIX_TURSO_DATABASE_URL: ${{ secrets.REFIX_TURSO_DATABASE_URL }}
-          REFIX_TURSO_AUTH_TOKEN: ${{ secrets.REFIX_TURSO_AUTH_TOKEN }}
-        run: python src/ci_precheck.py
-
-      - name: Early exit when no review targets
-        if: steps.precheck.outputs.should_run != 'true'
-        run: |
-          echo "No review targets found. Skipping auto review run."
-          echo "has_open_pr=${{ steps.precheck.outputs.has_open_pr }}"
-          echo "has_review_target=${{ steps.precheck.outputs.has_review_target }}"
-
       - name: Install Claude CLI
-        if: steps.precheck.outputs.should_run == 'true'
         run: npm install -g @anthropic-ai/claude-code@2.1.58
 
       - name: Configure git credentials
-        if: steps.precheck.outputs.should_run == 'true'
         run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Run auto review fixer
-        if: steps.precheck.outputs.should_run == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}

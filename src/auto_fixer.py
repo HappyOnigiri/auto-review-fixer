@@ -79,7 +79,6 @@ from github_pr_fetcher import fetch_open_prs
 from pr_reviewer import fetch_pr_details, fetch_pr_review_comments, fetch_review_threads, resolve_review_thread
 from review_db import count_attempts_for_pr, init_db, is_processed, mark_processed, record_pr_attempt, reset_all
 from ci_log import _log_endgroup, _log_group
-from ci_precheck import check_review_targets, get_branch_compare_status, needs_base_merge
 from summarizer import summarize_reviews
 from constants import SEPARATOR_LEN
 
@@ -333,6 +332,44 @@ def setup_claude_settings(works_dir: Path) -> None:
             if content and not content.endswith("\n"):
                 f.write("\n")
             f.write(exclude_entry + "\n")
+
+
+def get_branch_compare_status(repo: str, base_branch: str, current_branch: str) -> tuple[str, int]:
+    """Return compare API (status, behind_by) for base...current."""
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/compare/{base_branch}...{current_branch}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Error fetching compare status for {repo} ({base_branch}...{current_branch}): "
+            f"{result.stderr.strip()}"
+        )
+    try:
+        data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Failed to parse compare status for {repo} ({base_branch}...{current_branch})"
+        ) from e
+    status = data.get("status")
+    behind_by = data.get("behind_by")
+    if not isinstance(status, str) or not isinstance(behind_by, int):
+        raise RuntimeError(
+            f"Unexpected compare payload for {repo} ({base_branch}...{current_branch})"
+        )
+    return status, behind_by
+
+
+def needs_base_merge(compare_status: str, behind_by: int) -> bool:
+    """Return True when base branch merge is needed."""
+    return behind_by >= 1 or compare_status in {"behind", "diverged"}
 
 
 MERGE_STRATEGY_SECTION_START = "<!-- refix-merge-strategy:start -->"
@@ -1230,24 +1267,6 @@ def main():
     if not repos:
         print("No repositories to process")
         sys.exit(1)
-
-    # Precheck: skip heavy processing when no review targets (local only; CI runs it as separate step)
-    if not os.environ.get("GITHUB_ACTIONS"):
-        repo_list = [r["repo"] for r in repos]
-        try:
-            precheck_result = check_review_targets(repo_list)
-            if not precheck_result.should_run:
-                print("Precheck: No review targets found. Skipping.")
-                if precheck_result.pr_statuses:
-                    for pr_key, status in precheck_result.pr_statuses:
-                        print(f"  - {pr_key}: {status}")
-                sys.exit(0)
-            if precheck_result.pr_statuses:
-                print("Precheck:")
-                for pr_key, status in precheck_result.pr_statuses:
-                    print(f"  - {pr_key}: {status}")
-        except Exception as e:
-            print(f"Warning: Precheck failed, continuing: {e}", file=sys.stderr)
 
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
