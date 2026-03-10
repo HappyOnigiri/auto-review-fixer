@@ -25,7 +25,7 @@ class PrecheckResult:
     has_open_pr: bool
     has_review_target: bool
     target_prs: list[str]
-    pr_statuses: list[tuple[str, str]]  # (repo#pr_number, status: target|skip:no_coderabbit|skip:all_resolved)
+    pr_statuses: list[tuple[str, str]]  # (repo#pr_number, status: target|skip:no_coderabbit|skip:all_resolved|skip:all_processed)
 
     @property
     def should_run(self) -> bool:
