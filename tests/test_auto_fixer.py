@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 
@@ -529,6 +529,105 @@ class TestProcessRepo:
             out = capsys.readouterr().out
             assert "[DRY RUN]" in out
             assert "follow only the top-level <instructions> section" in out
+
+    def test_processes_multiple_targets_in_single_claude_run(self, tmp_path):
+        """複数指摘でも Claude 実行は1回で、既読化は全対象に行う。"""
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix review", "author": {"login": "coderabbitai[bot]"}}
+            ],
+        }
+        review_comments = [
+            {
+                "id": 10,
+                "path": "src/foo.py",
+                "line": 12,
+                "body": "fix comment",
+                "user": {"login": "coderabbitai[bot]"},
+            }
+        ]
+        thread_map = {10: "thread-node-id"}
+
+        def _run_side_effect(cmd, **kwargs):
+            if cmd == ["git", "rev-parse", "HEAD"]:
+                return Mock(returncode=0, stdout="abc123\n", stderr="")
+            if (
+                cmd[:4] == ["git", "log", "--oneline", "--first-parent"]
+                and cmd[4] == "abc123..HEAD"
+            ) or (
+                cmd[:3] == ["git", "log", "--oneline"] and cmd[3] == "abc123..HEAD"
+            ):
+                return Mock(returncode=0, stdout="deadbee fix\n", stderr="")
+            if cmd == ["git", "status", "--porcelain"]:
+                return Mock(returncode=0, stdout="", stderr="")
+            if cmd == ["git", "log", "origin/feature..HEAD", "--oneline"]:
+                return Mock(returncode=0, stdout="", stderr="")
+            raise AssertionError(f"Unexpected subprocess.run call: {cmd}")
+
+        process_mock = Mock(returncode=0)
+        process_mock.communicate.return_value = ("ok", "")
+
+        captured_prompts: list[str] = []
+
+        def popen_side_effect(cmd, **kwargs):
+            cwd = kwargs.get("cwd", "")
+            if cwd:
+                pf = Path(cwd) / "_review_prompt.md"
+                if pf.exists():
+                    captured_prompts.append(pf.read_text())
+            return process_mock
+
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=review_comments),
+            patch("auto_fixer.fetch_review_threads", return_value=thread_map),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.is_processed", return_value=False),
+            patch("auto_fixer.count_attempts_for_pr", return_value=0),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch(
+                "auto_fixer.summarize_reviews",
+                return_value={"r1": "review summary", "discussion_r10": "comment summary"},
+            ),
+            patch("auto_fixer.subprocess.run", side_effect=_run_side_effect),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect) as mock_popen,
+            patch("auto_fixer.record_pr_attempt") as mock_record_attempt,
+            patch("auto_fixer.mark_processed") as mock_mark_processed,
+            patch("auto_fixer.resolve_review_thread", return_value=True) as mock_resolve_thread,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"})
+
+        assert mock_popen.call_count == 1
+        assert len(captured_prompts) == 1
+        assert "review summary" in captured_prompts[0]
+        assert "comment summary" in captured_prompts[0]
+        mock_record_attempt.assert_called_once_with("owner/repo", 1)
+        mock_resolve_thread.assert_called_once_with("thread-node-id")
+        mock_mark_processed.assert_has_calls(
+            [
+                call(
+                    "r1",
+                    "owner/repo",
+                    1,
+                    body="fix review",
+                    summary="review summary",
+                ),
+                call(
+                    "discussion_r10",
+                    "owner/repo",
+                    1,
+                    body="fix comment",
+                    summary="comment summary",
+                ),
+            ],
+            any_order=True,
+        )
+        assert mock_mark_processed.call_count == 2
 
     def test_summarize_only_stops_before_fix_and_db(self, tmp_path, capsys):
         """summarize_only=True -> no fix model, no mark_processed."""
