@@ -17,6 +17,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from claude_limit import (
+    ClaudeCommandFailedError,
+    ClaudeUsageLimitError,
+    is_claude_usage_limit_error,
+)
+
 DEFAULT_REFIX_CLAUDE_SETTINGS: dict[str, Any] = {
     "attribution": {"commit": "", "pr": ""},
     "includeCoAuthoredBy": False,
@@ -494,9 +500,18 @@ def _run_claude_prompt(
         )
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode, claude_cmd,
-                output=stdout, stderr=stderr,
+            if is_claude_usage_limit_error(stdout, stderr):
+                raise ClaudeUsageLimitError(
+                    phase=phase_label,
+                    returncode=process.returncode,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
+            raise ClaudeCommandFailedError(
+                phase=phase_label,
+                returncode=process.returncode,
+                stdout=stdout,
+                stderr=stderr,
             )
         print(f"Claude execution completed ({phase_label})")
 
@@ -1114,6 +1129,8 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                                         summary=summaries.get(rid, ""),
                                     )
                             print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
+                except ClaudeCommandFailedError:
+                    raise
                 except subprocess.CalledProcessError as e:
                     print(f"Error executing Claude: {e}", file=sys.stderr)
                     if e.output:
@@ -1123,6 +1140,8 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
 
             if commits_by_phase:
                 commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
+        except ClaudeCommandFailedError:
+            raise
         except Exception as e:
             print(f"Error processing PR #{pr.get('number', '?')} (id={pr.get('id', '?')}): {e}", file=sys.stderr)
             pr_fetch_failed = True
@@ -1239,6 +1258,13 @@ def main():
         except KeyboardInterrupt:
             print("\nInterrupted by user")
             sys.exit(0)
+        except ClaudeCommandFailedError as e:
+            print(f"Error: {e}. Failing CI immediately.", file=sys.stderr)
+            if e.stdout.strip():
+                print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
+            if e.stderr.strip():
+                print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
             print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
             continue

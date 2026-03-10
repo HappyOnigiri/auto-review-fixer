@@ -11,6 +11,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from claude_limit import (
+    ClaudeCommandFailedError,
+    ClaudeUsageLimitError,
+    is_claude_usage_limit_error,
+)
 from ci_log import _log_endgroup, _log_group
 from constants import SEPARATOR_LEN
 
@@ -42,7 +47,9 @@ def summarize_reviews(
     """Return {id: summary} for all reviews and inline comments.
 
     Uses a single claude CLI call. Model: REFIX_MODEL_SUMMARIZE (default: haiku).
-    Falls back to empty dict on failure (caller uses original body).
+    Raises ClaudeUsageLimitError on usage limit detection.
+    Raises ClaudeCommandFailedError on non-zero exit code or subprocess error.
+    Falls back to empty dict only on JSON parse failure.
     """
     items = []
     for r in reviews:
@@ -113,9 +120,19 @@ def summarize_reviews(
                 env=env,
             )
         except Exception as e:
-            print(f"Warning: summarization subprocess raised an exception ({e})", file=sys.stderr)
-            print("  （サブプロセスが完了前に例外発生のため出力なし）", file=sys.stderr)
-            return {}
+            if is_claude_usage_limit_error(str(e)):
+                raise ClaudeUsageLimitError(
+                    phase="summarization",
+                    returncode=1,
+                    stdout="",
+                    stderr=str(e),
+                ) from e
+            raise ClaudeCommandFailedError(
+                phase="summarization",
+                returncode=1,
+                stdout="",
+                stderr=str(e),
+            ) from e
     finally:
         Path(prompt_path).unlink(missing_ok=True)
 
@@ -123,8 +140,19 @@ def summarize_reviews(
         _print_raw_summarizer_output(result.stdout, result.stderr, returncode=result.returncode)
 
     if result.returncode != 0:
-        print(f"Warning: summarization failed (exit {result.returncode})", file=sys.stderr)
-        return {}
+        if is_claude_usage_limit_error(result.stdout, result.stderr):
+            raise ClaudeUsageLimitError(
+                phase="summarization",
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
+        raise ClaudeCommandFailedError(
+            phase="summarization",
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
 
     try:
         text = result.stdout

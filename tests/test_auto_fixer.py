@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 import auto_fixer
+from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
 
 
 class TestGeneratePrompt:
@@ -319,6 +320,52 @@ class TestMain:
         err = capsys.readouterr().err
         assert "REPOS is set but empty" in err
 
+    def test_usage_limit_exits_nonzero_immediately(self, capsys):
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "owner/repo"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.init_db"),
+            patch(
+                "auto_fixer.process_repo",
+                side_effect=ClaudeUsageLimitError(
+                    phase="review-fix",
+                    returncode=1,
+                    stdout="You've hit your limit",
+                    stderr="",
+                ),
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "Failing CI immediately" in err
+
+    def test_claude_nonzero_exits_nonzero_immediately(self, capsys):
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "owner/repo"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.init_db"),
+            patch(
+                "auto_fixer.process_repo",
+                side_effect=ClaudeCommandFailedError(
+                    phase="review-fix",
+                    returncode=1,
+                    stdout="API Error",
+                    stderr="bad headers",
+                ),
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "Failing CI immediately" in err
+        assert "stdout: API Error" in err
+        assert "stderr: bad headers" in err
+
 
 class TestLoadReposFromFile:
     """Tests for load_repos_from_file()."""
@@ -547,6 +594,37 @@ class TestProcessRepo:
             out = capsys.readouterr().out
             assert "falling back to raw review text for all 1 item(s)" in out
 
+    def test_summarize_only_usage_limit_raises(self):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix", "author": {"login": "coderabbitai"}}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.is_processed", return_value=False),
+            patch("auto_fixer.count_attempts_for_pr", return_value=0),
+            patch(
+                "auto_fixer.summarize_reviews",
+                side_effect=ClaudeUsageLimitError(
+                    phase="summarization",
+                    returncode=1,
+                    stdout="You've hit your limit",
+                    stderr="",
+                ),
+            ),
+        ):
+            with pytest.raises(ClaudeUsageLimitError):
+                auto_fixer.process_repo({"repo": "owner/repo"}, summarize_only=True)
+
     def test_behind_merge_runs_push_no_claude(self, tmp_path, capsys):
         """behind PR with no review targets -> merge runs, push happens, no Claude called."""
         prs = [{"number": 1, "title": "Test"}]
@@ -592,3 +670,79 @@ class TestMergeStrategyHelpers:
     def test_no_review_targets_uses_single_call(self):
         strategy = auto_fixer._determine_conflict_resolution_strategy(False)
         assert strategy == "single_call"
+
+
+class TestRunClaudePrompt:
+    def test_usage_limit_raises(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = ("You've hit your limit · resets Mar 13, 4pm (UTC)", "")
+        process.returncode = 1
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            with pytest.raises(ClaudeUsageLimitError):
+                auto_fixer._run_claude_prompt(
+                    works_dir=tmp_path,
+                    prompt="<instructions>fix</instructions>",
+                    model="sonnet",
+                    silent=True,
+                    phase_label="review-fix",
+                )
+
+    def test_nonzero_exit_raises_command_failed(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = ("API Error: invalid header", "")
+        process.returncode = 1
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            with pytest.raises(ClaudeCommandFailedError):
+                auto_fixer._run_claude_prompt(
+                    works_dir=tmp_path,
+                    prompt="<instructions>fix</instructions>",
+                    model="sonnet",
+                    silent=True,
+                    phase_label="review-fix",
+                )
+
+    def test_success_output_with_limit_phrase_does_not_raise(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = (
+            "markers include: claude usage limit reached",
+            "",
+        )
+        process.returncode = 0
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                side_effect=[
+                    Mock(returncode=0, stdout="abc123\n", stderr=""),
+                    Mock(returncode=0, stdout="", stderr=""),
+                ],
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            result = auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                model="sonnet",
+                silent=True,
+                phase_label="review-fix",
+            )
+            assert result == ""
