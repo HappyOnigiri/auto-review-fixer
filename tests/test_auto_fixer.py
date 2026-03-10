@@ -566,7 +566,6 @@ class TestProcessRepo:
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer._merge_base_branch", return_value=(True, False)),
-            patch("auto_fixer._update_pr_merge_strategy_description"),
             patch("auto_fixer.subprocess.run") as mock_run,
             patch("auto_fixer.subprocess.Popen") as mock_popen,
             patch("auto_fixer.mark_processed") as mock_mark,
@@ -587,23 +586,9 @@ class TestProcessRepo:
 
 class TestMergeStrategyHelpers:
     def test_conflict_with_review_targets_uses_two_calls(self):
-        strategy, reason = auto_fixer._determine_conflict_resolution_strategy(True)
+        strategy = auto_fixer._determine_conflict_resolution_strategy(True)
         assert strategy == "separate_two_calls"
-        assert "先にコンフリクトのみ" in reason
 
-    def test_upsert_merge_strategy_section_replaces_existing(self):
-        old = (
-            "before\n"
-            "<!-- refix-merge-strategy:start -->\n"
-            "old\n"
-            "<!-- refix-merge-strategy:end -->\n"
-            "after\n"
-        )
-        new_section = (
-            "<!-- refix-merge-strategy:start -->\n"
-            "new\n"
-            "<!-- refix-merge-strategy:end -->"
-        )
-        body = auto_fixer._upsert_merge_strategy_section(old, new_section)
-        assert "old" not in body
-        assert "new" in body
+    def test_no_review_targets_uses_single_call(self):
+        strategy = auto_fixer._determine_conflict_resolution_strategy(False)
+        assert strategy == "single_call"

@@ -374,10 +374,6 @@ def needs_base_merge(compare_status: str, behind_by: int) -> bool:
     return behind_by >= 1 or compare_status in {"behind", "diverged"}
 
 
-MERGE_STRATEGY_SECTION_START = "<!-- refix-merge-strategy:start -->"
-MERGE_STRATEGY_SECTION_END = "<!-- refix-merge-strategy:end -->"
-
-
 def _has_merge_conflicts(works_dir: Path) -> bool:
     result = subprocess.run(
         ["git", "diff", "--name-only", "--diff-filter=U"],
@@ -422,83 +418,10 @@ def _merge_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
     )
 
 
-def _determine_conflict_resolution_strategy(has_review_targets: bool) -> tuple[str, str]:
+def _determine_conflict_resolution_strategy(has_review_targets: bool) -> str:
     if has_review_targets:
-        return (
-            "separate_two_calls",
-            "マージコンフリクト解消とレビュー修正を同時に行うと、修正スコープが大きくなり原因切り分けが難しくなるため。"
-            "先にコンフリクトのみを解消してベースを安定化し、その後レビュー修正を行う方が安全で再現性が高い。",
-        )
-    return (
-        "single_call",
-        "レビュー修正対象が無いため、コンフリクト解消のみを1回の Claude 実行で完了するのが最短で安全なため。",
-    )
-
-
-def _build_merge_strategy_section(
-    *,
-    base_branch: str,
-    head_branch: str,
-    compare_status: str,
-    behind_by: int,
-    had_conflict: bool,
-    strategy: str,
-    reason: str,
-) -> str:
-    conflict_label = "あり" if had_conflict else "なし"
-    return (
-        f"{MERGE_STRATEGY_SECTION_START}\n"
-        "## Refix merge strategy\n"
-        f"- base branch: `{base_branch}`\n"
-        f"- head branch: `{head_branch}`\n"
-        f"- compare status: `{compare_status}` (`behind_by={behind_by}`)\n"
-        f"- conflict: {conflict_label}\n"
-        f"- strategy: `{strategy}`\n"
-        f"- reason: {reason}\n"
-        f"{MERGE_STRATEGY_SECTION_END}"
-    )
-
-
-def _upsert_merge_strategy_section(current_body: str, section_text: str) -> str:
-    body = current_body or ""
-    pattern = re.compile(
-        rf"{re.escape(MERGE_STRATEGY_SECTION_START)}.*?{re.escape(MERGE_STRATEGY_SECTION_END)}",
-        re.DOTALL,
-    )
-    if pattern.search(body):
-        return pattern.sub(section_text, body, count=1)
-    if body and not body.endswith("\n"):
-        body += "\n"
-    if body:
-        body += "\n"
-    return body + section_text + "\n"
-
-
-def _update_pr_merge_strategy_description(
-    repo: str,
-    pr_number: int,
-    current_body: str,
-    section_text: str,
-) -> None:
-    updated_body = _upsert_merge_strategy_section(current_body, section_text)
-    cmd = [
-        "gh",
-        "api",
-        f"repos/{repo}/pulls/{pr_number}",
-        "--method",
-        "PATCH",
-        "-f",
-        f"body={updated_body}",
-    ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"failed to update PR description: {result.stderr.strip()}")
+        return "separate_two_calls"
+    return "single_call"
 
 
 def _build_conflict_resolution_prompt(pr_number: int, title: str, base_branch: str) -> str:
@@ -960,14 +883,36 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         f"(status={compare_status}, behind_by={behind_by})"
                     )
                 else:
-                    merged_changes, had_conflicts = _merge_base_branch(works_dir, base_branch)
-                    if merged_changes:
-                        print(f"Merged origin/{base_branch} into {branch_name}")
-                        subprocess.run(
-                            ["git", "push", "origin", branch_name],
-                            cwd=str(works_dir),
-                            check=True,
+                    print(
+                        f"[merge-base] PR #{pr_number}: git merge --no-edit origin/{base_branch} "
+                        f"(status={compare_status}, behind_by={behind_by})"
+                    )
+                    try:
+                        merged_changes, had_conflicts = _merge_base_branch(works_dir, base_branch)
+                    except Exception as e:
+                        print(
+                            f"[merge-base:error] PR #{pr_number}: merge failed "
+                            f"(base={base_branch}, head={branch_name}, status={compare_status}, behind_by={behind_by})",
+                            file=sys.stderr,
                         )
+                        print(f"  details: {e}", file=sys.stderr)
+                        raise
+
+                    if merged_changes:
+                        try:
+                            subprocess.run(
+                                ["git", "push", "origin", branch_name],
+                                cwd=str(works_dir),
+                                check=True,
+                            )
+                        except subprocess.CalledProcessError as e:
+                            print(
+                                f"[merge-base:error] PR #{pr_number}: push failed after merge "
+                                f"(branch={branch_name})",
+                                file=sys.stderr,
+                            )
+                            print(f"  details: {e}", file=sys.stderr)
+                            raise
                         merge_log = subprocess.run(
                             ["git", "log", "--oneline", "-1"],
                             cwd=str(works_dir),
@@ -976,48 +921,44 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                             check=False,
                         ).stdout.strip()
                         commits_by_phase.append(merge_log or f"merge origin/{base_branch}")
+                        if not had_conflicts:
+                            print(f"[merge-base] PR #{pr_number}: merged and pushed successfully")
 
+                    strategy = _determine_conflict_resolution_strategy(has_review_targets)
                     if had_conflicts:
-                        strategy, strategy_reason = _determine_conflict_resolution_strategy(
-                            has_review_targets
+                        print(
+                            f"[merge-base] PR #{pr_number}: conflict detected; running Claude for conflict resolution "
+                            f"(strategy={strategy})"
                         )
-                    else:
-                        strategy = "single_call"
-                        strategy_reason = (
-                            "コンフリクトが発生しなかったため、レビュー修正（必要な場合）のみ1回の Claude 実行で十分なため。"
-                        )
-                    section = _build_merge_strategy_section(
-                        base_branch=base_branch,
-                        head_branch=branch_name,
-                        compare_status=compare_status,
-                        behind_by=behind_by,
-                        had_conflict=had_conflicts,
-                        strategy=strategy,
-                        reason=strategy_reason,
-                    )
-                    try:
-                        _update_pr_merge_strategy_description(
-                            repo, pr_number, pr_data.get("body", "") or "", section
-                        )
-                        print("Updated PR description with merge strategy decision")
-                    except Exception as e:
-                        print(f"Warning: failed to update PR description: {e}", file=sys.stderr)
-
-                    if had_conflicts:
                         conflict_prompt = _build_conflict_resolution_prompt(
                             pr_number, pr_data.get("title", ""), base_branch
                         )
-                        conflict_commits = _run_claude_prompt(
-                            works_dir=works_dir,
-                            prompt=conflict_prompt,
-                            model=fix_model,
-                            silent=silent,
-                            phase_label="merge-conflict-resolution",
-                        )
+                        try:
+                            conflict_commits = _run_claude_prompt(
+                                works_dir=works_dir,
+                                prompt=conflict_prompt,
+                                model=fix_model,
+                                silent=silent,
+                                phase_label="merge-conflict-resolution",
+                            )
+                        except Exception as e:
+                            print(
+                                f"[merge-base:error] PR #{pr_number}: Claude conflict-resolution failed",
+                                file=sys.stderr,
+                            )
+                            print(f"  details: {e}", file=sys.stderr)
+                            raise
                         if conflict_commits:
                             commits_by_phase.append(conflict_commits)
-                        if _has_merge_conflicts(works_dir):
-                            raise RuntimeError("Merge conflict markers remain after conflict-resolution phase")
+                        conflict_resolved = not _has_merge_conflicts(works_dir)
+                        print(
+                            f"[merge-base] PR #{pr_number}: conflict resolution check -> "
+                            f"{'resolved' if conflict_resolved else 'still_conflicted'}"
+                        )
+                        if not conflict_resolved:
+                            raise RuntimeError(
+                                "Merge conflict markers remain after conflict-resolution phase"
+                            )
 
             if not has_review_targets:
                 if commits_by_phase:
