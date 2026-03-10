@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 import auto_fixer
-from claude_limit import ClaudeUsageLimitError
+from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
 
 
 class TestGeneratePrompt:
@@ -327,7 +327,12 @@ class TestMain:
             patch("auto_fixer.init_db"),
             patch(
                 "auto_fixer.process_repo",
-                side_effect=ClaudeUsageLimitError("Claude usage limit reached during review-fix"),
+                side_effect=ClaudeUsageLimitError(
+                    phase="review-fix",
+                    returncode=1,
+                    stdout="You've hit your limit",
+                    stderr="",
+                ),
             ),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -336,6 +341,30 @@ class TestMain:
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
         assert "Failing CI immediately" in err
+
+    def test_claude_nonzero_exits_nonzero_immediately(self, capsys):
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "owner/repo"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.init_db"),
+            patch(
+                "auto_fixer.process_repo",
+                side_effect=ClaudeCommandFailedError(
+                    phase="review-fix",
+                    returncode=1,
+                    stdout="API Error",
+                    stderr="bad headers",
+                ),
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "Failing CI immediately" in err
+        assert "stdout: API Error" in err
+        assert "stderr: bad headers" in err
 
 
 class TestLoadReposFromFile:
@@ -585,7 +614,12 @@ class TestProcessRepo:
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch(
                 "auto_fixer.summarize_reviews",
-                side_effect=ClaudeUsageLimitError("Claude usage limit reached during summarization"),
+                side_effect=ClaudeUsageLimitError(
+                    phase="summarization",
+                    returncode=1,
+                    stdout="You've hit your limit",
+                    stderr="",
+                ),
             ),
         ):
             with pytest.raises(ClaudeUsageLimitError):
@@ -654,6 +688,29 @@ class TestRunClaudePrompt:
             patch("auto_fixer._log_endgroup"),
         ):
             with pytest.raises(ClaudeUsageLimitError):
+                auto_fixer._run_claude_prompt(
+                    works_dir=tmp_path,
+                    prompt="<instructions>fix</instructions>",
+                    model="sonnet",
+                    silent=True,
+                    phase_label="review-fix",
+                )
+
+    def test_nonzero_exit_raises_command_failed(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = ("API Error: invalid header", "")
+        process.returncode = 1
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            with pytest.raises(ClaudeCommandFailedError):
                 auto_fixer._run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",

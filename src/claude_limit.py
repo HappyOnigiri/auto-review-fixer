@@ -1,8 +1,41 @@
 """Helpers for detecting Claude usage-limit failures."""
 
 
-class ClaudeUsageLimitError(RuntimeError):
+class ClaudeCommandFailedError(RuntimeError):
+    """Raised when Claude command exits with a non-zero status."""
+
+    def __init__(
+        self,
+        *,
+        phase: str,
+        returncode: int,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> None:
+        super().__init__(f"Claude command failed during {phase} (exit {returncode})")
+        self.phase = phase
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class ClaudeUsageLimitError(ClaudeCommandFailedError):
     """Raised when Claude reports account usage limit exhaustion."""
+
+    def __init__(
+        self,
+        *,
+        phase: str,
+        returncode: int = 1,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> None:
+        super().__init__(
+            phase=phase,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
 
 _USAGE_LIMIT_MARKERS = (

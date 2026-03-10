@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import summarizer
-from claude_limit import ClaudeUsageLimitError
+from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
 
 
 class TestSummarizeReviews:
@@ -127,19 +127,19 @@ class TestSummarizeReviews:
         mock_group.assert_called_once_with("Summarizer command details")
         mock_endgroup.assert_called_once()
 
-    def test_returncode_nonzero_returns_empty_dict(self):
-        """Failed subprocess returns {}."""
+    def test_returncode_nonzero_raises(self):
+        """Failed subprocess must fail fast."""
         with patch("summarizer.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=1,
                 stdout="",
                 stderr="error",
             )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-            )
-            assert result == {}
+            with pytest.raises(ClaudeCommandFailedError):
+                summarizer.summarize_reviews(
+                    [{"id": "r1", "body": "x"}],
+                    [],
+                )
 
     def test_usage_limit_nonzero_raises(self):
         """Usage limit must fail fast instead of fallback."""
@@ -156,7 +156,7 @@ class TestSummarizeReviews:
                 )
 
     def test_failure_logs_raw_output_in_foldable_group(self, capsys):
-        """Failed summarization (returncode=1) still prints raw output in group logs."""
+        """Failed summarization (returncode=1) prints raw output then raises."""
         fake_stdout = "some partial output"
         fake_stderr = "raw-stderr-error"
         with (
@@ -169,13 +169,13 @@ class TestSummarizeReviews:
                 stdout=fake_stdout,
                 stderr=fake_stderr,
             )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-                silent=False,
-            )
+            with pytest.raises(ClaudeCommandFailedError):
+                summarizer.summarize_reviews(
+                    [{"id": "r1", "body": "x"}],
+                    [],
+                    silent=False,
+                )
 
-        assert result == {}
         mock_group.assert_any_call("Summarizer raw output (exit 1)")
         mock_endgroup.assert_called()
         out = capsys.readouterr().out
@@ -196,25 +196,25 @@ class TestSummarizeReviews:
             )
             assert result == {}
 
-    def test_subprocess_exception_returns_empty_dict(self):
-        """subprocess.run raising an exception falls back to {}."""
+    def test_subprocess_exception_raises(self):
+        """subprocess.run raising an exception fails fast."""
         with patch("summarizer.subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError("claude not found")
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-            )
-            assert result == {}
+            with pytest.raises(ClaudeCommandFailedError):
+                summarizer.summarize_reviews(
+                    [{"id": "r1", "body": "x"}],
+                    [],
+                )
 
-    def test_subprocess_timeout_returns_empty_dict(self):
-        """subprocess.run raising TimeoutError falls back to {}."""
+    def test_subprocess_timeout_raises(self):
+        """subprocess.run raising TimeoutError fails fast."""
         with patch("summarizer.subprocess.run") as mock_run:
             mock_run.side_effect = TimeoutError("timed out")
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-            )
-            assert result == {}
+            with pytest.raises(ClaudeCommandFailedError):
+                summarizer.summarize_reviews(
+                    [{"id": "r1", "body": "x"}],
+                    [],
+                )
 
     def test_comment_id_normalized_to_discussion_r(self):
         """Inline comment id becomes discussion_r<id>."""
