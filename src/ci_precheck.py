@@ -5,6 +5,7 @@ This script is designed to run before heavy setup steps in CI.
 It checks:
   1) whether there are open PRs in configured repositories
   2) whether at least one PR appears to have CodeRabbit review targets
+  3) whether at least one PR is behind its base branch and needs merge
 """
 
 from __future__ import annotations
@@ -24,12 +25,13 @@ CODERABBIT_BOT_LOGIN_PREFIX = "coderabbitai"
 class PrecheckResult:
     has_open_pr: bool
     has_review_target: bool
+    has_behind_pr: bool
     target_prs: list[str]
-    pr_statuses: list[tuple[str, str]]  # (repo#pr_number, status: target|skip:no_coderabbit|skip:all_resolved|skip:all_processed)
+    pr_statuses: list[tuple[str, str]]  # (repo#pr_number, status)
 
     @property
     def should_run(self) -> bool:
-        return self.has_review_target
+        return self.has_review_target or self.has_behind_pr
 
 
 def _run_gh_json(cmd: list[str]) -> Any:
@@ -161,6 +163,62 @@ def _list_open_pr_numbers(repo: str, limit: int = 1000) -> list[int]:
             f"gh pr list for '{repo}' returned {len(numbers)} results which may be truncated (limit={limit})"
         )
     return numbers
+
+
+def _get_pr_branches(repo: str, pr_number: int) -> tuple[str, str]:
+    """Return (base_branch, head_branch) for a PR."""
+    pr_data = _run_gh_json(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--repo",
+            repo,
+            "--json",
+            "baseRefName,headRefName",
+        ]
+    )
+    if not isinstance(pr_data, dict):
+        raise RuntimeError(f"Unexpected gh pr view output for {repo}#{pr_number}")
+    base_branch = pr_data.get("baseRefName")
+    head_branch = pr_data.get("headRefName")
+    if not isinstance(base_branch, str) or not base_branch:
+        raise RuntimeError(f"Missing baseRefName for {repo}#{pr_number}")
+    if not isinstance(head_branch, str) or not head_branch:
+        raise RuntimeError(f"Missing headRefName for {repo}#{pr_number}")
+    return base_branch, head_branch
+
+
+def get_branch_compare_status(repo: str, base_branch: str, current_branch: str) -> tuple[str, int]:
+    """Return compare API (status, behind_by) for base...current."""
+    compare_data = _run_gh_json(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/compare/{base_branch}...{current_branch}",
+        ]
+    )
+    if not isinstance(compare_data, dict):
+        raise RuntimeError(
+            f"Unexpected compare output for {repo} {base_branch}...{current_branch}"
+        )
+    status = compare_data.get("status")
+    behind_by_raw = compare_data.get("behind_by")
+    if not isinstance(status, str):
+        raise RuntimeError(
+            f"Missing compare status for {repo} {base_branch}...{current_branch}"
+        )
+    if not isinstance(behind_by_raw, int):
+        raise RuntimeError(
+            f"Missing compare behind_by for {repo} {base_branch}...{current_branch}"
+        )
+    return status, behind_by_raw
+
+
+def needs_base_merge(compare_status: str, behind_by: int) -> bool:
+    """Determine whether base branch merge is needed."""
+    return behind_by >= 1 or compare_status in {"behind", "diverged"}
 
 
 def _get_pr_status_and_ids(repo: str, pr_number: int) -> tuple[str, list[str]]:
@@ -421,9 +479,14 @@ def _filter_targets_by_db(
 
 def check_review_targets(repos: list[str]) -> PrecheckResult:
     has_open_pr = False
+    has_behind_pr = False
     target_prs: list[str] = []
     pr_statuses: list[tuple[str, str]] = []
-    candidate_targets: list[tuple[str, list[str]]] = []  # (pr_key, ids)
+    review_candidate_targets: list[tuple[str, list[str]]] = []  # (pr_key, ids)
+    pr_keys_in_order: list[str] = []
+    review_base_status: dict[str, str] = {}
+    review_target_status: dict[str, bool] = {}
+    behind_status: dict[str, bool] = {}
 
     for repo in repos:
         pr_numbers = _list_open_pr_numbers(repo)
@@ -432,23 +495,50 @@ def check_review_targets(repos: list[str]) -> PrecheckResult:
         has_open_pr = True
         for pr_number in pr_numbers:
             pr_key = f"{repo}#{pr_number}"
-            status, ids = _get_pr_status_and_ids(repo, pr_number)
-            pr_statuses.append((pr_key, status))
-            if status == "target":
-                target_prs.append(pr_key)
-                candidate_targets.append((pr_key, ids))
+            pr_keys_in_order.append(pr_key)
+            review_status, ids = _get_pr_status_and_ids(repo, pr_number)
+            review_base_status[pr_key] = review_status
+            is_review_target = review_status == "target"
+            review_target_status[pr_key] = is_review_target
+            if is_review_target:
+                review_candidate_targets.append((pr_key, ids))
+
+            base_branch, head_branch = _get_pr_branches(repo, pr_number)
+            compare_status, behind_by = get_branch_compare_status(repo, base_branch, head_branch)
+            is_behind = needs_base_merge(compare_status, behind_by)
+            behind_status[pr_key] = is_behind
+            if is_behind:
+                has_behind_pr = True
 
     # DB verification: if we have candidates and DB is available, filter confirmed targets
-    if candidate_targets and _db_available():
-        confirmed_targets, status_updates = _filter_targets_by_db(candidate_targets)
-        target_prs = confirmed_targets
-        # Update pr_statuses: target -> skip:all_processed for filtered PRs
-        update_map = dict(status_updates)
-        pr_statuses = [(k, update_map.get(k, s)) for k, s in pr_statuses]
+    review_status_updates: dict[str, str] = {}
+    if review_candidate_targets and _db_available():
+        confirmed_targets, status_updates = _filter_targets_by_db(review_candidate_targets)
+        confirmed_set = set(confirmed_targets)
+        for pr_key, _ in review_candidate_targets:
+            review_target_status[pr_key] = pr_key in confirmed_set
+        review_status_updates = dict(status_updates)
+
+    # Build final statuses/targets after review + behind evaluation
+    for pr_key in pr_keys_in_order:
+        is_review_target = review_target_status.get(pr_key, False)
+        is_behind = behind_status.get(pr_key, False)
+        if is_review_target and is_behind:
+            final_status = "target:review+behind"
+        elif is_review_target:
+            final_status = "target"
+        elif is_behind:
+            final_status = "target:behind"
+        else:
+            final_status = review_status_updates.get(pr_key, review_base_status.get(pr_key, "skip:no_coderabbit"))
+        pr_statuses.append((pr_key, final_status))
+        if is_review_target or is_behind:
+            target_prs.append(pr_key)
 
     return PrecheckResult(
         has_open_pr=has_open_pr,
-        has_review_target=bool(target_prs),
+        has_review_target=any(review_target_status.values()),
+        has_behind_pr=has_behind_pr,
         target_prs=target_prs,
         pr_statuses=pr_statuses,
     )
@@ -500,6 +590,7 @@ def main() -> int:
         print(f"Warning: failed to parse repos: {e}", file=sys.stderr)
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
+        _write_github_output("has_behind_pr", "false")
         _write_github_output("should_run", "true")
         _write_github_output_target_prs([])
         _write_github_output_pr_statuses([])
@@ -509,6 +600,7 @@ def main() -> int:
         print("No repositories to check after parsing REPOS.")
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
+        _write_github_output("has_behind_pr", "false")
         _write_github_output("should_run", "false")
         _write_github_output_target_prs([])
         _write_github_output_pr_statuses([])
@@ -524,6 +616,7 @@ def main() -> int:
         print(f"Warning: failed to check review targets: {e}", file=sys.stderr)
         _write_github_output("has_open_pr", "false")
         _write_github_output("has_review_target", "false")
+        _write_github_output("has_behind_pr", "false")
         _write_github_output("should_run", "true")
         _write_github_output_target_prs([])
         _write_github_output_pr_statuses([])
@@ -531,6 +624,7 @@ def main() -> int:
 
     print(f"has_open_pr={str(result.has_open_pr).lower()}")
     print(f"has_review_target={str(result.has_review_target).lower()}")
+    print(f"has_behind_pr={str(result.has_behind_pr).lower()}")
     if result.pr_statuses:
         print("PRs:")
         for pr_key, status in result.pr_statuses:
@@ -538,6 +632,7 @@ def main() -> int:
 
     _write_github_output("has_open_pr", str(result.has_open_pr).lower())
     _write_github_output("has_review_target", str(result.has_review_target).lower())
+    _write_github_output("has_behind_pr", str(result.has_behind_pr).lower())
     _write_github_output("should_run", str(result.should_run).lower())
     _write_github_output_target_prs(result.target_prs)
     _write_github_output_pr_statuses(result.pr_statuses)

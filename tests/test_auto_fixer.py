@@ -454,6 +454,7 @@ class TestProcessRepo:
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
+            "baseRefName": "main",
             "title": "Test",
             "reviews": [
                 {"id": "r1", "body": "fix", "author": {"login": "coderabbitai[bot]"}}
@@ -464,6 +465,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.is_processed", return_value=False),
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -486,6 +488,7 @@ class TestProcessRepo:
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
+            "baseRefName": "main",
             "title": "Test",
             "reviews": [
                 {"id": "r1", "body": "fix", "author": {"login": "coderabbitai"}}
@@ -496,6 +499,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.is_processed", return_value=False),
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -517,6 +521,7 @@ class TestProcessRepo:
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
+            "baseRefName": "main",
             "title": "Test",
             "reviews": [
                 {"id": "r1", "body": "fix", "author": {"login": "coderabbitai"}}
@@ -527,6 +532,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.is_processed", return_value=False),
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch("auto_fixer.summarize_reviews", return_value={}),
@@ -540,3 +546,27 @@ class TestProcessRepo:
             mock_mark.assert_not_called()
             out = capsys.readouterr().out
             assert "falling back to raw review text for all 1 item(s)" in out
+
+
+class TestMergeStrategyHelpers:
+    def test_conflict_with_review_targets_uses_two_calls(self):
+        strategy, reason = auto_fixer._determine_conflict_resolution_strategy(True)
+        assert strategy == "separate_two_calls"
+        assert "先にコンフリクトのみ" in reason
+
+    def test_upsert_merge_strategy_section_replaces_existing(self):
+        old = (
+            "before\n"
+            "<!-- refix-merge-strategy:start -->\n"
+            "old\n"
+            "<!-- refix-merge-strategy:end -->\n"
+            "after\n"
+        )
+        new_section = (
+            "<!-- refix-merge-strategy:start -->\n"
+            "new\n"
+            "<!-- refix-merge-strategy:end -->"
+        )
+        body = auto_fixer._upsert_merge_strategy_section(old, new_section)
+        assert "old" not in body
+        assert "new" in body

@@ -41,6 +41,19 @@ class TestExpandRepoSpec:
         assert repos == ["owner/lib-a", "owner/lib-b"]
 
 
+class TestNeedsBaseMerge:
+    def test_behind_by_positive_requires_merge(self):
+        assert ci_precheck.needs_base_merge("ahead", 1) is True
+
+    def test_behind_or_diverged_requires_merge(self):
+        assert ci_precheck.needs_base_merge("behind", 0) is True
+        assert ci_precheck.needs_base_merge("diverged", 0) is True
+
+    def test_ahead_or_identical_without_behind_does_not_require_merge(self):
+        assert ci_precheck.needs_base_merge("ahead", 0) is False
+        assert ci_precheck.needs_base_merge("identical", 0) is False
+
+
 class TestCheckReviewTargets:
     """Tests for check_review_targets()."""
 
@@ -48,6 +61,8 @@ class TestCheckReviewTargets:
         with (
             patch("ci_precheck._list_open_pr_numbers", return_value=[1]),
             patch("ci_precheck._get_pr_status_and_ids", return_value=("skip:no_coderabbit", [])),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
 
@@ -64,6 +79,8 @@ class TestCheckReviewTargets:
                 "ci_precheck._get_pr_status_and_ids",
                 side_effect=[("skip:no_coderabbit", []), ("target", ["PRR_xxx"])],
             ),
+            patch("ci_precheck._get_pr_branches", side_effect=[("main", "f1"), ("main", "f2")]),
+            patch("ci_precheck.get_branch_compare_status", side_effect=[("ahead", 0), ("ahead", 0)]),
             patch("ci_precheck._db_available", return_value=False),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
@@ -81,6 +98,8 @@ class TestCheckReviewTargets:
         with (
             patch("ci_precheck._list_open_pr_numbers", return_value=[1]),
             patch("ci_precheck._get_pr_status_and_ids", return_value=("skip:all_resolved", [])),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
 
@@ -94,6 +113,8 @@ class TestCheckReviewTargets:
         with (
             patch("ci_precheck._list_open_pr_numbers", return_value=[1]),
             patch("ci_precheck._get_pr_status_and_ids", return_value=("target", ["PRR_xxx"])),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
             patch("ci_precheck._db_available", return_value=False),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
@@ -102,6 +123,22 @@ class TestCheckReviewTargets:
         assert result.has_review_target is True
         assert result.target_prs == ["owner/repo#1"]
         assert result.pr_statuses == [("owner/repo#1", "target")]
+
+    def test_detects_behind_as_target_even_without_review(self):
+        with (
+            patch("ci_precheck._list_open_pr_numbers", return_value=[1]),
+            patch("ci_precheck._get_pr_status_and_ids", return_value=("skip:no_coderabbit", [])),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("behind", 2)),
+        ):
+            result = ci_precheck.check_review_targets(["owner/repo"])
+
+        assert result.has_open_pr is True
+        assert result.has_review_target is False
+        assert result.has_behind_pr is True
+        assert result.should_run is True
+        assert result.target_prs == ["owner/repo#1"]
+        assert result.pr_statuses == [("owner/repo#1", "target:behind")]
 
 
 class TestGetPrStatusAndIds:
@@ -338,6 +375,8 @@ class TestFilterTargetsByDb:
                 "ci_precheck._get_pr_status_and_ids",
                 return_value=("target", ["PRR_xxx", "discussion_r123"]),
             ),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
             patch("ci_precheck._db_available", return_value=True),
             patch("ci_precheck._filter_targets_by_db") as mock_filter,
         ):
@@ -357,6 +396,8 @@ class TestFilterTargetsByDb:
                 "ci_precheck._get_pr_status_and_ids",
                 return_value=("target", ["PRR_xxx"]),
             ),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
             patch("ci_precheck._db_available", return_value=True),
             patch("ci_precheck._filter_targets_by_db") as mock_filter,
         ):
@@ -376,6 +417,8 @@ class TestFilterTargetsByDb:
                 "ci_precheck._get_pr_status_and_ids",
                 return_value=("target", ["PRR_xxx"]),
             ),
+            patch("ci_precheck._get_pr_branches", return_value=("main", "feature")),
+            patch("ci_precheck.get_branch_compare_status", return_value=("ahead", 0)),
             patch("ci_precheck._db_available", return_value=False),
         ):
             result = ci_precheck.check_review_targets(["owner/repo"])
@@ -403,6 +446,7 @@ class TestMain:
                 return_value=ci_precheck.PrecheckResult(
                     has_open_pr=True,
                     has_review_target=False,
+                    has_behind_pr=False,
                     target_prs=[],
                     pr_statuses=[("owner/repo#1", "skip:no_coderabbit")],
                 ),
