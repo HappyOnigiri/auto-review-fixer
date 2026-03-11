@@ -134,6 +134,33 @@ def _warn_unknown_config_keys(config_section: dict[str, Any], allowed_keys: set[
         print(f"Warning: Unknown key '{key}' found in config.", file=sys.stderr)
 
 
+def _normalize_auto_resume_state(
+    runtime_config: dict[str, Any],
+    default_config: dict[str, Any],
+    auto_resume_run_state: dict[str, int] | None = None,
+) -> tuple[dict[str, int], bool]:
+    """Normalize CodeRabbit auto-resume state and process_draft_prs flag."""
+    max_per_run = int(
+        runtime_config.get(
+            "coderabbit_auto_resume_max_per_run",
+            default_config["coderabbit_auto_resume_max_per_run"],
+        )
+    )
+    if max_per_run < 1:
+        max_per_run = default_config["coderabbit_auto_resume_max_per_run"]
+
+    if auto_resume_run_state is None:
+        auto_resume_run_state = {"posted": 0, "max_per_run": max_per_run}
+    else:
+        auto_resume_run_state.setdefault("posted", 0)
+        auto_resume_run_state.setdefault("max_per_run", max_per_run)
+
+    process_draft_prs = bool(
+        runtime_config.get("process_draft_prs", default_config["process_draft_prs"])
+    )
+    return auto_resume_run_state, process_draft_prs
+
+
 def load_config(filepath: str) -> dict[str, Any]:
     """Load and validate YAML config."""
     try:
@@ -1522,19 +1549,9 @@ def process_repo(
     coderabbit_auto_resume_enabled = bool(
         runtime_config.get("coderabbit_auto_resume", DEFAULT_CONFIG["coderabbit_auto_resume"])
     )
-    coderabbit_auto_resume_max_per_run = int(
-        runtime_config.get(
-            "coderabbit_auto_resume_max_per_run",
-            DEFAULT_CONFIG["coderabbit_auto_resume_max_per_run"],
-        )
+    auto_resume_run_state, process_draft_prs = _normalize_auto_resume_state(
+        runtime_config, DEFAULT_CONFIG, auto_resume_run_state
     )
-    if coderabbit_auto_resume_max_per_run < 1:
-        coderabbit_auto_resume_max_per_run = DEFAULT_CONFIG["coderabbit_auto_resume_max_per_run"]
-    if auto_resume_run_state is None:
-        auto_resume_run_state = {"posted": 0, "max_per_run": coderabbit_auto_resume_max_per_run}
-    auto_resume_run_state.setdefault("posted", 0)
-    auto_resume_run_state.setdefault("max_per_run", coderabbit_auto_resume_max_per_run)
-    process_draft_prs = bool(runtime_config.get("process_draft_prs", DEFAULT_CONFIG["process_draft_prs"]))
 
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -1695,7 +1712,7 @@ def process_repo(
                     auto_resume_enabled=coderabbit_auto_resume_enabled,
                     remaining_resume_posts=max(
                         0,
-                        int(auto_resume_run_state.get("max_per_run", coderabbit_auto_resume_max_per_run))
+                        int(auto_resume_run_state.get("max_per_run", 1))
                         - int(auto_resume_run_state.get("posted", 0)),
                     ),
                     dry_run=dry_run,
@@ -2324,15 +2341,7 @@ def main():
         print("[SUMMARIZE ONLY MODE]")
 
     commits_added_to: list[tuple[str, int, str]] = []
-    auto_resume_run_state = {
-        "posted": 0,
-        "max_per_run": int(
-            config.get(
-                "coderabbit_auto_resume_max_per_run",
-                DEFAULT_CONFIG["coderabbit_auto_resume_max_per_run"],
-            )
-        ),
-    }
+    auto_resume_run_state, _ = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
     for repo_info in repos:
         try:
             results = process_repo(

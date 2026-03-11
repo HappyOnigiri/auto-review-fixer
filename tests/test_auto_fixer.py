@@ -296,6 +296,19 @@ repositories:
             auto_fixer.load_config(str(config_file))
         assert exc_info.value.code == 1
 
+    def test_coderabbit_auto_resume_max_per_run_rejects_boolean(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_max_per_run: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
     def test_yaml_parse_error_exits(self, tmp_path):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
