@@ -1225,7 +1225,7 @@ def _pr_has_label(pr_data: dict[str, Any], label_name: str) -> bool:
 
 def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
     """Add refix:merged label when PR is merged and eligible."""
-    cmd = ["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "mergedAt,labels"]
+    cmd = ["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "mergedAt,labels,autoMergeRequest"]
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -1256,6 +1256,8 @@ def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
     if not _pr_has_label(pr_data, REFIX_DONE_LABEL):
         return False
     if _pr_has_label(pr_data, REFIX_MERGED_LABEL):
+        return False
+    if not pr_data.get("autoMergeRequest"):
         return False
 
     print(f"PR #{pr_number} is merged; adding {REFIX_MERGED_LABEL} label.")
@@ -1312,8 +1314,8 @@ def _backfill_merged_labels(repo: str, *, limit: int = 100) -> int:
         pr_number = pr.get("number")
         if not isinstance(pr_number, int):
             continue
-        _set_pr_merged_label(repo, pr_number)
-        count += 1
+        if _mark_pr_merged_label_if_needed(repo, pr_number):
+            count += 1
     if count:
         print(f"Backfilled {REFIX_MERGED_LABEL} on {count} merged PR(s) in {repo}.")
     return count
