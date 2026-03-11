@@ -1,53 +1,253 @@
 # Auto Review Fixer (refix)
 
-GitHub PR 上の CodeRabbit レビューコメントを Claude AI で自動修正する Python CLI ツールです。
+[日本語版はこちら](README.ja.md)
 
-## 前提条件
+`refix` is a Python CLI that automatically triages and fixes unresolved CodeRabbit feedback on GitHub pull requests by using Claude and the GitHub CLI.
+
+## What this tool does
+
+`refix` is designed for repositories that use CodeRabbit for automated PR review and want to close the loop automatically.
+
+For each configured repository, `refix` can:
+
+- scan open pull requests,
+- detect unresolved CodeRabbit reviews and unresolved inline review threads,
+- summarize review feedback before starting a fix pass,
+- inspect failing GitHub Actions checks and include failed log excerpts in the fix prompt,
+- update PR branches that are behind the base branch,
+- ask Claude to apply code fixes,
+- push commits back to the PR branch,
+- resolve review threads after successful fixes, and
+- persist progress in a PR state comment and with labels such as `refix:running` and `refix:done`.
+
+## Features
+
+### Review summarization
+
+Before fixing code, `refix` can summarize unresolved review feedback into a more actionable prompt for the coding agent.
+
+### Automatic code fixing
+
+The tool invokes Claude to apply the requested changes directly in the checked-out pull request branch and pushes the resulting commits.
+
+### CI-aware repair flow
+
+When a pull request has failing GitHub Actions checks, `refix` fetches failed log output and feeds the most relevant excerpts into the fix prompt so the agent can repair CI failures first.
+
+### Branch catch-up and conflict handling
+
+If a PR branch is behind the base branch, `refix` can merge the latest base branch into it and continue the repair flow. Merge conflicts are also routed through the Claude-based fixing flow.
+
+### Multi-repository targeting
+
+You can target a single repository such as `owner/repo`, or expand all repositories under an owner with `owner/*`.
+
+### Repeat-safe state tracking
+
+Processed review items are recorded back to the pull request, which prevents the same unresolved feedback from being handled repeatedly.
+
+## Requirements
 
 - Python 3.12
-- `gh` CLI（認証済み）
-- `.env` ファイル
-- `.refix.yaml` 実行設定ファイル
+- `gh` CLI authenticated against GitHub
+- Claude CLI authentication for actual fix runs
+- A `.refix.yaml` configuration file
+- Optional `.env` file for local environment variables
 
-## 設定方法
+## Quick start
 
-本ツールはリポジトリ直下の `.refix.yaml` という YAML 形式のファイルを使用して動作設定を行います。
+### Local setup
 
-### 1. ローカルでの設定方法
+1. Install dependencies and create local template files:
 
-リポジトリルートに `.refix.yaml` を作成し、以下のような設定を記述します。
+   `make setup`
+
+2. Edit `.refix.yaml` based on `.refix.yaml.sample`.
+
+3. Authenticate the required CLIs:
+
+   - `gh auth login`
+   - Claude CLI authentication, or set `CLAUDE_CODE_OAUTH_TOKEN`
+
+4. Run one of the following commands:
+
+   - `make dry-run` — show what would happen without calling Claude
+   - `make run-summarize-only` — summarize review feedback only
+   - `make run` — run the full fix flow with verbose logs
+   - `make run-silent` — run the full fix flow with reduced logs
+
+## YAML configuration reference
+
+`refix` reads configuration from `.refix.yaml` in the repository root, or from a path passed with `--config`.
+
+### Full schema
 
 ```yaml
-# モデル設定 (省略可能)
 models:
-  summarize: "haiku" # レビュー要約用モデル
-  fix: "sonnet" # コード修正用モデル
+  summarize: "haiku"
+  fix: "sonnet"
 
-# CIログの取得最大行数 (省略可能)
 ci_log_max_lines: 120
 
-# 実行対象のリポジトリ設定 (必須)
 repositories:
-  - repo: "owner/repo" # リポジトリ名 (必須: owner/repo 形式)
-    user_name: "Refix Bot" # (オプション) git commit 時のユーザー名
-    user_email: "bot@example.com" # (オプション) git commit 時のメールアドレス
+  - repo: "owner/repo"
+    user_name: "Refix Bot"
+    user_email: "bot@example.com"
 ```
 
-作成後、以下のコマンドで実行できます。
+### Top-level keys
 
-```bash
-make run
+#### `models`
+
+Model settings for Claude-based processing.
+
+- Type: mapping
+- Required: no
+- Default:
+
+  ```yaml
+  models:
+    summarize: "haiku"
+    fix: "sonnet"
+  ```
+
+Supported nested keys:
+
+- `summarize`
+- `fix`
+
+Unknown nested keys are ignored with a warning.
+
+#### `ci_log_max_lines`
+
+Maximum number of failed CI log lines included in the fix prompt.
+
+- Type: integer
+- Required: no
+- Default: `120`
+- Minimum effective value: `20`
+
+Use this to control prompt size when a PR has failing GitHub Actions checks. Smaller values reduce prompt volume, while larger values include more context from failed jobs.
+
+#### `repositories`
+
+List of repositories that `refix` should process.
+
+- Type: non-empty list
+- Required: yes
+- Default: none
+
+Each entry supports the keys below.
+
+### Repository entry keys
+
+#### `repositories[].repo`
+
+Repository target in `owner/repo` format.
+
+- Type: string
+- Required: yes
+- Example: `octocat/Hello-World`
+
+You can also use `owner/*` to expand all repositories under a GitHub user or organization. Other wildcard styles such as `owner/repo*` are not supported by the current implementation.
+
+#### `repositories[].user_name`
+
+Git author name used for commits created by `refix`.
+
+- Type: string
+- Required: no
+- Default: not set
+
+If omitted, `refix` falls back to the effective Git identity available in the execution environment.
+
+#### `repositories[].user_email`
+
+Git author email used for commits created by `refix`.
+
+- Type: string
+- Required: no
+- Default: not set
+
+If omitted, `refix` falls back to the effective Git identity available in the execution environment.
+
+### Behavior and validation notes
+
+- The YAML root must be a mapping.
+- `repositories` must be present and must contain at least one entry.
+- Unknown keys are ignored with warnings rather than treated as hard errors.
+- `models.summarize` is part of the YAML schema, but the current summarizer implementation still reads `REFIX_MODEL_SUMMARIZE` from the environment when selecting the summarization model. If you need a non-default summarization model today, set both the YAML field and the environment variable to the same value.
+
+## Running in CI with GitHub Actions
+
+This repository already includes the workflow used to run `refix` in GitHub Actions: `.github/workflows/run-auto-review.yml`.
+
+### What the workflow does
+
+The workflow:
+
+1. checks out the repository,
+2. installs Python 3.12 and Python dependencies,
+3. installs the Claude CLI,
+4. writes `.refix.yaml` from the GitHub Actions variable `REFIX_CONFIG_YAML`,
+5. configures Git authentication for push operations, and
+6. runs `python auto_fixer.py --config ../.refix.yaml`.
+
+### Required GitHub Actions configuration
+
+Set the following values in the target repository or organization:
+
+#### Repository or organization variables
+
+- `REFIX_CONFIG_YAML`
+  - The full YAML configuration text for `refix`.
+  - Store the same content that you would place in a local `.refix.yaml` file.
+
+#### Repository or organization secrets
+
+- `GH_PAT`
+  - Personal access token used for GitHub API access and pushing fix commits.
+- `CLAUDE_CODE_OAUTH_TOKEN`
+  - Token used by the Claude CLI during automated fix runs.
+
+### Step-by-step setup
+
+1. Open `Settings` -> `Secrets and variables` -> `Actions`.
+2. Add the `REFIX_CONFIG_YAML` variable.
+3. Add the `GH_PAT` and `CLAUDE_CODE_OAUTH_TOKEN` secrets.
+4. Open the `Run auto review` workflow in the Actions tab.
+5. Trigger the workflow with `Run workflow`.
+
+### Example `REFIX_CONFIG_YAML`
+
+```yaml
+models:
+  summarize: "haiku"
+  fix: "sonnet"
+
+ci_log_max_lines: 120
+
+repositories:
+  - repo: "your-org/your-repo"
+    user_name: "Refix Bot"
+    user_email: "bot@example.com"
 ```
 
-※ ドライランモード（Claudeの呼び出しなし）で実行する場合は `make dry-run` を使用します。
+### Included workflows in this repository
 
-### 2. CI (GitHub Actions) での設定方法
+- `.github/workflows/run-auto-review.yml`
+  - Manual (`workflow_dispatch`) execution for the actual auto-fix flow.
+- `.github/workflows/test.yml`
+  - Test workflow triggered on pull requests and on manual dispatch.
 
-本ツールを GitHub Actions で動作させる場合、YAML の内容を GitHub リポジトリの Variables（変数）として登録します。
+## Contributing
 
-1. 対象リポジトリ（オーガナイゼーション）の `Settings` > `Secrets and variables` > `Actions` > **`Variables`** タブを開きます。
-2. `New repository variable` （または `New organization variable`）をクリックします。
-3. **Name** に `REFIX_CONFIG_YAML` と入力します。
-4. **Value** に、ローカルと同様の YAML 形式のテキストを貼り付け、保存します。
+Contributions are welcome.
 
-これにより、CI ワークフロー実行時に自動的に設定が読み込まれ、ツールが動作します。
+- Open an issue for bugs, ideas, or questions.
+- Submit a pull request for fixes, improvements, or documentation updates.
+- Use the provided issue and pull request templates to keep reports actionable.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

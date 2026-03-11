@@ -1,0 +1,253 @@
+# Auto Review Fixer (refix)
+
+[English README](README.md)
+
+`refix` は、Claude と GitHub CLI を使って GitHub Pull Request 上の未解決な CodeRabbit フィードバックを自動的に整理・修正する Python CLI です。
+
+## これは何をするツールか
+
+`refix` は、CodeRabbit を使っているリポジトリで、レビュー指摘の消化を自動化したいケースを想定しています。
+
+設定された各リポジトリに対して、`refix` は次のような処理を行えます。
+
+- オープンな Pull Request を走査する
+- 未解決の CodeRabbit レビューと未解決のインラインスレッドを検出する
+- 修正前にレビュー内容を要約する
+- 失敗している GitHub Actions のログ抜粋を修正プロンプトに含める
+- ベースブランチに追従していない PR ブランチを更新する
+- Claude にコード修正を依頼する
+- 修正コミットを PR ブランチへ push する
+- 修正後にレビュー スレッドを解決する
+- PR 上の状態管理コメントと `refix:running` / `refix:done` ラベルで進捗を記録する
+
+## 主な機能
+
+### レビュー要約
+
+修正に入る前に、未解決レビューを AI エージェントが扱いやすい形に要約できます。
+
+### 自動コード修正
+
+Claude を使って PR ブランチ上のコードを直接修正し、生成されたコミットをそのまま push します。
+
+### CI を踏まえた修正フロー
+
+GitHub Actions が失敗している場合は、失敗ログの重要部分を収集して修正プロンプトに含め、まず CI エラーの解消を試みます。
+
+### ブランチ追従と競合対応
+
+PR ブランチがベースブランチに追従していない場合はマージして進められます。競合が発生した場合も Claude ベースの修正フローで扱えます。
+
+### 複数リポジトリ対応
+
+`owner/repo` の単体指定だけでなく、`owner/*` でオーナー配下の全リポジトリを対象にできます。
+
+### 重複実行を避ける状態管理
+
+処理済みのレビュー項目は PR 上に記録されるため、同じ未解決フィードバックを繰り返し処理しにくい設計です。
+
+## 必要条件
+
+- Python 3.12
+- GitHub 認証済みの `gh` CLI
+- 実際に修正を走らせる場合の Claude CLI 認証
+- `.refix.yaml` 設定ファイル
+- 必要に応じてローカル用の `.env` ファイル
+
+## クイックスタート
+
+### ローカル実行
+
+1. 依存関係を入れ、テンプレートファイルを作成します。
+
+   `make setup`
+
+2. `.refix.yaml.sample` をもとに `.refix.yaml` を編集します。
+
+3. 必要な CLI を認証します。
+
+   - `gh auth login`
+   - Claude CLI の認証、または `CLAUDE_CODE_OAUTH_TOKEN` の設定
+
+4. 用途に応じてコマンドを実行します。
+
+   - `make dry-run` — Claude を呼ばずに挙動だけ確認
+   - `make run-summarize-only` — 要約のみ実行
+   - `make run` — 詳細ログつきでフル実行
+   - `make run-silent` — ログを抑えてフル実行
+
+## YAML 設定リファレンス
+
+`refix` はリポジトリルートの `.refix.yaml` を読み込みます。別パスを使う場合は `--config` で指定できます。
+
+### 完全なスキーマ
+
+```yaml
+models:
+  summarize: "haiku"
+  fix: "sonnet"
+
+ci_log_max_lines: 120
+
+repositories:
+  - repo: "owner/repo"
+    user_name: "Refix Bot"
+    user_email: "bot@example.com"
+```
+
+### トップレベルキー
+
+#### `models`
+
+Claude ベースの処理で使うモデル設定です。
+
+- 型: マッピング
+- 必須: いいえ
+- デフォルト:
+
+  ```yaml
+  models:
+    summarize: "haiku"
+    fix: "sonnet"
+  ```
+
+利用できる子キーは次の 2 つです。
+
+- `summarize`
+- `fix`
+
+未知の子キーは警告を出して無視されます。
+
+#### `ci_log_max_lines`
+
+修正プロンプトに含める失敗 CI ログの最大行数です。
+
+- 型: 整数
+- 必須: いいえ
+- デフォルト: `120`
+- 実効最小値: `20`
+
+PR に失敗中の GitHub Actions がある場合、この値でプロンプトへ渡すログ量を調整できます。値を小さくするとプロンプトは軽くなり、大きくすると文脈を多く渡せます。
+
+#### `repositories`
+
+`refix` が処理する対象リポジトリの一覧です。
+
+- 型: 空でないリスト
+- 必須: はい
+- デフォルト: なし
+
+各要素では次のキーを使えます。
+
+### リポジトリエントリのキー
+
+#### `repositories[].repo`
+
+`owner/repo` 形式の対象リポジトリです。
+
+- 型: 文字列
+- 必須: はい
+- 例: `octocat/Hello-World`
+
+`owner/*` を指定すると、そのオーナー配下の全リポジトリへ展開できます。一方で `owner/repo*` のような別形式のワイルドカードは現在の実装では対応していません。
+
+#### `repositories[].user_name`
+
+`refix` が作成するコミットに使う Git author 名です。
+
+- 型: 文字列
+- 必須: いいえ
+- デフォルト: 未設定
+
+省略した場合は、実行環境で有効な Git identity にフォールバックします。
+
+#### `repositories[].user_email`
+
+`refix` が作成するコミットに使う Git author メールアドレスです。
+
+- 型: 文字列
+- 必須: いいえ
+- デフォルト: 未設定
+
+省略した場合は、実行環境で有効な Git identity にフォールバックします。
+
+### 挙動とバリデーションの補足
+
+- YAML のルートはマッピングである必要があります。
+- `repositories` は必須で、1 件以上の要素が必要です。
+- 未知のキーは即エラーではなく、警告を出して無視されます。
+- `models.summarize` は YAML スキーマ上のキーですが、現状の要約処理は要約モデル選択時に環境変数 `REFIX_MODEL_SUMMARIZE` も参照します。要約モデルをデフォルト以外にしたい場合は、現時点では YAML と環境変数の両方を同じ値にしておくのが安全です。
+
+## GitHub Actions での実行方法
+
+このリポジトリには、`refix` を GitHub Actions で動かすためのワークフロー `.github/workflows/run-auto-review.yml` が含まれています。
+
+### ワークフローが行うこと
+
+このワークフローは次の順で動作します。
+
+1. リポジトリを checkout する
+2. Python 3.12 と Python 依存関係をセットアップする
+3. Claude CLI をインストールする
+4. GitHub Actions 変数 `REFIX_CONFIG_YAML` から `.refix.yaml` を生成する
+5. push 用の Git 認証を設定する
+6. `python auto_fixer.py --config ../.refix.yaml` を実行する
+
+### 必要な GitHub Actions 設定
+
+対象リポジトリ、またはオーガニゼーションに次の値を設定します。
+
+#### Variables
+
+- `REFIX_CONFIG_YAML`
+  - `refix` 用 YAML 設定の全文です。
+  - ローカルの `.refix.yaml` に書く内容をそのまま保存してください。
+
+#### Secrets
+
+- `GH_PAT`
+  - GitHub API 利用と修正コミット push に使う Personal Access Token
+- `CLAUDE_CODE_OAUTH_TOKEN`
+  - Claude CLI が自動修正時に使うトークン
+
+### セットアップ手順
+
+1. `Settings` -> `Secrets and variables` -> `Actions` を開きます。
+2. `REFIX_CONFIG_YAML` を Variable として追加します。
+3. `GH_PAT` と `CLAUDE_CODE_OAUTH_TOKEN` を Secret として追加します。
+4. Actions タブで `Run auto review` ワークフローを開きます。
+5. `Run workflow` で手動実行します。
+
+### `REFIX_CONFIG_YAML` の例
+
+```yaml
+models:
+  summarize: "haiku"
+  fix: "sonnet"
+
+ci_log_max_lines: 120
+
+repositories:
+  - repo: "your-org/your-repo"
+    user_name: "Refix Bot"
+    user_email: "bot@example.com"
+```
+
+### このリポジトリに含まれるワークフロー
+
+- `.github/workflows/run-auto-review.yml`
+  - 実際の自動修正フローを手動実行するためのワークフロー
+- `.github/workflows/test.yml`
+  - Pull Request 時と手動実行でテストを回すワークフロー
+
+## Contributing
+
+コントリビュート歓迎です。
+
+- バグ報告、要望、質問は Issue を作成してください。
+- 修正、改善、ドキュメント更新は Pull Request を歓迎します。
+- 追加した Issue / PR テンプレートを使うと、内容を整理しやすくなります。
+
+## ライセンス
+
+このプロジェクトは MIT License で提供されます。詳細は [LICENSE](LICENSE) を参照してください。
