@@ -22,6 +22,11 @@ coderabbit_auto_resume_max_per_run: 1
 # Default: false (skip DRAFT PRs)
 process_draft_prs: false
 
+# State comment timestamp timezone (Optional)
+# Default: JST
+# e.g. JST, UTC, Asia/Tokyo
+state_comment_timezone: JST
+
 # 1回の実行で変更を加えるPRの最大件数（0=無制限、Optional）
 # ラベル付け替え、コメント投稿、state comment 更新などすべての変更を含む
 # Default: 0

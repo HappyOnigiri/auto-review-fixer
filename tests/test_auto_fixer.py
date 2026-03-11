@@ -10,7 +10,7 @@ import pytest
 
 import auto_fixer
 from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
-from state_manager import StateComment
+from state_manager import StateComment, StateEntry
 
 
 def make_state_comment(*processed_ids: str) -> StateComment:
@@ -178,6 +178,7 @@ ci_log_max_lines: 250
 auto_merge: true
 coderabbit_auto_resume: true
 coderabbit_auto_resume_max_per_run: 3
+state_comment_timezone: UTC
 repositories:
   - repo: owner/repo1
     user_name: Bot User
@@ -197,6 +198,7 @@ repositories:
             "coderabbit_auto_resume": True,
             "coderabbit_auto_resume_max_per_run": 3,
             "process_draft_prs": False,
+            "state_comment_timezone": "UTC",
             "max_modified_prs_per_run": 0,
             "max_committed_prs_per_run": 2,
             "max_claude_prs_per_run": 0,
@@ -231,6 +233,7 @@ repositories:
         assert config["coderabbit_auto_resume"] is False
         assert config["coderabbit_auto_resume_max_per_run"] == 1
         assert config["process_draft_prs"] is False
+        assert config["state_comment_timezone"] == "JST"
         assert config["max_modified_prs_per_run"] == 0
         assert config["max_committed_prs_per_run"] == 2
         assert config["max_claude_prs_per_run"] == 0
@@ -289,11 +292,37 @@ repositories:
             auto_fixer.load_config(str(config_file))
         assert exc_info.value.code == 1
 
+    def test_state_comment_timezone_requires_non_empty_string(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+state_comment_timezone: ""
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
     def test_coderabbit_auto_resume_max_per_run_requires_positive_integer(self, tmp_path):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             """
 coderabbit_auto_resume_max_per_run: 0
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    def test_state_comment_timezone_requires_valid_timezone(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+state_comment_timezone: "Not/AZone"
 repositories:
   - repo: owner/repo1
 """.strip()
@@ -1335,6 +1364,62 @@ class TestProcessRepo:
             auto_fixer.process_repo({"repo": "owner/repo"})
 
         mock_set_running.assert_called_once_with("owner/repo", 1)
+
+    def test_process_repo_passes_state_comment_timezone_to_create_state_entry(self, tmp_path):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix", "author": {"login": "coderabbitai[bot]"}}
+            ],
+            "comments": [],
+        }
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "state_comment_timezone": "UTC",
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
+        captured_timezones: list[str] = []
+
+        def _create_state_entry_side_effect(
+            comment_id: str,
+            url: str,
+            processed_at: str | None = None,
+            timezone_name: str = "JST",
+        ) -> StateEntry:
+            captured_timezones.append(timezone_name)
+            return StateEntry(comment_id=comment_id, url=url, processed_at="2026-03-11 12:00:00 UTC")
+
+        def _run_side_effect(cmd, **kwargs):
+            if cmd == ["git", "status", "--porcelain"]:
+                return Mock(returncode=0, stdout="", stderr="")
+            if cmd == ["git", "log", "origin/feature..HEAD", "--oneline"]:
+                return Mock(returncode=0, stdout="", stderr="")
+            return Mock(returncode=0, stdout="", stderr="")
+
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
+            patch("auto_fixer._run_claude_prompt", return_value=""),
+            patch("auto_fixer._set_pr_running_label"),
+            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer.upsert_state_comment"),
+            patch("auto_fixer.subprocess.run", side_effect=_run_side_effect),
+            patch("auto_fixer.create_state_entry", side_effect=_create_state_entry_side_effect),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+
+        assert captured_timezones == ["UTC"]
 
 
 class TestRefixLabeling:

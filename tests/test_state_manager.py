@@ -12,7 +12,7 @@ def test_parse_processed_ids_from_markdown_table():
     text = """<!-- auto-review-fixer-state-comment -->
 ### 🤖 Auto Review Fixer Status
 
-| Comment ID | 処理日時 (UTC) |
+| Comment ID | 処理日時 |
 |---|---|
 | [r123](https://github.com/owner/repo/pull/1#discussion_r123) | 2026-03-11 12:00:00 |
 | [discussion_r456](https://github.com/owner/repo/pull/1#discussion_r456) | 2026-03-11 12:05:00 |
@@ -35,7 +35,7 @@ def test_parse_processed_ids_handles_missing_or_broken_text(text, expected):
 
 def test_parse_state_entries_falls_back_for_broken_rows():
     text = """<!-- auto-review-fixer-state-comment -->
-| Comment ID | 処理日時 (UTC) |
+| Comment ID | 処理日時 |
 |---|---|
 | [r123](https://github.com/owner/repo/pull/1#discussion_r123) | 2026-03-11 12:00:00 |
 | [discussion_r456](https://github.com/owner/repo/pull/1#discussion_r456
@@ -47,7 +47,7 @@ def test_parse_state_entries_falls_back_for_broken_rows():
         state_manager.StateEntry(
             comment_id="r123",
             url="https://github.com/owner/repo/pull/1#discussion_r123",
-            processed_at="2026-03-11 12:00:00",
+            processed_at="2026-03-11 12:00:00 UTC",
         ),
         state_manager.StateEntry(
             comment_id="discussion_r456",
@@ -111,6 +111,20 @@ def test_render_state_comment_hides_description_in_html_comment():
     ) in body
 
 
+def test_current_timestamp_defaults_to_jst():
+    timestamp = state_manager.current_timestamp()
+    assert timestamp.endswith("JST")
+
+
+def test_create_state_entry_uses_requested_timezone():
+    entry = state_manager.create_state_entry(
+        comment_id="r123",
+        url="https://github.com/owner/repo/pull/1#discussion_r123",
+        timezone_name="UTC",
+    )
+    assert entry.processed_at.endswith("UTC")
+
+
 def test_load_state_comment_extracts_latest_marker_comment_and_ids():
     state_body = state_manager.render_state_comment(
         [
@@ -139,7 +153,7 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
         state_manager.StateEntry(
             comment_id="r123",
             url="https://github.com/owner/repo/pull/1#discussion_r123",
-            processed_at="2026-03-11 12:00:00",
+            processed_at="2026-03-11 12:00:00 UTC",
         )
     ]
 

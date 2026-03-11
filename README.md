@@ -107,6 +107,10 @@ coderabbit_auto_resume_max_per_run: 1
 # Default: false (draft PRs are skipped)
 process_draft_prs: false
 
+# Timezone used for timestamps in PR state comments (optional)
+# Default: JST
+state_comment_timezone: "JST"
+
 # Repository targets (required)
 repositories:
   - repo: "owner/repo"
@@ -188,6 +192,34 @@ Maximum number of `@coderabbitai resume` comments that `refix` can post in a sin
 
 This cap is applied across all repositories and PRs processed by the same run, which helps avoid hitting CodeRabbit rate limits again by posting too many resume comments at once.
 
+#### `state_comment_timezone`
+
+Timezone used when writing `処理日時` in the PR state comment.
+
+- Type: string
+- Required: no
+- Default: `"JST"`
+
+You can set either `JST` (alias for `Asia/Tokyo`) or any valid IANA timezone such as `UTC`, `Asia/Tokyo`, or `America/Los_Angeles`.
+
+Commonly used timezone examples:
+
+- `JST` (alias of `Asia/Tokyo`)
+- `UTC`
+- `Asia/Seoul`
+- `Asia/Shanghai`
+- `Asia/Singapore`
+- `Asia/Kolkata`
+- `Europe/London`
+- `Europe/Berlin`
+- `Europe/Paris`
+- `America/New_York`
+- `America/Chicago`
+- `America/Denver`
+- `America/Los_Angeles`
+- `Australia/Sydney`
+- `Pacific/Auckland`
+
 #### `repositories`
 
 List of repositories that `refix` should process.
@@ -235,6 +267,7 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - The YAML root must be a mapping.
 - `repositories` must be present and must contain at least one entry.
 - Unknown keys are ignored with warnings rather than treated as hard errors.
+- `state_comment_timezone` must be a valid IANA timezone name (or `JST` alias).
 - `models.summarize` in YAML takes priority over the `REFIX_MODEL_SUMMARIZE` environment variable when selecting the summarization model.
 - The `coderabbit_auto_resume` option only affects active CodeRabbit rate-limit comments; duplicate `@coderabbitai resume` comments are avoided when one has already been posted after the latest rate-limit notice.
 - `coderabbit_auto_resume_max_per_run` limits how many auto-resume comments can be posted per execution (default: 1).
@@ -287,6 +320,8 @@ models:
   fix: "sonnet"
 
 ci_log_max_lines: 120
+
+state_comment_timezone: "JST"
 
 repositories:
   - repo: "your-org/your-repo"

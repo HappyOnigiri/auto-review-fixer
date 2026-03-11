@@ -99,6 +99,8 @@ coderabbit_auto_resume_max_per_run: 1
 
 process_draft_prs: false
 
+state_comment_timezone: "JST"
+
 repositories:
   - repo: "owner/repo"
     user_name: "Refix Bot"
@@ -179,6 +181,16 @@ CodeRabbit のレートリミットコメントに記載された待機時間が
 
 同じ実行で処理された全リポジトリ・全PRに対して共通で適用されるため、一度に大量の resume を投げて再度レートリミットに引っかかるリスクを下げられます。
 
+#### `state_comment_timezone`
+
+PR の状態管理コメントに記録する `処理日時` のタイムゾーンです。
+
+- 型: 文字列
+- 必須: いいえ
+- デフォルト: `"JST"`
+
+`JST`（`Asia/Tokyo` のエイリアス）または `UTC` / `Asia/Tokyo` / `America/Los_Angeles` などの IANA タイムゾーン名を指定できます。
+
 #### `repositories`
 
 `refix` が処理する対象リポジトリの一覧です。
@@ -226,6 +238,7 @@ CodeRabbit のレートリミットコメントに記載された待機時間が
 - YAML のルートはマッピングである必要があります。
 - `repositories` は必須で、1 件以上の要素が必要です。
 - 未知のキーは即エラーではなく、警告を出して無視されます。
+- `state_comment_timezone` は有効な IANA タイムゾーン名（または `JST` エイリアス）である必要があります。
 - `models.summarize` で要約処理で使用するモデルを指定します。この設定は環境変数 `REFIX_MODEL_SUMMARIZE` より優先されます。
 - `models.fix` で修正処理で使用するモデルを指定します。
 - `coderabbit_auto_resume` は、最新の CodeRabbit レートリミット通知より後にすでに `@coderabbitai resume` コメントがある場合は重複投稿しません。
@@ -287,6 +300,8 @@ coderabbit_auto_resume: false
 coderabbit_auto_resume_max_per_run: 1
 
 process_draft_prs: false
+
+state_comment_timezone: "JST"
 
 repositories:
   - repo: "your-org/your-repo"
