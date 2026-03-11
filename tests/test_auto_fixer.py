@@ -439,12 +439,56 @@ class TestMain:
             global_modified_prs=set(),
             global_committed_prs=set(),
             global_claude_prs=set(),
+            global_coderabbit_resumed_prs=set(),
             auto_resume_run_state=ANY,
         )
         assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
             "posted": 0,
             "max_per_run": 1,
         }
+        assert mock_process_repo.call_args.kwargs["global_coderabbit_resumed_prs"] == set()
+
+    def test_main_prints_resumed_prs_before_commit_list(self, capsys):
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
+
+        def _process_repo_side_effect(*_args, **kwargs):
+            kwargs["global_coderabbit_resumed_prs"].add(("owner/repo", 123))
+            return [("owner/repo", 123, "abc123 test commit")]
+
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=config),
+            patch("auto_fixer.process_repo", side_effect=_process_repo_side_effect),
+        ):
+            auto_fixer.main()
+
+        out = capsys.readouterr().out
+        assert "CodeRabbit を resume した PR 一覧:" in out
+        assert "  - owner/repo PR #123" in out
+        assert "コミットを追加した PR 一覧:" in out
+        assert out.index("CodeRabbit を resume した PR 一覧:") < out.index("コミットを追加した PR 一覧:")
+
+    def test_main_skips_resumed_prs_section_when_empty(self, capsys):
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=config),
+            patch("auto_fixer.process_repo", return_value=[]),
+        ):
+            auto_fixer.main()
+
+        out = capsys.readouterr().out
+        assert "CodeRabbit を resume した PR 一覧:" not in out
 
     def test_usage_limit_exits_nonzero_immediately(self, capsys):
         config = {

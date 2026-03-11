@@ -1587,6 +1587,7 @@ def process_repo(
     global_modified_prs: set[tuple[str, int]] | None = None,
     global_committed_prs: set[tuple[str, int]] | None = None,
     global_claude_prs: set[tuple[str, int]] | None = None,
+    global_coderabbit_resumed_prs: set[tuple[str, int]] | None = None,
     auto_resume_run_state: dict[str, int] | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
@@ -1632,6 +1633,9 @@ def process_repo(
     modified_prs: set[tuple[str, int]] = global_modified_prs if global_modified_prs is not None else set()
     committed_prs: set[tuple[str, int]] = global_committed_prs if global_committed_prs is not None else set()
     claude_prs: set[tuple[str, int]] = global_claude_prs if global_claude_prs is not None else set()
+    coderabbit_resumed_prs: set[tuple[str, int]] = (
+        global_coderabbit_resumed_prs if global_coderabbit_resumed_prs is not None else set()
+    )
     fetch_failed = False
     pr_fetch_failed = False
 
@@ -1793,6 +1797,7 @@ def process_repo(
                 )
                 if posted_resume_comment:
                     auto_resume_run_state["posted"] = int(auto_resume_run_state["posted"]) + 1
+                    coderabbit_resumed_prs.add((repo, pr_number))
 
             has_review_targets = bool(unresolved_reviews or unresolved_comments)
             if not has_review_targets and not is_behind and not has_failing_ci:
@@ -2473,6 +2478,7 @@ def main():
     global_modified_prs: set[tuple[str, int]] = set()
     global_committed_prs: set[tuple[str, int]] = set()
     global_claude_prs: set[tuple[str, int]] = set()
+    global_coderabbit_resumed_prs: set[tuple[str, int]] = set()
     auto_resume_run_state = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
     for repo_info in repos:
         try:
@@ -2485,6 +2491,7 @@ def main():
                 global_modified_prs=global_modified_prs,
                 global_committed_prs=global_committed_prs,
                 global_claude_prs=global_claude_prs,
+                global_coderabbit_resumed_prs=global_coderabbit_resumed_prs,
                 auto_resume_run_state=auto_resume_run_state,
             )
             if results:
@@ -2502,6 +2509,13 @@ def main():
         except Exception as e:
             print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
             continue
+
+    if global_coderabbit_resumed_prs:
+        print("\n" + "=" * SEPARATOR_LEN)
+        print("CodeRabbit を resume した PR 一覧:")
+        for repo, pr_number in sorted(global_coderabbit_resumed_prs):
+            print(f"  - {repo} PR #{pr_number}")
+        print("=" * SEPARATOR_LEN)
 
     if commits_added_to:
         print("\n" + "=" * SEPARATOR_LEN)
