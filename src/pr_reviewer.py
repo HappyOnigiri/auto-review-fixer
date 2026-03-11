@@ -131,6 +131,25 @@ def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
     return _flatten_paginated_response(data)
 
 
+def fetch_issue_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
+    """Fetch issue comments for a pull request via REST API."""
+    cmd = [
+        "gh",
+        "api",
+        f"repos/{repo}/issues/{pr_number}/comments",
+        "--paginate",
+        "--slurp",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding="utf-8")
+    if result.returncode != 0:
+        raise RuntimeError(f"failed to fetch issue comments: {result.stderr}")
+    try:
+        data = json.loads(result.stdout) if result.stdout else []
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"failed to parse issue comments response: {e}") from e
+    return _flatten_paginated_response(data)
+
+
 def fetch_review_threads(repo: str, pr_number: int) -> dict[int, str]:
     """Fetch unresolved review threads and return {comment_db_id: thread_node_id}."""
     owner, name = repo.split("/")

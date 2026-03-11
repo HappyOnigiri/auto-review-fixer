@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest an improvement for refix
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea. Clear problem statements and expected outcomes help us evaluate requests faster.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What pain point or limitation are you trying to address?
+      placeholder: I want refix to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like to see.
+      placeholder: Add support for ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or other approaches you have considered.
+  - type: textarea
+    id: use_cases
+    attributes:
+      label: Use cases
+      description: Share concrete scenarios where this would help.
+      placeholder: |
+        - In CI, ...
+        - For multi-repository setups, ...
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Links, mockups, logs, or other supporting information.
