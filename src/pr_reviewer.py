@@ -27,7 +27,11 @@ def run_gh_command(cmd: list[str]) -> Any:
         print(f"Error: {result.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    return json.loads(result.stdout) if result.stdout else {}
+    try:
+        return json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError:
+        print("Warning: failed to parse command output", file=sys.stderr)
+        return {}
 
 
 def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:
