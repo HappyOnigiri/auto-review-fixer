@@ -1707,6 +1707,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                             if not silent:
                                 print(f"  [State] review {_review_state_id(review)} queued for state comment update")
                         # Resolve inline comment threads on GitHub and record only on success
+                        any_comment_failed = False
                         if unresolved_comments:
                             resolved = 0
                             for comment in unresolved_comments:
@@ -1721,8 +1722,11 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                                                 url=_inline_comment_state_url(comment, repo, pr_number),
                                             )
                                         )
+                                    else:
+                                        any_comment_failed = True
                                 except Exception as e:
                                     print(f"Warning: state update/resolve_review_thread failed for {rid}: {e}", file=sys.stderr)
+                                    any_comment_failed = True
                             print(f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)")
                         if state_entries:
                             try:
@@ -1730,7 +1734,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                                 state_saved = True
                             except Exception as e:
                                 print(f"Warning: failed to update state comment for PR #{pr_number}: {e}", file=sys.stderr)
-                        else:
+                        elif not any_comment_failed:
                             state_saved = True  # nothing to save; state is consistent
                     _remove_running_on_exit = False
                 except ClaudeCommandFailedError:
