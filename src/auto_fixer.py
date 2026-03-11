@@ -973,6 +973,15 @@ def _run_claude_prompt(
             env=claude_env,
         )
         stdout, stderr = process.communicate()
+        if not silent:
+            _log_group(f"Claude execution output ({phase_label})")
+            if stdout:
+                print("[stdout]")
+                print(stdout.strip())
+            if stderr:
+                print("[stderr]")
+                print(stderr.strip())
+            _log_endgroup()
         if process.returncode != 0:
             if is_claude_usage_limit_error(stdout, stderr):
                 raise ClaudeUsageLimitError(
