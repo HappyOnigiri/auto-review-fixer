@@ -95,6 +95,8 @@ auto_merge: false
 
 coderabbit_auto_resume: false
 
+coderabbit_auto_resume_max_per_run: 1
+
 process_draft_prs: false
 
 repositories:
@@ -167,6 +169,16 @@ CodeRabbit のレートリミットコメントに記載された待機時間が
 
 レートリミット中は、`refix` は PR を `refix:running` に保ち、レビュー修正と auto-merge を止めつつ、CI 修正とベースブランチ取り込みは継続します。この設定を `true` にすると、待機時間経過後に自動で CodeRabbit の再開を促します。
 
+#### `coderabbit_auto_resume_max_per_run`
+
+1回の実行で `refix` が投稿できる `@coderabbitai resume` コメント数の上限です。
+
+- 型: 整数（`1` 以上）
+- 必須: いいえ
+- デフォルト: `1`
+
+同じ実行で処理された全リポジトリ・全PRに対して共通で適用されるため、一度に大量の resume を投げて再度レートリミットに引っかかるリスクを下げられます。
+
 #### `repositories`
 
 `refix` が処理する対象リポジトリの一覧です。
@@ -217,6 +229,7 @@ CodeRabbit のレートリミットコメントに記載された待機時間が
 - `models.summarize` で要約処理で使用するモデルを指定します。この設定は環境変数 `REFIX_MODEL_SUMMARIZE` より優先されます。
 - `models.fix` で修正処理で使用するモデルを指定します。
 - `coderabbit_auto_resume` は、最新の CodeRabbit レートリミット通知より後にすでに `@coderabbitai resume` コメントがある場合は重複投稿しません。
+- `coderabbit_auto_resume_max_per_run` で、1回の実行で投稿する自動 resume コメント件数を制限できます（デフォルト: 1）。
 
 ## GitHub Actions での実行方法
 
@@ -270,6 +283,8 @@ ci_log_max_lines: 120
 auto_merge: false
 
 coderabbit_auto_resume: false
+
+coderabbit_auto_resume_max_per_run: 1
 
 process_draft_prs: false
 

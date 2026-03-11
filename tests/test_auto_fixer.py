@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 import pytest
 
@@ -177,6 +177,7 @@ models:
 ci_log_max_lines: 250
 auto_merge: true
 coderabbit_auto_resume: true
+coderabbit_auto_resume_max_per_run: 3
 repositories:
   - repo: owner/repo1
     user_name: Bot User
@@ -194,6 +195,7 @@ repositories:
             "ci_log_max_lines": 250,
             "auto_merge": True,
             "coderabbit_auto_resume": True,
+            "coderabbit_auto_resume_max_per_run": 3,
             "process_draft_prs": False,
             "repositories": [
                 {
@@ -224,6 +226,7 @@ repositories:
         assert config["ci_log_max_lines"] == 120
         assert config["auto_merge"] is False
         assert config["coderabbit_auto_resume"] is False
+        assert config["coderabbit_auto_resume_max_per_run"] == 1
         assert config["process_draft_prs"] is False
         assert config["repositories"] == [
             {"repo": "owner/repo1", "user_name": None, "user_email": None}
@@ -272,6 +275,19 @@ repositories:
         config_file.write_text(
             """
 process_draft_prs: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    def test_coderabbit_auto_resume_max_per_run_requires_positive_integer(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_max_per_run: 0
 repositories:
   - repo: owner/repo1
 """.strip()
@@ -372,7 +388,12 @@ class TestMain:
             silent=False,
             summarize_only=False,
             config=config,
+            auto_resume_run_state=ANY,
         )
+        assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
+            "posted": 0,
+            "max_per_run": 1,
+        }
 
     def test_usage_limit_exits_nonzero_immediately(self, capsys):
         config = {
@@ -714,6 +735,7 @@ class TestCodeRabbitRateLimitHelpers:
                 issue_comments=[],
                 rate_limit_status=status,
                 auto_resume_enabled=True,
+                remaining_resume_posts=1,
                 dry_run=False,
                 summarize_only=False,
             )
@@ -740,10 +762,31 @@ class TestCodeRabbitRateLimitHelpers:
                 issue_comments=issue_comments,
                 rate_limit_status=status,
                 auto_resume_enabled=True,
+                remaining_resume_posts=1,
                 dry_run=False,
                 summarize_only=False,
             )
 
+        assert posted is False
+        mock_post.assert_not_called()
+
+    def test_maybe_auto_resume_skips_when_per_run_limit_reached(self):
+        threshold = auto_fixer.datetime.now(auto_fixer.timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        with patch("auto_fixer._post_issue_comment") as mock_post:
+            posted = auto_fixer._maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                remaining_resume_posts=0,
+                dry_run=False,
+                summarize_only=False,
+            )
         assert posted is False
         mock_post.assert_not_called()
 

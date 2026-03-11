@@ -98,6 +98,10 @@ auto_merge: false
 # (optional, default false)
 coderabbit_auto_resume: false
 
+# Maximum number of `@coderabbitai resume` comments posted per single run
+# (optional, default 1)
+coderabbit_auto_resume_max_per_run: 1
+
 # Whether to process draft PRs (optional)
 # Default: false (draft PRs are skipped)
 process_draft_prs: false
@@ -173,6 +177,16 @@ Whether `refix` should automatically post `@coderabbitai resume` after a CodeRab
 
 When a rate-limit notice is active, `refix` keeps the PR in `refix:running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed.
 
+#### `coderabbit_auto_resume_max_per_run`
+
+Maximum number of `@coderabbitai resume` comments that `refix` can post in a single execution.
+
+- Type: integer (`>= 1`)
+- Required: no
+- Default: `1`
+
+This cap is applied across all repositories and PRs processed by the same run, which helps avoid hitting CodeRabbit rate limits again by posting too many resume comments at once.
+
 #### `repositories`
 
 List of repositories that `refix` should process.
@@ -222,6 +236,7 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - Unknown keys are ignored with warnings rather than treated as hard errors.
 - `models.summarize` in YAML takes priority over the `REFIX_MODEL_SUMMARIZE` environment variable when selecting the summarization model.
 - The `coderabbit_auto_resume` option only affects active CodeRabbit rate-limit comments; duplicate `@coderabbitai resume` comments are avoided when one has already been posted after the latest rate-limit notice.
+- `coderabbit_auto_resume_max_per_run` limits how many auto-resume comments can be posted per execution (default: 1).
 
 ## Running in CI with GitHub Actions
 
