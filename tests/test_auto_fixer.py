@@ -1307,3 +1307,36 @@ class TestRunClaudePrompt:
                 phase_label="review-fix",
             )
             assert result == ""
+
+class TestExpandRepositories:
+    def test_no_wildcard_returns_original(self):
+        repos = [{"repo": "owner/repo1"}, {"repo": "owner/repo2"}]
+        expanded = auto_fixer.expand_repositories(repos)
+        assert expanded == repos
+
+    def test_expand_wildcard(self):
+        repos = [{"repo": "owner/*", "user_name": "bot"}]
+        mock_stdout = "owner/repo1\nowner/repo2\n"
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout=mock_stdout, stderr="")
+            expanded = auto_fixer.expand_repositories(repos)
+            
+        assert len(expanded) == 2
+        assert expanded[0] == {"repo": "owner/repo1", "user_name": "bot"}
+        assert expanded[1] == {"repo": "owner/repo2", "user_name": "bot"}
+        mock_run.assert_called_once_with(
+            ["gh", "repo", "list", "owner", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner", "--limit", "1000"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
+
+    def test_expand_wildcard_fail_falls_back_to_original(self, capsys):
+        repos = [{"repo": "owner/*"}]
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=1, stdout="", stderr="error")
+            expanded = auto_fixer.expand_repositories(repos)
+            
+        assert expanded == repos
+        assert "Warning: failed to expand owner/*" in capsys.readouterr().err

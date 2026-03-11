@@ -1798,6 +1798,43 @@ def process_repo(
     return commits_added_to
 
 
+def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand repositories containing wildcards (e.g., owner/*) using gh cli."""
+    expanded: list[dict[str, Any]] = []
+    for repo_info in repos:
+        repo_name = repo_info["repo"]
+        if repo_name.endswith("/*"):
+            owner = repo_name[:-2]
+            print(f"Expanding wildcard repository: {repo_name}")
+            cmd = ["gh", "repo", "list", owner, "--json", "nameWithOwner", "--jq", ".[].nameWithOwner", "--limit", "1000"]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                encoding="utf-8",
+            )
+            if result.returncode != 0:
+                print(f"Warning: failed to expand {repo_name}: {(result.stderr or '').strip()}", file=sys.stderr)
+                expanded.append(repo_info)  # Fallback to original
+                continue
+            
+            lines = result.stdout.strip().splitlines()
+            if not lines:
+                print(f"Warning: no repositories found for {repo_name}", file=sys.stderr)
+                continue
+            
+            for line in lines:
+                resolved_name = line.strip()
+                if resolved_name:
+                    new_info = dict(repo_info)
+                    new_info["repo"] = resolved_name
+                    expanded.append(new_info)
+        else:
+            expanded.append(repo_info)
+    return expanded
+
+
 def main():
     # CI環境ではPythonのstdout/stderrがフルバッファモードになり、
     # subprocessの直接fd書き込みと順序が逆転する。
@@ -1846,7 +1883,7 @@ def main():
 
     load_dotenv()
     config = load_config(args.config)
-    repos = config["repositories"]
+    repos = expand_repositories(config["repositories"])
 
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
