@@ -7,7 +7,7 @@ default_agents = ["antigravity", "cursor", "claude"]
 
 # Enable nested rule loading from nested .ruler directories
 # When enabled, ruler will search for and process .ruler directories throughout the project hierarchy
-# nested = false
+# nested = false  # 本プロジェクトはフラット構成のため不要
 
 # [gitignore]
 # enabled = true
