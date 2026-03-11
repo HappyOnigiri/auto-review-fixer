@@ -436,6 +436,9 @@ class TestMain:
             silent=False,
             summarize_only=False,
             config=config,
+            global_modified_prs=set(),
+            global_committed_prs=set(),
+            global_claude_prs=set(),
             auto_resume_run_state=ANY,
         )
         assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
@@ -890,7 +893,13 @@ class TestProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer._update_done_label_if_completed"),
         ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"},
+                config=config,
+                global_modified_prs=set(),
+                global_committed_prs=set(),
+                global_claude_prs=set(),
+            )
 
         mock_fetch_pr_details.assert_called_once_with("owner/repo", 1)
 
@@ -1969,7 +1978,13 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer._update_done_label_if_completed"),
         ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"},
+                config=config,
+                global_modified_prs=set(),
+                global_committed_prs=set(),
+                global_claude_prs=set(),
+            )
 
         out = capsys.readouterr().out
         # 1つ目のPRは処理される
@@ -2048,7 +2063,13 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer.subprocess.run", side_effect=mock_run_side_effect),
             patch("auto_fixer.subprocess.Popen", return_value=mock_popen),
         ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"},
+                config=config,
+                global_modified_prs=set(),
+                global_committed_prs=set(),
+                global_claude_prs=set(),
+            )
 
         out = capsys.readouterr().out
         # PR#1 は処理される

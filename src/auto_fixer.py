@@ -1584,6 +1584,9 @@ def process_repo(
     silent: bool = False,
     summarize_only: bool = False,
     config: dict[str, Any] | None = None,
+    global_modified_prs: set[tuple[str, int]] | None = None,
+    global_committed_prs: set[tuple[str, int]] | None = None,
+    global_claude_prs: set[tuple[str, int]] | None = None,
     auto_resume_run_state: dict[str, int] | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
@@ -1626,9 +1629,9 @@ def process_repo(
     commits_added_to: list[tuple[str, int, str]] = []
     processed_count = 0
     # PR単位の上限カウント（各setにPR番号を格納、1PRあたり最大1回）
-    modified_prs: set[int] = set()
-    committed_prs: set[int] = set()
-    claude_prs: set[int] = set()
+    modified_prs: set[tuple[str, int]] = global_modified_prs if global_modified_prs is not None else set()
+    committed_prs: set[tuple[str, int]] = global_committed_prs if global_committed_prs is not None else set()
+    claude_prs: set[tuple[str, int]] = global_claude_prs if global_claude_prs is not None else set()
     fetch_failed = False
     pr_fetch_failed = False
 
@@ -1773,7 +1776,7 @@ def process_repo(
                 )
                 if not dry_run and not summarize_only:
                     _set_pr_running_label(repo, pr_number)
-                    modified_prs.add(pr_number)
+                    modified_prs.add((repo, pr_number))
                 posted_resume_comment = _maybe_auto_resume_coderabbit_review(
                     repo=repo,
                     pr_number=pr_number,
@@ -1813,7 +1816,7 @@ def process_repo(
                     auto_merge_enabled=auto_merge_enabled,
                     coderabbit_rate_limit_active=bool(active_rate_limit),
                 )
-                modified_prs.add(pr_number)
+                modified_prs.add((repo, pr_number))
                 continue
 
             # B上限チェック: コミット追加PR数の上限に達しているか
@@ -1969,8 +1972,8 @@ def process_repo(
                         raise
                     if ci_commits:
                         commits_by_phase.append(ci_commits)
-                        committed_prs.add(pr_number)
-                    claude_prs.add(pr_number)
+                        committed_prs.add((repo, pr_number))
+                    claude_prs.add((repo, pr_number))
             elif has_failing_ci and (commit_limit_reached or claude_limit_reached):
                 print(f"[ci-fix] PR #{pr_number}: skipped due to per-run limit")
 
@@ -2019,7 +2022,7 @@ def process_repo(
                             check=False,
                         ).stdout.strip()
                         commits_by_phase.append(merge_log or f"merge origin/{base_branch}")
-                        committed_prs.add(pr_number)
+                        committed_prs.add((repo, pr_number))
                         if not had_conflicts:
                             print(f"[merge-base] PR #{pr_number}: merged and pushed successfully")
 
@@ -2050,7 +2053,7 @@ def process_repo(
                             raise
                         if conflict_commits:
                             commits_by_phase.append(conflict_commits)
-                        claude_prs.add(pr_number)
+                        claude_prs.add((repo, pr_number))
                         conflict_resolved = not _has_merge_conflicts(works_dir)
                         print(
                             f"[merge-base] PR #{pr_number}: conflict resolution check -> "
@@ -2146,7 +2149,7 @@ def process_repo(
                     auto_merge_enabled=auto_merge_enabled,
                     coderabbit_rate_limit_active=bool(active_rate_limit),
                 )
-                modified_prs.add(pr_number)
+                modified_prs.add((repo, pr_number))
                 if commits_by_phase:
                     commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
                 continue
@@ -2221,8 +2224,8 @@ def process_repo(
                     if review_commits:
                         review_fix_added_commits = True
                         commits_by_phase.append(review_commits)
-                        committed_prs.add(pr_number)
-                    claude_prs.add(pr_number)
+                        committed_prs.add((repo, pr_number))
+                    claude_prs.add((repo, pr_number))
 
                     should_update_state = True
                     dirty_check = subprocess.run(
@@ -2357,7 +2360,7 @@ def process_repo(
                 coderabbit_rate_limit_active=bool(active_rate_limit),
             )
 
-            modified_prs.add(pr_number)
+            modified_prs.add((repo, pr_number))
             if commits_by_phase:
                 commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
         except ClaudeCommandFailedError:
@@ -2467,6 +2470,9 @@ def main():
         print("[SUMMARIZE ONLY MODE]")
 
     commits_added_to: list[tuple[str, int, str]] = []
+    global_modified_prs: set[tuple[str, int]] = set()
+    global_committed_prs: set[tuple[str, int]] = set()
+    global_claude_prs: set[tuple[str, int]] = set()
     auto_resume_run_state = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
     for repo_info in repos:
         try:
@@ -2476,6 +2482,9 @@ def main():
                 silent=args.silent,
                 summarize_only=args.summarize_only,
                 config=config,
+                global_modified_prs=global_modified_prs,
+                global_committed_prs=global_committed_prs,
+                global_claude_prs=global_claude_prs,
                 auto_resume_run_state=auto_resume_run_state,
             )
             if results:
