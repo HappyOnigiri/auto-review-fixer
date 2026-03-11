@@ -137,6 +137,26 @@ Maximum number of failed CI log lines included in the fix prompt.
 
 Use this to control prompt size when a PR has failing GitHub Actions checks. Smaller values reduce prompt volume, while larger values include more context from failed jobs.
 
+#### `auto_merge`
+
+Automatically merge the fix PR when it reaches the `refix:done` state.
+
+- Type: boolean
+- Required: no
+- Default: `false`
+
+When enabled, `refix` will trigger GitHub's auto-merge on the PR after applying fixes. Auto-merge only completes once all required status checks pass.
+
+#### `process_draft_prs`
+
+Whether to include draft PRs in the processing targets.
+
+- Type: boolean
+- Required: no
+- Default: `false`
+
+When set to `false` (the default), draft PRs are skipped. Set to `true` to process draft PRs alongside regular open PRs.
+
 #### `repositories`
 
 List of repositories that `refix` should process.
