@@ -136,10 +136,9 @@ def render_state_comment(entries: list[StateEntry], archived_ids: set[str] | Non
                 "</details>",
             ]
         )
-        if len(body) <= STATE_COMMENT_MAX_LENGTH or not trimmed_entries:
-            if accumulated_archived:
-                body += f"\n<!-- archived-ids: {','.join(sorted(accumulated_archived))} -->"
-            return body
+        footer = f"\n<!-- archived-ids: {','.join(sorted(accumulated_archived))} -->" if accumulated_archived else ""
+        if len(body) + len(footer) <= STATE_COMMENT_MAX_LENGTH or not trimmed_entries:
+            return body + footer
         removed = trimmed_entries.pop(0)
         accumulated_archived.add(removed.comment_id)
 
