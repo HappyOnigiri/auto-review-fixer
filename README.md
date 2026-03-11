@@ -29,6 +29,10 @@ ci_log_max_lines: 120
 # refix:done 状態到達時の自動マージ設定 (省略可能, デフォルト false)
 auto_merge: false
 
+# DRAFT PR も処理対象にするか (省略可能)
+# デフォルト: false（DRAFT はスキップ）
+process_draft_prs: false
+
 # 実行対象のリポジトリ設定 (必須)
 repositories:
   - repo: "owner/repo" # リポジトリ名 (必須: owner/repo 形式)
