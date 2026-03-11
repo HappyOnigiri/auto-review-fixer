@@ -9,6 +9,11 @@ default_agents = ["antigravity", "cursor", "claude"]
 # When enabled, ruler will search for and process .ruler directories throughout the project hierarchy
 # nested = false  # 本プロジェクトはフラット構成のため不要
 
+# --- Skills ---
+# Propagate skills from .ruler/skills/ to compatible agents (Cursor, Claude, etc.)
+[skills]
+enabled = true
+
 # [gitignore]
 # enabled = true
 # local = false  # set true to write generated ignores to .git/info/exclude instead
