@@ -497,7 +497,7 @@ def _extract_ci_error_digest_from_failed_log(log_text: str) -> dict[str, str]:
     lines = log_text.splitlines()
     for line in lines:
         if not digest["failed_test"]:
-            match_failed_test = re.search(r"\b(?:FAILED|ERROR)\s+([^\s]+)", line)
+            match_failed_test = re.search(r"\b(?:FAILED|ERROR)\s+(?:collecting\s+)?([^\s]+)", line)
             if match_failed_test:
                 digest["failed_test"] = match_failed_test.group(1)
         if not digest["file_line"]:
@@ -505,7 +505,7 @@ def _extract_ci_error_digest_from_failed_log(log_text: str) -> dict[str, str]:
             if match_file_line:
                 digest["file_line"] = match_file_line.group(1)
         if not digest["summary"]:
-            match_summary = re.search(r"\b(\d+\s+failed(?:,.*)?\s+in\s+[^\s]+)", line)
+            match_summary = re.search(r"\b(\d+\s+(?:failed|errors?)(?:,.*)?\s+in\s+[^\s]+)", line)
             if match_summary:
                 digest["summary"] = match_summary.group(1)
         if not digest["error_type"]:
@@ -524,7 +524,7 @@ def _select_ci_failure_log_excerpt(log_text: str, max_lines: int) -> tuple[list[
 
     start_index = 0
     for i, line in enumerate(lines):
-        if "=================================== FAILURES" in line:
+        if re.search(r"={5,}\s+(?:FAILURES|ERRORS)\b", line):
             start_index = max(0, i - 5)
             break
     excerpt = lines[start_index:]
