@@ -137,7 +137,7 @@ def render_state_comment(entries: list[StateEntry], archived_ids: set[str] | Non
             ]
         )
         footer = f"\n<!-- archived-ids: {','.join(sorted(accumulated_archived))} -->" if accumulated_archived else ""
-        if len(body) + len(footer) <= STATE_COMMENT_MAX_LENGTH or not trimmed_entries:
+        if len(body) <= STATE_COMMENT_MAX_LENGTH or not trimmed_entries:
             return body + footer
         removed = trimmed_entries.pop(0)
         accumulated_archived.add(removed.comment_id)
@@ -162,7 +162,9 @@ def _get_authenticated_github_user() -> str | None:
         encoding="utf-8",
     )
     if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
+        username = result.stdout.strip()
+        if re.match(r'^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$', username):
+            return username
     return None
 
 
