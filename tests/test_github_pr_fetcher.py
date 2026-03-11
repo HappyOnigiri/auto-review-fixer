@@ -14,6 +14,7 @@ def test_fetch_open_prs_uses_large_limit_by_default():
         prs = github_pr_fetcher.fetch_open_prs("owner/repo")
 
     assert prs == [{"number": 1, "title": "Test"}]
+    assert any("isDraft" in arg for arg in mock_run.call_args.args[0])
     assert mock_run.call_args.args[0][-1] == "1000"
 
 

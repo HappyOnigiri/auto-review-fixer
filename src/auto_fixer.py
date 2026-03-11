@@ -100,9 +100,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "fix": "sonnet",
     },
     "ci_log_max_lines": 120,
+    "process_draft_prs": False,
     "repositories": [],
 }
-ALLOWED_CONFIG_TOP_LEVEL_KEYS = {"models", "ci_log_max_lines", "repositories"}
+ALLOWED_CONFIG_TOP_LEVEL_KEYS = {"models", "ci_log_max_lines", "process_draft_prs", "repositories"}
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
 ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 
@@ -138,6 +139,7 @@ def load_config(filepath: str) -> dict[str, Any]:
     config: dict[str, Any] = {
         "models": dict(DEFAULT_CONFIG["models"]),
         "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
+        "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
         "repositories": [],
     }
 
@@ -169,6 +171,13 @@ def load_config(filepath: str) -> dict[str, Any]:
         except (TypeError, ValueError):
             print("Error: ci_log_max_lines must be an integer.", file=sys.stderr)
             sys.exit(1)
+
+    process_draft_prs = parsed.get("process_draft_prs")
+    if process_draft_prs is not None:
+        if not isinstance(process_draft_prs, bool):
+            print("Error: process_draft_prs must be a boolean.", file=sys.stderr)
+            sys.exit(1)
+        config["process_draft_prs"] = process_draft_prs
 
     repositories = parsed.get("repositories")
     if not isinstance(repositories, list) or not repositories:
@@ -1182,6 +1191,7 @@ def process_repo(
     summarize_model = str(model_config.get("summarize", DEFAULT_CONFIG["models"]["summarize"])).strip()
     fix_model = str(model_config.get("fix", DEFAULT_CONFIG["models"]["fix"])).strip()
     ci_log_max_lines = int(runtime_config.get("ci_log_max_lines", DEFAULT_CONFIG["ci_log_max_lines"]))
+    process_draft_prs = bool(runtime_config.get("process_draft_prs", DEFAULT_CONFIG["process_draft_prs"]))
 
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -1216,7 +1226,13 @@ def process_repo(
     for pr in prs:
         try:
             pr_number = pr.get("number")
-            print(f"\nChecking PR #{pr_number}: {pr.get('title')}")
+            pr_title = pr.get("title")
+            is_draft = bool(pr.get("isDraft"))
+            if is_draft and not process_draft_prs:
+                print(f"\nSkipping DRAFT PR #{pr_number}: {pr_title}")
+                continue
+
+            print(f"\nChecking PR #{pr_number}: {pr_title}")
 
             try:
                 pr_data = fetch_pr_details(repo, pr_number)

@@ -30,7 +30,7 @@ def fetch_open_prs(repo: str, limit: int = 1000) -> list[dict[str, Any]]:
         "--state",
         "open",
         "--json",
-        "number,title,author,createdAt,updatedAt,labels",
+        "number,title,author,createdAt,updatedAt,labels,isDraft",
         "--limit",
         str(limit),
     ]
