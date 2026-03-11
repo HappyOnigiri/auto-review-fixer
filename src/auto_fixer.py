@@ -1163,7 +1163,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                             works_dir=works_dir,
                             prompt=ci_fix_prompt,
                             model=fix_model,
-                            silent=silent,
+                            silent=True,
                             phase_label="ci-fix",
                         )
                     except Exception as e:
