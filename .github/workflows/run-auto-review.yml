@@ -33,10 +33,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Generate config.yaml from GitHub Variables
-        run: |
-          cat <<'EOF' > src/config.yaml
-          ${{ vars.REFIX_CONFIG_YAML }}
-          EOF
+        env:
+          REFIX_CONFIG_YAML: ${{ vars.REFIX_CONFIG_YAML }}
+        run: printf '%s\n' "$REFIX_CONFIG_YAML" > src/config.yaml
 
       - name: Run auto review fixer
         env:
