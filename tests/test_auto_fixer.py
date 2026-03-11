@@ -868,7 +868,7 @@ class TestProcessRepo:
             patch("auto_fixer._backfill_merged_labels") as mock_backfill,
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
-        mock_backfill.assert_called_once_with("owner/repo")
+        mock_backfill.assert_called_once_with("owner/repo", limit=100)
 
     def test_draft_pr_is_skipped_by_default(self):
         prs = [{"number": 1, "title": "Draft PR", "isDraft": True}]
@@ -1511,6 +1511,7 @@ class TestRefixLabeling:
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
             "labels": [{"name": "refix:done"}],
+            "autoMergeRequest": {"enabledBy": {"login": "bot"}},
         }
         with (
             patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr="")),
@@ -1537,11 +1538,11 @@ class TestRefixLabeling:
         merged_prs = [{"number": 31}, {"number": 32}]
         with (
             patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=json.dumps(merged_prs), stderr="")),
-            patch("auto_fixer._set_pr_merged_label") as mock_set_merged,
+            patch("auto_fixer._mark_pr_merged_label_if_needed", return_value=True) as mock_mark,
         ):
             count = auto_fixer._backfill_merged_labels("owner/repo")
         assert count == 2
-        mock_set_merged.assert_has_calls([call("owner/repo", 31), call("owner/repo", 32)])
+        mock_mark.assert_has_calls([call("owner/repo", 31), call("owner/repo", 32)])
 
     def test_backfill_merged_labels_returns_zero_on_list_failure(self):
         with (
