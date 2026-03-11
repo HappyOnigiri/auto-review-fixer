@@ -10,7 +10,8 @@ from datetime import datetime
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-STATE_COMMENT_MARKER = "<!-- auto-review-fixer-state-comment -->"
+LEGACY_STATE_COMMENT_MARKER = "<!-- auto-review-fixer-state-comment -->"
+STATE_COMMENT_MARKER = "<!-- refix-state-comment -->"
 STATE_COMMENT_TITLE = "### 🤖 Refix Status"
 STATE_COMMENT_DESCRIPTION = (
     "<!-- このコメントは Refix が処理状態を記録するためのものです。"
@@ -251,7 +252,10 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
     matching_comments = [
         comment
         for comment in comments
-        if STATE_COMMENT_MARKER in str(comment.get("body") or "")
+        if (
+            STATE_COMMENT_MARKER in str(comment.get("body") or "")
+            or LEGACY_STATE_COMMENT_MARKER in str(comment.get("body") or "")
+        )
         and comment.get("user", {}).get("login") == github_username
     ]
     if not matching_comments:
