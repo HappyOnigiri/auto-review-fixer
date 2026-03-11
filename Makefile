@@ -1,9 +1,12 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-ruler
 
 # venv の Python が利用可能な場合はそれを使用する（activate なしで make test/ci を実行するため）
 PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 REPOMIX_VERSION ?= 1.12.0
 .DEFAULT_GOAL := run
+
+sync-ruler:
+	$(PYTHON) scripts/sync_ruler.py
 
 help:
 	@cd src && python auto_fixer.py --list-commands

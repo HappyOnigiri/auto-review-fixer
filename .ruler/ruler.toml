@@ -4,10 +4,17 @@
 # デフォルトで有効にするエージェント
 default_agents = ["antigravity", "cursor", "claude"]
 
-# AGENTS.md に集約して生成（Claude Code はこれを読み込む）
 [agents.claude]
 enabled = true
 output_path = "AGENTS.md"
+
+[agents.cursor]
+enabled = true
+output_path = "AGENTS.md"
+
+[agents.antigravity]
+enabled = true
+output_path = ".agent/rules/ruler.md"
 
 # --- Skills ---
 [skills]
