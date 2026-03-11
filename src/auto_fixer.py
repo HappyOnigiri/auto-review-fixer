@@ -1122,6 +1122,7 @@ def _update_done_label_if_completed(
     review_fix_started: bool,
     review_fix_added_commits: bool,
     review_fix_failed: bool,
+    state_saved: bool,
     commits_by_phase: list[str],
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
@@ -1133,6 +1134,8 @@ def _update_done_label_if_completed(
 
     is_completed = True
     if review_fix_failed:
+        is_completed = False
+    if not state_saved:
         is_completed = False
     if commits_by_phase:
         is_completed = False
@@ -1300,6 +1303,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                     review_fix_started=False,
                     review_fix_added_commits=False,
                     review_fix_failed=False,
+                    state_saved=True,
                     commits_by_phase=[],
                     pr_data=pr_data,
                     review_comments=review_comments,
@@ -1312,6 +1316,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             review_fix_started = False
             review_fix_added_commits = False
             review_fix_failed = False
+            state_saved = False
             processed_count += 1
 
             if has_review_targets:
@@ -1550,6 +1555,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                     review_fix_started=review_fix_started,
                     review_fix_added_commits=review_fix_added_commits,
                     review_fix_failed=review_fix_failed,
+                    state_saved=True,
                     commits_by_phase=commits_by_phase,
                     pr_data=pr_data,
                     review_comments=review_comments,
@@ -1721,8 +1727,11 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                         if state_entries:
                             try:
                                 upsert_state_comment(repo, pr_number, state_entries)
+                                state_saved = True
                             except Exception as e:
                                 print(f"Warning: failed to update state comment for PR #{pr_number}: {e}", file=sys.stderr)
+                        else:
+                            state_saved = True  # nothing to save; state is consistent
                     _remove_running_on_exit = False
                 except ClaudeCommandFailedError:
                     _remove_running_on_exit = False
@@ -1745,6 +1754,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 review_fix_started=review_fix_started,
                 review_fix_added_commits=review_fix_added_commits,
                 review_fix_failed=review_fix_failed,
+                state_saved=state_saved,
                 commits_by_phase=commits_by_phase,
                 pr_data=pr_data,
                 review_comments=review_comments,
