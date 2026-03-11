@@ -100,9 +100,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "fix": "sonnet",
     },
     "ci_log_max_lines": 120,
+    "auto_merge": False,
     "repositories": [],
 }
-ALLOWED_CONFIG_TOP_LEVEL_KEYS = {"models", "ci_log_max_lines", "repositories"}
+ALLOWED_CONFIG_TOP_LEVEL_KEYS = {"models", "ci_log_max_lines", "auto_merge", "repositories"}
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
 ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 
@@ -138,6 +139,7 @@ def load_config(filepath: str) -> dict[str, Any]:
     config: dict[str, Any] = {
         "models": dict(DEFAULT_CONFIG["models"]),
         "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
+        "auto_merge": DEFAULT_CONFIG["auto_merge"],
         "repositories": [],
     }
 
@@ -169,6 +171,13 @@ def load_config(filepath: str) -> dict[str, Any]:
         except (TypeError, ValueError):
             print("Error: ci_log_max_lines must be an integer.", file=sys.stderr)
             sys.exit(1)
+
+    auto_merge = parsed.get("auto_merge")
+    if auto_merge is not None:
+        if not isinstance(auto_merge, bool):
+            print("Error: auto_merge must be a boolean.", file=sys.stderr)
+            sys.exit(1)
+        config["auto_merge"] = auto_merge
 
     repositories = parsed.get("repositories")
     if not isinstance(repositories, list) or not repositories:
@@ -1058,6 +1067,34 @@ def _set_pr_done_label(repo: str, pr_number: int) -> None:
     _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL)
 
 
+def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
+    cmd = ["gh", "pr", "merge", str(pr_number), "--repo", repo, "--auto", "--merge"]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode == 0:
+        print(f"Auto-merge requested for PR #{pr_number}.")
+        return True
+
+    stderr_text = (result.stderr or "").strip()
+    stdout_text = (result.stdout or "").strip()
+    combined_lower = f"{stdout_text}\n{stderr_text}".lower()
+    if "already merged" in combined_lower:
+        print(f"PR #{pr_number} is already merged.")
+        return True
+
+    details = stderr_text or stdout_text or "unknown error"
+    print(
+        f"Warning: failed to auto-merge PR #{pr_number}: {details}",
+        file=sys.stderr,
+    )
+    return False
+
+
 def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
     cmd = ["gh", "pr", "checks", str(pr_number), "--repo", repo, "--json", "state"]
     result = subprocess.run(
@@ -1133,6 +1170,7 @@ def _update_done_label_if_completed(
     review_comments: list[dict[str, Any]],
     dry_run: bool,
     summarize_only: bool,
+    auto_merge_enabled: bool = False,
 ) -> None:
     if dry_run or summarize_only:
         return
@@ -1157,6 +1195,8 @@ def _update_done_label_if_completed(
     if is_completed:
         print(f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}.")
         _set_pr_done_label(repo, pr_number)
+        if auto_merge_enabled:
+            _trigger_pr_auto_merge(repo, pr_number)
         return
 
     print(f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}.")
@@ -1182,6 +1222,7 @@ def process_repo(
     summarize_model = str(model_config.get("summarize", DEFAULT_CONFIG["models"]["summarize"])).strip()
     fix_model = str(model_config.get("fix", DEFAULT_CONFIG["models"]["fix"])).strip()
     ci_log_max_lines = int(runtime_config.get("ci_log_max_lines", DEFAULT_CONFIG["ci_log_max_lines"]))
+    auto_merge_enabled = bool(runtime_config.get("auto_merge", DEFAULT_CONFIG["auto_merge"]))
 
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -1326,6 +1367,7 @@ def process_repo(
                     review_comments=review_comments,
                     dry_run=dry_run,
                     summarize_only=summarize_only,
+                    auto_merge_enabled=auto_merge_enabled,
                 )
                 continue
 
@@ -1580,6 +1622,7 @@ def process_repo(
                     review_comments=review_comments,
                     dry_run=dry_run,
                     summarize_only=summarize_only,
+                    auto_merge_enabled=auto_merge_enabled,
                 )
                 if commits_by_phase:
                     commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
@@ -1782,6 +1825,7 @@ def process_repo(
                 review_comments=review_comments,
                 dry_run=dry_run,
                 summarize_only=summarize_only,
+                auto_merge_enabled=auto_merge_enabled,
             )
 
             if commits_by_phase:

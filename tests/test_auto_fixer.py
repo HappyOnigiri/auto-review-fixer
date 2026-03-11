@@ -175,6 +175,7 @@ models:
   summarize: claude-haiku
   fix: claude-sonnet
 ci_log_max_lines: 250
+auto_merge: true
 repositories:
   - repo: owner/repo1
     user_name: Bot User
@@ -190,6 +191,7 @@ repositories:
                 "fix": "claude-sonnet",
             },
             "ci_log_max_lines": 250,
+            "auto_merge": True,
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -217,9 +219,24 @@ repositories:
         assert config["models"]["summarize"] == "haiku"
         assert config["models"]["fix"] == "sonnet"
         assert config["ci_log_max_lines"] == 120
+        assert config["auto_merge"] is False
         assert config["repositories"] == [
             {"repo": "owner/repo1", "user_name": None, "user_email": None}
         ]
+
+    def test_auto_merge_requires_boolean(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+auto_merge: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
 
     def test_yaml_parse_error_exits(self, tmp_path):
         config_file = tmp_path / "config.yaml"
@@ -1053,6 +1070,28 @@ class TestRefixLabeling:
             ]
         )
 
+    def test_trigger_pr_auto_merge_executes_gh_merge(self):
+        with patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout="", stderr="")) as mock_run:
+            ok = auto_fixer._trigger_pr_auto_merge("owner/repo", 7)
+
+        assert ok is True
+        mock_run.assert_called_once_with(
+            ["gh", "pr", "merge", "7", "--repo", "owner/repo", "--auto", "--merge"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
+
+    def test_trigger_pr_auto_merge_treats_already_merged_as_success(self):
+        with patch(
+            "auto_fixer.subprocess.run",
+            return_value=Mock(returncode=1, stdout="", stderr="pull request is already merged"),
+        ):
+            ok = auto_fixer._trigger_pr_auto_merge("owner/repo", 8)
+
+        assert ok is True
+
     def test_contains_coderabbit_processing_marker(self):
         pr_data = {
             "reviews": [],
@@ -1071,6 +1110,7 @@ class TestRefixLabeling:
             patch("auto_fixer._are_all_ci_checks_successful", return_value=True),
             patch("auto_fixer._set_pr_done_label") as mock_set_done,
             patch("auto_fixer._set_pr_running_label") as mock_set_running,
+            patch("auto_fixer._trigger_pr_auto_merge") as mock_auto_merge,
         ):
             auto_fixer._update_done_label_if_completed(
                 repo="owner/repo",
@@ -1088,6 +1128,34 @@ class TestRefixLabeling:
             )
         mock_set_done.assert_called_once_with("owner/repo", 1)
         mock_set_running.assert_not_called()
+        mock_auto_merge.assert_not_called()
+
+    def test_update_done_label_triggers_auto_merge_when_enabled(self):
+        with (
+            patch("auto_fixer._contains_coderabbit_processing_marker", return_value=False),
+            patch("auto_fixer._are_all_ci_checks_successful", return_value=True),
+            patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
+            patch("auto_fixer._trigger_pr_auto_merge") as mock_auto_merge,
+        ):
+            auto_fixer._update_done_label_if_completed(
+                repo="owner/repo",
+                pr_number=3,
+                has_review_targets=False,
+                review_fix_started=False,
+                review_fix_added_commits=False,
+                review_fix_failed=False,
+                state_saved=True,
+                commits_by_phase=[],
+                pr_data={"reviews": [], "comments": []},
+                review_comments=[],
+                dry_run=False,
+                summarize_only=False,
+                auto_merge_enabled=True,
+            )
+        mock_set_done.assert_called_once_with("owner/repo", 3)
+        mock_set_running.assert_not_called()
+        mock_auto_merge.assert_called_once_with("owner/repo", 3)
 
     def test_update_done_label_sets_running_when_review_fix_added_commit(self):
         with (

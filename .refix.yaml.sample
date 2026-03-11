@@ -16,6 +16,10 @@ models:
 # Default: 120
 ci_log_max_lines: 120
 
+# Automatically merge PR when it reaches refix:done state (Optional)
+# Default: false
+auto_merge: false
+
 # Target repository settings (Required)
 # List the target repositories and their corresponding git commit settings.
 repositories:
