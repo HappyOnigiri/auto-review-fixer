@@ -90,6 +90,7 @@ def summarize_reviews(
     env.pop("CLAUDECODE", None)
 
     model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
+    _timeout = int(os.environ.get("REFIX_SUMMARIZER_TIMEOUT_SEC", "300"))
     summarizer_cmd = [
         "claude",
         "--model",
@@ -118,7 +119,15 @@ def summarize_reviews(
                 encoding="utf-8",
                 errors="replace",
                 env=env,
+                timeout=_timeout,
             )
+        except subprocess.TimeoutExpired as e:
+            raise ClaudeCommandFailedError(
+                phase="summarization",
+                returncode=1,
+                stdout="",
+                stderr=f"Timed out after {_timeout}s",
+            ) from e
         except Exception as e:
             if is_claude_usage_limit_error(str(e)):
                 raise ClaudeUsageLimitError(
