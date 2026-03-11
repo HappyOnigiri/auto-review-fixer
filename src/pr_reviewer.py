@@ -174,7 +174,11 @@ query($owner: String!, $name: String!, $number: Int!) {
             f"Warning: failed to fetch review threads: {result.stderr}", file=sys.stderr
         )
         return {}
-    data = json.loads(result.stdout) if result.stdout else {}
+    try:
+        data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError:
+        print("Warning: failed to parse review threads response", file=sys.stderr)
+        return {}
     threads = (
         data.get("data", {})
         .get("repository", {})
