@@ -47,7 +47,7 @@ def test_parse_state_entries_falls_back_for_broken_rows():
         state_manager.StateEntry(
             comment_id="r123",
             url="https://github.com/owner/repo/pull/1#discussion_r123",
-            processed_at="2026-03-11 12:00:00",
+            processed_at="2026-03-11 12:00:00 UTC",
         ),
         state_manager.StateEntry(
             comment_id="discussion_r456",
@@ -153,7 +153,7 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
         state_manager.StateEntry(
             comment_id="r123",
             url="https://github.com/owner/repo/pull/1#discussion_r123",
-            processed_at="2026-03-11 12:00:00",
+            processed_at="2026-03-11 12:00:00 UTC",
         )
     ]
 

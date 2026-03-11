@@ -19,6 +19,7 @@ STATE_COMMENT_DESCRIPTION = (
 STATE_COMMENT_MAX_LENGTH = 60000
 STATE_ID_PATTERN = re.compile(r"\[(r\d+|discussion_r\d+)\](?:\([^)]+\))?")
 STATE_ID_FALLBACK_PATTERN = re.compile(r"\b(r\d+|discussion_r\d+)\b")
+LEGACY_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 STATE_TABLE_ROW_PATTERN = re.compile(
     r"^\|\s*(?:\[(?P<link_id>r\d+|discussion_r\d+)\]\((?P<url>[^)]+)\)|(?P<plain_id>r\d+|discussion_r\d+))\s*\|\s*(?P<timestamp>[^|]+?)\s*\|$",
     re.MULTILINE,
@@ -92,6 +93,13 @@ def parse_processed_ids(text: str) -> list[str]:
     return processed_ids
 
 
+def _normalize_legacy_processed_at(processed_at: str) -> str:
+    """Append ' UTC' to legacy timestamps that lack timezone info."""
+    if processed_at and LEGACY_TIMESTAMP_PATTERN.match(processed_at):
+        return processed_at + " UTC"
+    return processed_at
+
+
 def parse_state_entries(text: str) -> list[StateEntry]:
     """Parse structured entries from a state comment body."""
     entries: list[StateEntry] = []
@@ -106,7 +114,7 @@ def parse_state_entries(text: str) -> list[StateEntry]:
             StateEntry(
                 comment_id=comment_id,
                 url=(match.group("url") or "").strip(),
-                processed_at=match.group("timestamp").strip(),
+                processed_at=_normalize_legacy_processed_at(match.group("timestamp").strip()),
             )
         )
 
