@@ -182,7 +182,27 @@ def render_state_comment(
             if accumulated_archived
             else ""
         )
-        if len(body) + len(footer) <= STATE_COMMENT_MAX_LENGTH or not trimmed_entries:
+        if len(body) + len(footer) <= STATE_COMMENT_MAX_LENGTH:
+            return body + footer
+        if not trimmed_entries:
+            # Cannot trim entries further; fit archived IDs into remaining budget
+            remaining = STATE_COMMENT_MAX_LENGTH - len(body)
+            prefix = "\n<!-- archived-ids: "
+            suffix = " -->"
+            if accumulated_archived and remaining > len(prefix) + len(suffix):
+                available = remaining - len(prefix) - len(suffix)
+                truncated_ids: list[str] = []
+                used = 0
+                for aid in sorted(accumulated_archived):
+                    part = aid if not truncated_ids else "," + aid
+                    if used + len(part) <= available:
+                        truncated_ids.append(aid)
+                        used += len(part)
+                    else:
+                        break
+                footer = f"{prefix}{','.join(truncated_ids)}{suffix}" if truncated_ids else ""
+            else:
+                footer = ""
             return body + footer
         removed = trimmed_entries.pop(0)
         accumulated_archived.add(removed.comment_id)
