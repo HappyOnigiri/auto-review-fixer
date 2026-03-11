@@ -1,0 +1,11 @@
+{
+  "output": {
+    "filePath": "tmp/repomix/repomix-core.xml",
+    "style": "xml",
+    "parsableStyle": true
+  },
+  "include": [
+    "src/**",
+    ".github/workflows/**"
+  ]
+}
