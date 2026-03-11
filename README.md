@@ -181,7 +181,7 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - The YAML root must be a mapping.
 - `repositories` must be present and must contain at least one entry.
 - Unknown keys are ignored with warnings rather than treated as hard errors.
-- `models.summarize` is part of the YAML schema, but the current summarizer implementation still reads `REFIX_MODEL_SUMMARIZE` from the environment when selecting the summarization model. If you need a non-default summarization model today, set both the YAML field and the environment variable to the same value.
+- `models.summarize` in YAML takes priority over the `REFIX_MODEL_SUMMARIZE` environment variable when selecting the summarization model.
 
 ## Running in CI with GitHub Actions
 

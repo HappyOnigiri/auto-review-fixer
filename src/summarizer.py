@@ -43,10 +43,12 @@ def summarize_reviews(
     reviews: list[dict[str, Any]],
     comments: list[dict[str, Any]],
     silent: bool = False,
+    model: str | None = None,
 ) -> dict[str, str]:
     """Return {id: summary} for all reviews and inline comments.
 
-    Uses a single claude CLI call. Model: REFIX_MODEL_SUMMARIZE (default: haiku).
+    Uses a single claude CLI call. Model priority: `model` parameter >
+    REFIX_MODEL_SUMMARIZE env var > "haiku".
     Raises ClaudeUsageLimitError on usage limit detection.
     Raises ClaudeCommandFailedError on non-zero exit code or subprocess error.
     Falls back to empty dict only on JSON parse failure.
@@ -91,7 +93,7 @@ def summarize_reviews(
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
 
-    model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
+    model = (model or os.environ.get("REFIX_MODEL_SUMMARIZE", "")).strip() or "haiku"
     summarizer_cmd = [
         "claude",
         "--model", model,

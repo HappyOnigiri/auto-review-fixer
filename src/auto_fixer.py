@@ -1395,7 +1395,7 @@ def process_repo(
                                 label = f"{path} " if path else ""
                                 summaries[rid] = f"（インラインコメント {i} {label}の要約）"
                     else:
-                        summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
+                        summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent, model=summarize_model)
                     summary_target_ids = _summarization_target_ids(unresolved_reviews, unresolved_comments)
                     summarized_count = sum(1 for sid in summary_target_ids if summaries.get(sid, "").strip())
                     if summary_target_ids:
@@ -1619,7 +1619,7 @@ def process_repo(
                         label = f"{path} " if path else ""
                         summaries[rid] = f"（インラインコメント {i} {label}の要約）"
             else:
-                summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent)
+                summaries = summarize_reviews(unresolved_reviews, unresolved_comments, silent=silent, model=summarize_model)
 
             summary_target_ids = _summarization_target_ids(unresolved_reviews, unresolved_comments)
             summarized_count = sum(1 for sid in summary_target_ids if summaries.get(sid, "").strip())
