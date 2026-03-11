@@ -1138,6 +1138,7 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 continue
 
             fix_model = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
+            ci_commits = ""
 
             if has_failing_ci:
                 ci_failure_materials: list[dict[str, Any]] = []
@@ -1271,6 +1272,21 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             if not has_review_targets:
                 if commits_by_phase:
                     commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
+                if ci_commits and not is_behind:
+                    unpushed_check = subprocess.run(
+                        ["git", "log", "--oneline", f"origin/{branch_name}..HEAD"],
+                        cwd=str(works_dir),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if unpushed_check.returncode != 0 or unpushed_check.stdout.strip():
+                        unpushed_info = unpushed_check.stdout.strip() or unpushed_check.stderr.strip()
+                        raise RuntimeError(
+                            f"[ci-fix] PR #{pr_number}: push verification failed; "
+                            f"commits may not be pushed to origin/{branch_name}. "
+                            f"details: {unpushed_info}"
+                        )
                 continue
 
             # Summarize reviews before passing to code-fix model
