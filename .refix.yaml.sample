@@ -1,3 +1,10 @@
+# ==========================================
+# Refix Configuration File
+# ==========================================
+
+# Model settings (Optional)
+# Specifies the models to use when executing the Claude CLI.
+# Options: "haiku", "sonnet", "opus", etc.
 models:
   summarize: "haiku"
   fix: "sonnet"

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Auto Review Fixer (refix) — GitHub PR 上の CodeRabbit レビューコメントを Claude AI で自動修正する Python CLI ツール。単一サービス構成。
+Refix — GitHub PR 上の CodeRabbit レビューコメントを Claude AI で自動修正する Python CLI ツール。単一サービス構成。
 
 ## Prerequisites
 

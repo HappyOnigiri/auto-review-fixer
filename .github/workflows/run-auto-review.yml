@@ -42,7 +42,7 @@ jobs:
           fi
           printf '%s\n' "$REFIX_CONFIG_YAML" > .refix.yaml
 
-      - name: Run auto review fixer
+      - name: Run Refix
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}

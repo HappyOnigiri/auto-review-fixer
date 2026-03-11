@@ -1,4 +1,4 @@
-# Auto Review Fixer (refix)
+# Refix
 
 [Japanese version](README.ja.md)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auto Review Fixer - Automatically fix CodeRabbit reviews.
+Refix - Automatically fix CodeRabbit reviews.
 Fetches open PRs, gets unresolved reviews, and runs Claude to fix them.
 """
 
@@ -36,7 +36,7 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
     parser.add_argument("--list-commands-en", action="store_true")
     args, _ = parser.parse_known_args()
     if args.list_commands_en:
-        print("""Auto Review Fixer - Makefile targets:
+        print("""Refix - Makefile targets:
 
   make run
     Summarize unresolved reviews with Claude, fix and push, and record results in a PR state comment.
@@ -56,7 +56,7 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
     Install dependencies and create .env and .refix.yaml templates.""")
         sys.exit(0)
     if args.list_commands:
-        print("""Auto Review Fixer - Makefile targets:
+        print("""Refix - Makefile targets:
 
   make run
     未処理レビューを Claude で要約・修正・push して PR の状態管理コメントに記録。
@@ -2534,12 +2534,12 @@ def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if result.returncode != 0:
                 print(f"Error: failed to expand {repo_name}: {(result.stderr or '').strip()}", file=sys.stderr)
                 sys.exit(1)
-            
+
             lines = result.stdout.strip().splitlines()
             if not lines:
                 print(f"Error: no repositories found for {repo_name}", file=sys.stderr)
                 sys.exit(1)
-            
+
             for line in lines:
                 resolved_name = line.strip()
                 if resolved_name:
@@ -2562,7 +2562,7 @@ def main():
 
 
     parser = argparse.ArgumentParser(
-        description="Auto Review Fixer - Automatically fix CodeRabbit reviews"
+        description="Refix - Automatically fix CodeRabbit reviews"
     )
     parser.add_argument(
         "-n",

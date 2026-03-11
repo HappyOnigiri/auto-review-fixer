@@ -10,7 +10,7 @@ import state_manager
 
 def test_parse_processed_ids_from_markdown_table():
     text = """<!-- auto-review-fixer-state-comment -->
-### 🤖 Auto Review Fixer Status
+### 🤖 Refix Status
 
 | Comment ID | 処理日時 |
 |---|---|
@@ -106,7 +106,7 @@ def test_render_state_comment_hides_description_in_html_comment():
     body = state_manager.render_state_comment([])
 
     assert (
-        "<!-- このコメントは Auto Review Fixer が処理状態を記録するためのものです。"
+        "<!-- このコメントは Refix が処理状態を記録するためのものです。"
         "手動で編集・削除しないでください。 -->"
     ) in body
 
