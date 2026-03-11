@@ -1,6 +1,6 @@
 # Auto Review Fixer (refix)
 
-[日本語版はこちら](README.ja.md)
+[Japanese version](README.ja.md)
 
 `refix` is a Python CLI that automatically triages and fixes unresolved CodeRabbit feedback on GitHub pull requests by using Claude and the GitHub CLI.
 
@@ -93,7 +93,7 @@ ci_log_max_lines: 120
 # Default: false (draft PRs are skipped)
 process_draft_prs: false
 
-# 実行対象のリポジトリ設定 (必須)
+# Repository targets (required)
 repositories:
   - repo: "owner/repo"
     user_name: "Refix Bot"
