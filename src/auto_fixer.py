@@ -93,6 +93,7 @@ from constants import SEPARATOR_LEN
 CODERABBIT_BOT_LOGIN_PREFIX = "coderabbitai"
 FAILED_CI_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "CANCELLED", "STALE", "STARTUP_FAILURE"}
 FAILED_CI_STATES = {"ERROR", "FAILURE"}
+GITHUB_ACTIONS_RUN_URL_PATTERN = re.compile(r"/actions/runs/(\d+)")
 
 
 def _list_repositories_for_owner(owner: str) -> list[str]:
@@ -470,30 +471,184 @@ def _extract_failing_ci_contexts(pr_data: dict[str, Any]) -> list[dict[str, str]
             or "unknown-check"
         )
         details_url = str(context.get("detailsUrl") or context.get("targetUrl") or "")
+        run_match = GITHUB_ACTIONS_RUN_URL_PATTERN.search(details_url)
+        run_id = run_match.group(1) if run_match else ""
         status_label = conclusion or state or "FAILED"
         failing_contexts.append(
             {
                 "name": name,
                 "status": status_label,
                 "details_url": details_url,
+                "run_id": run_id,
             }
         )
     return failing_contexts
 
 
-def _build_ci_fix_prompt(pr_number: int, title: str, failing_contexts: list[dict[str, str]]) -> str:
+def _extract_ci_error_digest_from_failed_log(log_text: str) -> dict[str, str]:
+    """Extract structured error digest from `gh run view --log-failed` output."""
+    digest = {
+        "error_type": "",
+        "error_message": "",
+        "failed_test": "",
+        "file_line": "",
+        "summary": "",
+    }
+    lines = log_text.splitlines()
+    for line in lines:
+        if not digest["failed_test"]:
+            match_failed_test = re.search(r"\bFAILED\s+([^\s]+)", line)
+            if match_failed_test:
+                digest["failed_test"] = match_failed_test.group(1)
+        if not digest["file_line"]:
+            match_file_line = re.search(r"\b(tests/[^\s:]+:\d+):\s+[A-Za-z_][A-Za-z0-9_.]*", line)
+            if match_file_line:
+                digest["file_line"] = match_file_line.group(1)
+        if not digest["summary"]:
+            match_summary = re.search(r"\b(\d+\s+failed,\s+\d+\s+passed\s+in\s+[^\s]+)", line)
+            if match_summary:
+                digest["summary"] = match_summary.group(1)
+        if not digest["error_type"]:
+            match_error = re.search(r"\bE\s+([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):\s*(.*)$", line)
+            if match_error:
+                digest["error_type"] = match_error.group(1)
+                digest["error_message"] = match_error.group(2)
+    return digest
+
+
+def _select_ci_failure_log_excerpt(log_text: str, max_lines: int) -> tuple[list[str], bool]:
+    """Select high-signal log excerpt for prompt context."""
+    lines = log_text.splitlines()
+    if not lines:
+        return [], False
+
+    start_index = 0
+    for i, line in enumerate(lines):
+        if "=================================== FAILURES" in line:
+            start_index = max(0, i - 5)
+            break
+    excerpt = lines[start_index:]
+    truncated = False
+    if len(excerpt) > max_lines:
+        excerpt = excerpt[:max_lines]
+        truncated = True
+    return excerpt, truncated
+
+
+def _collect_ci_failure_materials(repo: str, failing_contexts: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Fetch failed CI logs and build structured prompt materials."""
+    raw_max_lines = os.environ.get("REFIX_CI_LOG_MAX_LINES", "120").strip() or "120"
+    try:
+        max_lines = max(20, int(raw_max_lines))
+    except ValueError:
+        max_lines = 120
+
+    materials: list[dict[str, Any]] = []
+    seen_run_ids: set[str] = set()
+    for context in failing_contexts:
+        run_id = str(context.get("run_id", "")).strip()
+        if not run_id or run_id in seen_run_ids:
+            continue
+        seen_run_ids.add(run_id)
+        run_view_result = subprocess.run(
+            ["gh", "run", "view", run_id, "--repo", repo, "--log-failed"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
+        if run_view_result.returncode != 0:
+            print(
+                f"Warning: failed to fetch failed CI logs for run {run_id}: {run_view_result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            continue
+        raw_log = run_view_result.stdout.strip("\n")
+        if not raw_log.strip():
+            continue
+        excerpt_lines, truncated = _select_ci_failure_log_excerpt(raw_log, max_lines=max_lines)
+        materials.append(
+            {
+                "run_id": run_id,
+                "source": "gh run view --log-failed",
+                "truncated": truncated,
+                "excerpt_lines": excerpt_lines,
+                "digest": _extract_ci_error_digest_from_failed_log(raw_log),
+            }
+        )
+    return materials
+
+
+def _build_ci_fix_prompt(
+    pr_number: int,
+    title: str,
+    failing_contexts: list[dict[str, str]],
+    ci_failure_materials: list[dict[str, Any]] | None = None,
+) -> str:
     checks = []
     for item in failing_contexts:
         name = _xml_escape_attr(item.get("name", "unknown-check"))
         status = _xml_escape_attr(item.get("status", "FAILED"))
         details_url = _xml_escape_attr(item.get("details_url", ""))
+        run_id = _xml_escape_attr(item.get("run_id", ""))
+        attrs = [f'name="{name}"', f'status="{status}"']
         if details_url:
-            checks.append(f'  <check name="{name}" status="{status}" details_url="{details_url}" />')
-        else:
-            checks.append(f'  <check name="{name}" status="{status}" />')
+            attrs.append(f'details_url="{details_url}"')
+        if run_id:
+            attrs.append(f'run_id="{run_id}"')
+        checks.append("  <check " + " ".join(attrs) + " />")
 
     checks_block = "<ci_failures>\n" + "\n".join(checks) + "\n</ci_failures>" if checks else "<ci_failures />"
     escaped_title = _xml_escape(title)
+    digest_block = ""
+    logs_block = ""
+    if ci_failure_materials:
+        digest_entries: list[str] = []
+        log_entries: list[str] = []
+        for material in ci_failure_materials:
+            run_id = _xml_escape_attr(str(material.get("run_id", "")))
+            digest = material.get("digest", {}) if isinstance(material.get("digest"), dict) else {}
+            error_type = _xml_escape_attr(str(digest.get("error_type", "")))
+            error_message = _xml_escape(str(digest.get("error_message", "")))
+            failed_test = _xml_escape(str(digest.get("failed_test", "")))
+            file_line = _xml_escape(str(digest.get("file_line", "")))
+            summary = _xml_escape(str(digest.get("summary", "")))
+            digest_entries.append(
+                "\n".join(
+                    [
+                        f'  <digest run_id="{run_id}">',
+                        f'    <error type="{error_type}">{error_message}</error>',
+                        f"    <failed_test>{failed_test}</failed_test>",
+                        f"    <file_line>{file_line}</file_line>",
+                        f"    <summary>{summary}</summary>",
+                        "  </digest>",
+                    ]
+                )
+            )
+            source = _xml_escape_attr(str(material.get("source", "gh run view --log-failed")))
+            truncated = "true" if material.get("truncated") else "false"
+            excerpt_lines = material.get("excerpt_lines", [])
+            escaped_lines = []
+            if isinstance(excerpt_lines, list):
+                escaped_lines = [_xml_escape(str(line)) for line in excerpt_lines]
+            log_entries.append(
+                "\n".join(
+                    [
+                        f'  <failed_run run_id="{run_id}" source="{source}" truncated="{truncated}">',
+                        *[f"    {line}" for line in escaped_lines],
+                        "  </failed_run>",
+                    ]
+                )
+            )
+        digest_block = "<ci_error_digest>\n" + "\n".join(digest_entries) + "\n</ci_error_digest>"
+        logs_block = "<ci_failure_logs>\n" + "\n".join(log_entries) + "\n</ci_failure_logs>"
+
+    extra_blocks = [checks_block]
+    if digest_block:
+        extra_blocks.append(digest_block)
+    if logs_block:
+        extra_blocks.append(logs_block)
+    extra_data = "\n\n".join(extra_blocks)
     return f"""<instructions>
 以下は CI 失敗の先行修正フェーズです。
 - 対象PR: #{pr_number} {escaped_title}
@@ -504,7 +659,7 @@ def _build_ci_fix_prompt(pr_number: int, title: str, failing_contexts: list[dict
   3. 変更不要なら commit / push はしない
 </instructions>
 
-{checks_block}
+{extra_data}
 """
 
 
@@ -977,7 +1132,20 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
             fix_model = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
 
             if has_failing_ci:
-                ci_fix_prompt = _build_ci_fix_prompt(pr_number, pr_data.get("title", ""), failing_ci_contexts)
+                ci_failure_materials: list[dict[str, Any]] = []
+                if not dry_run:
+                    ci_failure_materials = _collect_ci_failure_materials(repo, failing_ci_contexts)
+                    if ci_failure_materials:
+                        print(
+                            f"[ci-fix] PR #{pr_number}: attached failed CI logs for "
+                            f"{len(ci_failure_materials)} run(s)"
+                        )
+                ci_fix_prompt = _build_ci_fix_prompt(
+                    pr_number,
+                    pr_data.get("title", ""),
+                    failing_ci_contexts,
+                    ci_failure_materials=ci_failure_materials,
+                )
                 if dry_run:
                     print("\n[DRY RUN] Would execute CI-only Claude fix phase first.")
                     print(f"  cwd: {works_dir}")

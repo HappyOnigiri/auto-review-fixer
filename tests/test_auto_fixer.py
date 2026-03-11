@@ -485,15 +485,29 @@ class TestCiFixHelpers:
         pr_data = {
             "statusCheckRollup": [
                 {"name": "unit-test", "conclusion": "SUCCESS", "detailsUrl": "https://example.com/success"},
-                {"name": "lint", "conclusion": "FAILURE", "detailsUrl": "https://example.com/lint"},
+                {
+                    "name": "lint",
+                    "conclusion": "FAILURE",
+                    "detailsUrl": "https://github.com/org/repo/actions/runs/12345/job/999",
+                },
                 {"context": "build/status", "state": "FAILURE", "targetUrl": "https://example.com/build"},
             ]
         }
 
         result = auto_fixer._extract_failing_ci_contexts(pr_data)
         assert result == [
-            {"name": "lint", "status": "FAILURE", "details_url": "https://example.com/lint"},
-            {"name": "build/status", "status": "FAILURE", "details_url": "https://example.com/build"},
+            {
+                "name": "lint",
+                "status": "FAILURE",
+                "details_url": "https://github.com/org/repo/actions/runs/12345/job/999",
+                "run_id": "12345",
+            },
+            {
+                "name": "build/status",
+                "status": "FAILURE",
+                "details_url": "https://example.com/build",
+                "run_id": "",
+            },
         ]
 
     def test_build_ci_fix_prompt_contains_check_details(self):
@@ -507,6 +521,88 @@ class TestCiFixHelpers:
 
         assert "CI 失敗の先行修正フェーズ" in prompt
         assert '<check name="lint" status="FAILURE" details_url="https://example.com/lint" />' in prompt
+
+    def test_extract_ci_error_digest_from_failed_log(self):
+        log_text = """
+test\tRun tests\tFAILED tests/test_imports.py::test_x - AssertionError: boom
+test\tRun tests\tE       AssertionError: boom
+test\tRun tests\ttests/test_imports.py:21: AssertionError
+test\tRun tests\t1 failed, 74 passed in 0.67s
+""".strip()
+
+        digest = auto_fixer._extract_ci_error_digest_from_failed_log(log_text)
+        assert digest == {
+            "error_type": "AssertionError",
+            "error_message": "boom",
+            "failed_test": "tests/test_imports.py::test_x",
+            "file_line": "tests/test_imports.py:21",
+            "summary": "1 failed, 74 passed in 0.67s",
+        }
+
+    def test_build_ci_fix_prompt_includes_digest_and_failed_logs(self):
+        prompt = auto_fixer._build_ci_fix_prompt(
+            pr_number=12,
+            title="Fix CI",
+            failing_contexts=[
+                {
+                    "name": "lint",
+                    "status": "FAILURE",
+                    "details_url": "https://github.com/org/repo/actions/runs/12345/job/999",
+                    "run_id": "12345",
+                }
+            ],
+            ci_failure_materials=[
+                {
+                    "run_id": "12345",
+                    "source": "gh run view --log-failed",
+                    "truncated": True,
+                    "excerpt_lines": ["line1", "line2"],
+                    "digest": {
+                        "error_type": "AssertionError",
+                        "error_message": "boom",
+                        "failed_test": "tests/test_imports.py::test_x",
+                        "file_line": "tests/test_imports.py:21",
+                        "summary": "1 failed, 74 passed in 0.67s",
+                    },
+                }
+            ],
+        )
+
+        assert '<check name="lint" status="FAILURE"' in prompt
+        assert 'run_id="12345"' in prompt
+        assert "<ci_error_digest>" in prompt
+        assert '<error type="AssertionError">boom</error>' in prompt
+        assert "<ci_failure_logs>" in prompt
+        assert '<failed_run run_id="12345" source="gh run view --log-failed" truncated="true">' in prompt
+        assert "line1" in prompt
+
+    def test_collect_ci_failure_materials_fetches_unique_run_logs(self):
+        failing_contexts = [
+            {"name": "lint", "status": "FAILURE", "details_url": "u1", "run_id": "12345"},
+            {"name": "tests", "status": "FAILURE", "details_url": "u2", "run_id": "12345"},
+        ]
+        log_text = "\n".join(
+            [
+                "test\tRun tests\tFAILED tests/test_imports.py::test_x - AssertionError: boom",
+                "test\tRun tests\tE       AssertionError: boom",
+                "test\tRun tests\ttests/test_imports.py:21: AssertionError",
+                "test\tRun tests\t1 failed, 74 passed in 0.67s",
+            ]
+        )
+
+        with patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=log_text, stderr="")) as mock_run:
+            materials = auto_fixer._collect_ci_failure_materials("owner/repo", failing_contexts)
+
+        assert len(materials) == 1
+        assert materials[0]["run_id"] == "12345"
+        assert materials[0]["digest"]["failed_test"] == "tests/test_imports.py::test_x"
+        mock_run.assert_called_once_with(
+            ["gh", "run", "view", "12345", "--repo", "owner/repo", "--log-failed"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
 
 
 class TestProcessRepo:
@@ -701,6 +797,7 @@ class TestProcessRepo:
             patch("auto_fixer.is_processed", return_value=False),
             patch("auto_fixer.count_attempts_for_pr", return_value=0),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer._collect_ci_failure_materials", return_value=[]),
             patch("auto_fixer._merge_base_branch", side_effect=merge_side_effect),
             patch("auto_fixer.summarize_reviews", return_value={"r1": "review summary"}),
             patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
@@ -748,6 +845,7 @@ class TestProcessRepo:
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.is_processed", return_value=False),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer._collect_ci_failure_materials", return_value=[]),
             patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
             patch("auto_fixer.record_pr_attempt") as mock_record_attempt,
             patch("auto_fixer.mark_processed") as mock_mark_processed,
