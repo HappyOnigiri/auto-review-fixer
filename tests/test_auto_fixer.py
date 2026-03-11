@@ -1192,7 +1192,10 @@ class TestRefixLabeling:
         mock_set_running.assert_called_once_with("owner/repo", 2)
 
     def test_update_done_label_skips_when_review_fix_failed(self):
-        with patch("auto_fixer._set_pr_done_label") as mock_set_done:
+        with (
+            patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
+        ):
             auto_fixer._update_done_label_if_completed(
                 repo="owner/repo",
                 pr_number=1,
@@ -1207,6 +1210,7 @@ class TestRefixLabeling:
                 summarize_only=False,
             )
         mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with("owner/repo", 1)
 
     def test_update_done_label_skips_when_dry_run(self):
         with patch("auto_fixer._set_pr_done_label") as mock_set_done:
@@ -1247,6 +1251,7 @@ class TestRefixLabeling:
             patch("auto_fixer._contains_coderabbit_processing_marker", return_value=True),
             patch("auto_fixer._are_all_ci_checks_successful") as mock_ci,
             patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
         ):
             auto_fixer._update_done_label_if_completed(
                 repo="owner/repo",
@@ -1263,6 +1268,7 @@ class TestRefixLabeling:
             )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with("owner/repo", 1)
 
 
 class TestMergeStrategyHelpers:
