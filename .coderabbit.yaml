@@ -1,7 +1,12 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
 language: "ja-JP"
-tone_instructions: "PRのサマリー、レビューコメント、およびAIエージェント向けプロンプトはすべて日本語で提供してください。"
+tone_instructions: |
+  「今のところは許容できるが、将来的には対応したほうがよい」といったニュアンスのレビューコメントは投稿しないでください。
+  本当に問題があり、対応が必要な事項のみを指摘してください。
+  将来の改善に関するアドバイスや優先度の低い提案は避けてください。
+  コードのフォーマットや軽微なリファクタリングに関する指摘は行わないでください。
+  ただし、重要な洞察や論理的な問題が含まれる場合、「Nitpick」としての指摘は許可します。
 
 reviews:
   profile: "chill"
@@ -30,8 +35,6 @@ reviews:
   tools:
     actionlint:
       enabled: true
-    ast-grep:
-      enabled: false
     biome:
       enabled: false
     blinter:

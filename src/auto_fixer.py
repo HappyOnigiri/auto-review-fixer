@@ -117,8 +117,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "ci_log_max_lines": 120,
     "auto_merge": False,
     "coderabbit_auto_resume": False,
+    "coderabbit_auto_resume_max_per_run": 1,
     "process_draft_prs": False,
     "state_comment_timezone": "JST",
+    "max_modified_prs_per_run": 0,
+    "max_committed_prs_per_run": 2,
+    "max_claude_prs_per_run": 0,
     "repositories": [],
 }
 ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
@@ -126,8 +130,12 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "ci_log_max_lines",
     "auto_merge",
     "coderabbit_auto_resume",
+    "coderabbit_auto_resume_max_per_run",
     "process_draft_prs",
     "state_comment_timezone",
+    "max_modified_prs_per_run",
+    "max_committed_prs_per_run",
+    "max_claude_prs_per_run",
     "repositories",
 }
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
@@ -138,6 +146,40 @@ def _warn_unknown_config_keys(config_section: dict[str, Any], allowed_keys: set[
     unknown_keys = sorted(set(config_section.keys()) - allowed_keys)
     for key in unknown_keys:
         print(f"Warning: Unknown key '{key}' found in config.", file=sys.stderr)
+
+
+def _normalize_auto_resume_state(
+    runtime_config: dict[str, Any],
+    default_config: dict[str, Any],
+    auto_resume_run_state: dict[str, int] | None = None,
+) -> dict[str, int]:
+    """Normalize CodeRabbit auto-resume state."""
+    raw_max_per_run = runtime_config.get(
+        "coderabbit_auto_resume_max_per_run",
+        default_config["coderabbit_auto_resume_max_per_run"],
+    )
+    if isinstance(raw_max_per_run, int) and not isinstance(raw_max_per_run, bool) and raw_max_per_run >= 1:
+        max_per_run = raw_max_per_run
+    else:
+        max_per_run = default_config["coderabbit_auto_resume_max_per_run"]
+
+    if auto_resume_run_state is None:
+        auto_resume_run_state = {"posted": 0, "max_per_run": max_per_run}
+    else:
+        auto_resume_run_state["posted"] = int(auto_resume_run_state.get("posted", 0))
+        auto_resume_run_state["max_per_run"] = max_per_run
+
+    return auto_resume_run_state
+
+
+def get_process_draft_prs(
+    runtime_config: dict[str, Any],
+    default_config: dict[str, Any],
+) -> bool:
+    """Extract process_draft_prs flag."""
+    return bool(
+        runtime_config.get("process_draft_prs", default_config["process_draft_prs"])
+    )
 
 
 def load_config(filepath: str) -> dict[str, Any]:
@@ -167,8 +209,12 @@ def load_config(filepath: str) -> dict[str, Any]:
         "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
         "auto_merge": DEFAULT_CONFIG["auto_merge"],
         "coderabbit_auto_resume": DEFAULT_CONFIG["coderabbit_auto_resume"],
+        "coderabbit_auto_resume_max_per_run": DEFAULT_CONFIG["coderabbit_auto_resume_max_per_run"],
         "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
         "state_comment_timezone": DEFAULT_CONFIG["state_comment_timezone"],
+        "max_modified_prs_per_run": DEFAULT_CONFIG["max_modified_prs_per_run"],
+        "max_committed_prs_per_run": DEFAULT_CONFIG["max_committed_prs_per_run"],
+        "max_claude_prs_per_run": DEFAULT_CONFIG["max_claude_prs_per_run"],
         "repositories": [],
     }
 
@@ -215,6 +261,17 @@ def load_config(filepath: str) -> dict[str, Any]:
             sys.exit(1)
         config["coderabbit_auto_resume"] = coderabbit_auto_resume
 
+    coderabbit_auto_resume_max_per_run = parsed.get("coderabbit_auto_resume_max_per_run")
+    if coderabbit_auto_resume_max_per_run is not None:
+        if (
+            not isinstance(coderabbit_auto_resume_max_per_run, int)
+            or isinstance(coderabbit_auto_resume_max_per_run, bool)
+            or coderabbit_auto_resume_max_per_run < 1
+        ):
+            print("Error: coderabbit_auto_resume_max_per_run must be an integer >= 1.", file=sys.stderr)
+            sys.exit(1)
+        config["coderabbit_auto_resume_max_per_run"] = coderabbit_auto_resume_max_per_run
+
     process_draft_prs = parsed.get("process_draft_prs")
     if process_draft_prs is not None:
         if not isinstance(process_draft_prs, bool):
@@ -237,6 +294,22 @@ def load_config(filepath: str) -> dict[str, Any]:
             )
             sys.exit(1)
         config["state_comment_timezone"] = timezone_name
+
+    for limit_key in ("max_modified_prs_per_run", "max_committed_prs_per_run", "max_claude_prs_per_run"):
+        raw_value = parsed.get(limit_key)
+        if raw_value is not None:
+            if isinstance(raw_value, bool):
+                print(f"Error: {limit_key} must be a non-negative integer.", file=sys.stderr)
+                sys.exit(1)
+            try:
+                int_value = int(raw_value)
+            except (TypeError, ValueError):
+                print(f"Error: {limit_key} must be a non-negative integer.", file=sys.stderr)
+                sys.exit(1)
+            if int_value < 0:
+                print(f"Error: {limit_key} must be a non-negative integer.", file=sys.stderr)
+                sys.exit(1)
+            config[limit_key] = int_value
 
     repositories = parsed.get("repositories")
     if not isinstance(repositories, list) or not repositories:
@@ -1412,6 +1485,7 @@ def _maybe_auto_resume_coderabbit_review(
     issue_comments: list[dict[str, Any]],
     rate_limit_status: dict[str, Any] | None,
     auto_resume_enabled: bool,
+    remaining_resume_posts: int,
     dry_run: bool,
     summarize_only: bool,
 ) -> bool:
@@ -1419,6 +1493,12 @@ def _maybe_auto_resume_coderabbit_review(
         return False
     if not auto_resume_enabled:
         print(f"CodeRabbit rate limit detected for PR #{pr_number}; auto resume is disabled.")
+        return False
+    if remaining_resume_posts <= 0:
+        print(
+            f"CodeRabbit rate limit detected for PR #{pr_number}; "
+            "auto resume per-run limit reached."
+        )
         return False
 
     resume_after = rate_limit_status["resume_after"]
@@ -1504,6 +1584,7 @@ def process_repo(
     silent: bool = False,
     summarize_only: bool = False,
     config: dict[str, Any] | None = None,
+    auto_resume_run_state: dict[str, int] | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
 
@@ -1521,10 +1602,16 @@ def process_repo(
     coderabbit_auto_resume_enabled = bool(
         runtime_config.get("coderabbit_auto_resume", DEFAULT_CONFIG["coderabbit_auto_resume"])
     )
-    process_draft_prs = bool(runtime_config.get("process_draft_prs", DEFAULT_CONFIG["process_draft_prs"]))
+    auto_resume_run_state = _normalize_auto_resume_state(
+        runtime_config, DEFAULT_CONFIG, auto_resume_run_state
+    )
+    process_draft_prs = get_process_draft_prs(runtime_config, DEFAULT_CONFIG)
     state_comment_timezone = str(
         runtime_config.get("state_comment_timezone", DEFAULT_CONFIG["state_comment_timezone"])
     ).strip() or DEFAULT_CONFIG["state_comment_timezone"]
+    max_modified_prs = int(runtime_config.get("max_modified_prs_per_run", DEFAULT_CONFIG["max_modified_prs_per_run"]))
+    max_committed_prs = int(runtime_config.get("max_committed_prs_per_run", DEFAULT_CONFIG["max_committed_prs_per_run"]))
+    max_claude_prs = int(runtime_config.get("max_claude_prs_per_run", DEFAULT_CONFIG["max_claude_prs_per_run"]))
 
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -1538,6 +1625,10 @@ def process_repo(
 
     commits_added_to: list[tuple[str, int, str]] = []
     processed_count = 0
+    # PR単位の上限カウント（各setにPR番号を格納、1PRあたり最大1回）
+    modified_prs: set[int] = set()
+    committed_prs: set[int] = set()
+    claude_prs: set[int] = set()
     fetch_failed = False
     pr_fetch_failed = False
 
@@ -1563,6 +1654,11 @@ def process_repo(
             is_draft = bool(pr.get("isDraft"))
             if is_draft and not process_draft_prs:
                 print(f"\nSkipping DRAFT PR #{pr_number}: {pr_title}")
+                continue
+
+            # A上限チェック: 変更PR数の上限に達した場合、PR全体をスキップ
+            if max_modified_prs > 0 and len(modified_prs) >= max_modified_prs:
+                print(f"\nSkipping PR #{pr_number}: max_modified_prs_per_run limit reached ({max_modified_prs})")
                 continue
 
             print(f"\nChecking PR #{pr_number}: {pr_title}")
@@ -1677,15 +1773,23 @@ def process_repo(
                 )
                 if not dry_run and not summarize_only:
                     _set_pr_running_label(repo, pr_number)
-                _maybe_auto_resume_coderabbit_review(
+                    modified_prs.add(pr_number)
+                posted_resume_comment = _maybe_auto_resume_coderabbit_review(
                     repo=repo,
                     pr_number=pr_number,
                     issue_comments=issue_comments,
                     rate_limit_status=active_rate_limit,
                     auto_resume_enabled=coderabbit_auto_resume_enabled,
+                    remaining_resume_posts=max(
+                        0,
+                        int(auto_resume_run_state["max_per_run"])
+                        - int(auto_resume_run_state["posted"]),
+                    ),
                     dry_run=dry_run,
                     summarize_only=summarize_only,
                 )
+                if posted_resume_comment:
+                    auto_resume_run_state["posted"] = int(auto_resume_run_state["posted"]) + 1
 
             has_review_targets = bool(unresolved_reviews or unresolved_comments)
             if not has_review_targets and not is_behind and not has_failing_ci:
@@ -1709,7 +1813,24 @@ def process_repo(
                     auto_merge_enabled=auto_merge_enabled,
                     coderabbit_rate_limit_active=bool(active_rate_limit),
                 )
+                modified_prs.add(pr_number)
                 continue
+
+            # B上限チェック: コミット追加PR数の上限に達しているか
+            commit_limit_reached = max_committed_prs > 0 and len(committed_prs) >= max_committed_prs
+            # C上限チェック: Claude呼び出しPR数の上限に達しているか
+            claude_limit_reached = max_claude_prs > 0 and len(claude_prs) >= max_claude_prs
+
+            if commit_limit_reached:
+                print(
+                    f"PR #{pr_number}: max_committed_prs_per_run limit reached ({max_committed_prs}); "
+                    "skipping commit/push operations"
+                )
+            if claude_limit_reached and not commit_limit_reached:
+                print(
+                    f"PR #{pr_number}: max_claude_prs_per_run limit reached ({max_claude_prs}); "
+                    "skipping Claude operations"
+                )
 
             commits_by_phase: list[str] = []
             review_fix_started = False
@@ -1800,7 +1921,7 @@ def process_repo(
 
             ci_commits = ""
 
-            if has_failing_ci:
+            if has_failing_ci and not commit_limit_reached and not claude_limit_reached:
                 ci_failure_materials: list[dict[str, Any]] = []
                 if not dry_run:
                     ci_failure_materials = _collect_ci_failure_materials(
@@ -1848,8 +1969,12 @@ def process_repo(
                         raise
                     if ci_commits:
                         commits_by_phase.append(ci_commits)
+                        committed_prs.add(pr_number)
+                    claude_prs.add(pr_number)
+            elif has_failing_ci and (commit_limit_reached or claude_limit_reached):
+                print(f"[ci-fix] PR #{pr_number}: skipped due to per-run limit")
 
-            if is_behind:
+            if is_behind and not commit_limit_reached:
                 if dry_run:
                     print(
                         f"[DRY RUN] Would merge base branch: git merge --no-edit origin/{base_branch} "
@@ -1894,11 +2019,13 @@ def process_repo(
                             check=False,
                         ).stdout.strip()
                         commits_by_phase.append(merge_log or f"merge origin/{base_branch}")
+                        committed_prs.add(pr_number)
                         if not had_conflicts:
                             print(f"[merge-base] PR #{pr_number}: merged and pushed successfully")
 
+                    # コンフリクト解消にはClaude呼び出しが必要（C上限チェック）
                     strategy = _determine_conflict_resolution_strategy(has_review_targets)
-                    if had_conflicts:
+                    if had_conflicts and not claude_limit_reached:
                         print(
                             f"[merge-base] PR #{pr_number}: conflict detected; running Claude for conflict resolution "
                             f"(strategy={strategy})"
@@ -1923,6 +2050,7 @@ def process_repo(
                             raise
                         if conflict_commits:
                             commits_by_phase.append(conflict_commits)
+                        claude_prs.add(pr_number)
                         conflict_resolved = not _has_merge_conflicts(works_dir)
                         print(
                             f"[merge-base] PR #{pr_number}: conflict resolution check -> "
@@ -1932,6 +2060,19 @@ def process_repo(
                             raise RuntimeError(
                                 "Merge conflict markers remain after conflict-resolution phase"
                             )
+                    elif had_conflicts and claude_limit_reached:
+                        print(
+                            f"[merge-base] PR #{pr_number}: conflict detected but Claude limit reached; "
+                            "aborting merge to avoid leaving conflict markers"
+                        )
+                        # コンフリクト状態のまま放置しないようリセット
+                        subprocess.run(
+                            ["git", "merge", "--abort"],
+                            cwd=str(works_dir),
+                            check=False,
+                        )
+            elif is_behind and commit_limit_reached:
+                print(f"[merge-base] PR #{pr_number}: skipped due to max_committed_prs_per_run limit")
 
             if not has_review_targets:
                 if ci_commits and not is_behind:
@@ -1970,9 +2111,22 @@ def process_repo(
                     commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
                 continue
 
+            # レビュー修正をスキップすべきかの判定
+            skip_review_fix = False
+            skip_review_fix_reason = ""
             if active_rate_limit:
+                skip_review_fix = True
+                skip_review_fix_reason = "CodeRabbit is rate-limited"
+            elif commit_limit_reached:
+                skip_review_fix = True
+                skip_review_fix_reason = f"max_committed_prs_per_run limit reached ({max_committed_prs})"
+            elif claude_limit_reached:
+                skip_review_fix = True
+                skip_review_fix_reason = f"max_claude_prs_per_run limit reached ({max_claude_prs})"
+
+            if skip_review_fix:
                 print(
-                    f"Skipping review-fix for PR #{pr_number} because CodeRabbit is rate-limited; "
+                    f"Skipping review-fix for PR #{pr_number} because {skip_review_fix_reason}; "
                     "CI repair and merge-base handling already ran."
                 )
                 _update_done_label_if_completed(
@@ -1990,8 +2144,9 @@ def process_repo(
                     dry_run=dry_run,
                     summarize_only=summarize_only,
                     auto_merge_enabled=auto_merge_enabled,
-                    coderabbit_rate_limit_active=True,
+                    coderabbit_rate_limit_active=bool(active_rate_limit),
                 )
+                modified_prs.add(pr_number)
                 if commits_by_phase:
                     commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
                 continue
@@ -2066,6 +2221,8 @@ def process_repo(
                     if review_commits:
                         review_fix_added_commits = True
                         commits_by_phase.append(review_commits)
+                        committed_prs.add(pr_number)
+                    claude_prs.add(pr_number)
 
                     should_update_state = True
                     dirty_check = subprocess.run(
@@ -2200,6 +2357,7 @@ def process_repo(
                 coderabbit_rate_limit_active=bool(active_rate_limit),
             )
 
+            modified_prs.add(pr_number)
             if commits_by_phase:
                 commits_added_to.append((repo, pr_number, "\n".join(commits_by_phase)))
         except ClaudeCommandFailedError:
@@ -2309,6 +2467,7 @@ def main():
         print("[SUMMARIZE ONLY MODE]")
 
     commits_added_to: list[tuple[str, int, str]] = []
+    auto_resume_run_state = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
     for repo_info in repos:
         try:
             results = process_repo(
@@ -2317,6 +2476,7 @@ def main():
                 silent=args.silent,
                 summarize_only=args.summarize_only,
                 config=config,
+                auto_resume_run_state=auto_resume_run_state,
             )
             if results:
                 commits_added_to.extend(results)

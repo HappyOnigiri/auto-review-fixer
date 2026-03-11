@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 import pytest
 
@@ -177,6 +177,7 @@ models:
 ci_log_max_lines: 250
 auto_merge: true
 coderabbit_auto_resume: true
+coderabbit_auto_resume_max_per_run: 3
 state_comment_timezone: UTC
 repositories:
   - repo: owner/repo1
@@ -195,8 +196,12 @@ repositories:
             "ci_log_max_lines": 250,
             "auto_merge": True,
             "coderabbit_auto_resume": True,
+            "coderabbit_auto_resume_max_per_run": 3,
             "process_draft_prs": False,
             "state_comment_timezone": "UTC",
+            "max_modified_prs_per_run": 0,
+            "max_committed_prs_per_run": 2,
+            "max_claude_prs_per_run": 0,
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -226,8 +231,12 @@ repositories:
         assert config["ci_log_max_lines"] == 120
         assert config["auto_merge"] is False
         assert config["coderabbit_auto_resume"] is False
+        assert config["coderabbit_auto_resume_max_per_run"] == 1
         assert config["process_draft_prs"] is False
         assert config["state_comment_timezone"] == "JST"
+        assert config["max_modified_prs_per_run"] == 0
+        assert config["max_committed_prs_per_run"] == 2
+        assert config["max_claude_prs_per_run"] == 0
         assert config["repositories"] == [
             {"repo": "owner/repo1", "user_name": None, "user_email": None}
         ]
@@ -296,11 +305,37 @@ repositories:
             auto_fixer.load_config(str(config_file))
         assert exc_info.value.code == 1
 
+    def test_coderabbit_auto_resume_max_per_run_requires_positive_integer(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_max_per_run: 0
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
     def test_state_comment_timezone_requires_valid_timezone(self, tmp_path):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             """
 state_comment_timezone: "Not/AZone"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    def test_coderabbit_auto_resume_max_per_run_rejects_boolean(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_max_per_run: true
 repositories:
   - repo: owner/repo1
 """.strip()
@@ -401,7 +436,12 @@ class TestMain:
             silent=False,
             summarize_only=False,
             config=config,
+            auto_resume_run_state=ANY,
         )
+        assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
+            "posted": 0,
+            "max_per_run": 1,
+        }
 
     def test_usage_limit_exits_nonzero_immediately(self, capsys):
         config = {
@@ -743,6 +783,7 @@ class TestCodeRabbitRateLimitHelpers:
                 issue_comments=[],
                 rate_limit_status=status,
                 auto_resume_enabled=True,
+                remaining_resume_posts=1,
                 dry_run=False,
                 summarize_only=False,
             )
@@ -769,10 +810,31 @@ class TestCodeRabbitRateLimitHelpers:
                 issue_comments=issue_comments,
                 rate_limit_status=status,
                 auto_resume_enabled=True,
+                remaining_resume_posts=1,
                 dry_run=False,
                 summarize_only=False,
             )
 
+        assert posted is False
+        mock_post.assert_not_called()
+
+    def test_maybe_auto_resume_skips_when_per_run_limit_reached(self):
+        threshold = auto_fixer.datetime.now(auto_fixer.timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        with patch("auto_fixer._post_issue_comment") as mock_post:
+            posted = auto_fixer._maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                remaining_resume_posts=0,
+                dry_run=False,
+                summarize_only=False,
+            )
         assert posted is False
         mock_post.assert_not_called()
 
@@ -1777,3 +1839,221 @@ class TestExpandRepositories:
             
         assert excinfo.value.code == 1
         assert "Error: no repositories found for owner/*" in capsys.readouterr().err
+
+
+class TestPerRunLimitsConfig:
+    """load_config のPR処理件数制限キーのバリデーションテスト。"""
+
+    def test_limit_keys_accept_valid_integers(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+max_modified_prs_per_run: 5
+max_committed_prs_per_run: 3
+max_claude_prs_per_run: 1
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        config = auto_fixer.load_config(str(config_file))
+        assert config["max_modified_prs_per_run"] == 5
+        assert config["max_committed_prs_per_run"] == 3
+        assert config["max_claude_prs_per_run"] == 1
+
+    def test_limit_keys_accept_zero(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+max_modified_prs_per_run: 0
+max_committed_prs_per_run: 0
+max_claude_prs_per_run: 0
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        config = auto_fixer.load_config(str(config_file))
+        assert config["max_modified_prs_per_run"] == 0
+        assert config["max_committed_prs_per_run"] == 0
+        assert config["max_claude_prs_per_run"] == 0
+
+    @pytest.mark.parametrize("key", [
+        "max_modified_prs_per_run",
+        "max_committed_prs_per_run",
+        "max_claude_prs_per_run",
+    ])
+    def test_limit_key_rejects_negative(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            f"""
+{key}: -1
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    @pytest.mark.parametrize("key", [
+        "max_modified_prs_per_run",
+        "max_committed_prs_per_run",
+        "max_claude_prs_per_run",
+    ])
+    def test_limit_key_rejects_string(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            f"""
+{key}: "abc"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    @pytest.mark.parametrize("key", [
+        "max_modified_prs_per_run",
+        "max_committed_prs_per_run",
+        "max_claude_prs_per_run",
+    ])
+    def test_limit_key_rejects_boolean(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            f"""
+{key}: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+
+class TestPerRunLimitsProcessRepo:
+    """process_repo のPR処理件数制限のスキップ動作テスト。"""
+
+    def _make_pr(self, number, title="PR"):
+        return {"number": number, "title": f"{title} #{number}", "isDraft": False}
+
+    def _make_pr_data(self, number):
+        return {
+            "headRefName": f"feature-{number}",
+            "baseRefName": "main",
+            "title": f"PR #{number}",
+            "reviews": [],
+            "comments": [],
+        }
+
+    def test_max_modified_prs_skips_after_limit(self, capsys):
+        """max_modified_prs_per_run=1 の場合、2つ目のPRはスキップされる。"""
+        prs = [self._make_pr(1), self._make_pr(2)]
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "max_modified_prs_per_run": 1,
+            "max_committed_prs_per_run": 0,
+            "max_claude_prs_per_run": 0,
+            "repositories": [{"repo": "owner/repo"}],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", side_effect=[
+                self._make_pr_data(1), self._make_pr_data(2),
+            ]),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer._update_done_label_if_completed"),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+
+        out = capsys.readouterr().out
+        # 1つ目のPRは処理される
+        assert "Checking PR #1" in out
+        # 2つ目のPRはスキップされる
+        assert "Skipping PR #2: max_modified_prs_per_run limit reached" in out
+
+    def test_max_committed_prs_skips_claude_and_push(self, capsys, tmp_path):
+        """max_committed_prs_per_run=1 の場合、2つ目のPRではClaude/push操作がスキップされる。"""
+        # PR1: レビューあり（Claude実行→コミット追加）
+        # PR2: レビューあり（スキップされるべき）
+        prs = [self._make_pr(1), self._make_pr(2)]
+        pr_data_1 = {
+            "headRefName": "feature-1",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [
+                {"author": {"login": "coderabbitai[bot]"}, "body": "Fix this", "databaseId": 100},
+            ],
+            "comments": [],
+        }
+        pr_data_2 = {
+            "headRefName": "feature-2",
+            "baseRefName": "main",
+            "title": "PR #2",
+            "reviews": [
+                {"author": {"login": "coderabbitai[bot]"}, "body": "Fix that", "databaseId": 200},
+            ],
+            "comments": [],
+        }
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "max_modified_prs_per_run": 0,
+            "max_committed_prs_per_run": 1,
+            "max_claude_prs_per_run": 0,
+            "repositories": [{"repo": "owner/repo"}],
+        }
+
+        works_dir = tmp_path / "works" / "owner__repo"
+        works_dir.mkdir(parents=True)
+
+        mock_popen = Mock()
+        mock_popen.communicate.return_value = ("", "")
+        mock_popen.returncode = 0
+
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            mock_result = Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = ""
+            mock_result.stderr = ""
+            if cmd and cmd[0] == "git" and "rev-parse" in cmd:
+                mock_result.stdout = "abc123"
+            if cmd and cmd[0] == "git" and "log" in cmd:
+                mock_result.stdout = "abc123 review fix"
+            if cmd and cmd[0] == "git" and "status" in cmd:
+                mock_result.stdout = ""  # クリーンな状態
+            return mock_result
+
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", side_effect=[pr_data_1, pr_data_2]),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.prepare_repository", return_value=works_dir),
+            patch("auto_fixer.summarize_reviews", return_value={}),
+            patch("auto_fixer._run_claude_prompt", return_value="abc123 review fix") as mock_claude,
+            patch("auto_fixer._set_pr_running_label"),
+            patch("auto_fixer._edit_pr_label"),
+            patch("auto_fixer.upsert_state_comment"),
+            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer.subprocess.run", side_effect=mock_run_side_effect),
+            patch("auto_fixer.subprocess.Popen", return_value=mock_popen),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+
+        out = capsys.readouterr().out
+        # PR#1 は処理される
+        assert "Checking PR #1" in out
+        # PR#2 はスキップメッセージが出力される
+        assert "max_committed_prs_per_run limit reached" in out
+        # Claude は1回だけ呼ばれる（PR#1のみ）
+        assert mock_claude.call_count == 1
