@@ -1,4 +1,4 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix repomix-full repomix-task repomix-core install-hooks help help-en
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en
 
 # venv の Python が利用可能な場合はそれを使用する（activate なしで make test/ci を実行するため）
 PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
