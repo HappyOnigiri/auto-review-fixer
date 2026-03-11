@@ -197,6 +197,7 @@ PR が `refix:done` 状態になった際に自動マージします。
 - `repositories` は必須で、1 件以上の要素が必要です。
 - 未知のキーは即エラーではなく、警告を出して無視されます。
 - `models.summarize` で要約処理で使用するモデルを指定します。この設定は環境変数 `REFIX_MODEL_SUMMARIZE` より優先されます。
+- `models.fix` で修正処理で使用するモデルを指定します。
 
 ## GitHub Actions での実行方法
 
