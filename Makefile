@@ -43,8 +43,8 @@ ci: test
 # コードベースを AI フレンドリーな単一ファイルにまとめます。
 # 用途に合わせて 3 つのバリアントを提供します：
 #   - full: 全ファイル（.gitignore 以外すべて）
-#   - task: AI エージェントへの機能改修相談に最適化（src/ + tests/ + 基本定義ファイル）
-#   - core: ロジックのみ（src/ のみ）
+#   - task: AI エージェントへの機能改修相談に最適化（src/ + tests/ + .github/workflows/ + 基本定義ファイル）
+#   - core: ロジック + Actions 構成のみ（src/ + .github/workflows/）
 repomix: repomix-full repomix-task repomix-core
 	@echo "Repomix files generated in tmp/repomix/"
 
