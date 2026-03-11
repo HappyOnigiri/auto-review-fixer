@@ -40,7 +40,11 @@ def main() -> None:
     for rel_path in _tracked_files():
         if not rel_path.is_file():
             continue
-        text = rel_path.read_text(encoding="utf-8")
+        try:
+            text = rel_path.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            violations.append(f"{rel_path}: invalid UTF-8")
+            continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             for col_no, ch in enumerate(line, start=1):
                 if ord(ch) > 127:
