@@ -1,5 +1,5 @@
 # ==========================================
-# Auto Review Fixer (refix) Configuration File
+# Refix Configuration File
 # ==========================================
 
 # Model settings (Optional)
@@ -33,11 +33,11 @@ repositories:
     # - Wildcard in repo name: "owner/repo*"
     # - All repos for owner/org: "owner/*"
     repo: "octocat/Hello-World"
-    
+
     # git user.name for fix commits (Optional)
     # If omitted, the existing repository settings will be used.
     user_name: "Refix Bot"
-    
+
     # git user.email for fix commits (Optional)
     # If omitted, the existing repository settings will be used.
     user_email: "bot@example.com"
