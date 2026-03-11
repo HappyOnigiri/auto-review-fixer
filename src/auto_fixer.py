@@ -1815,8 +1815,8 @@ def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 encoding="utf-8",
             )
             if result.returncode != 0:
-                print(f"Warning: failed to expand {repo_name}: {(result.stderr or '').strip()}", file=sys.stderr)
-                continue
+                print(f"Error: failed to expand {repo_name}: {(result.stderr or '').strip()}", file=sys.stderr)
+                sys.exit(1)
             
             lines = result.stdout.strip().splitlines()
             if not lines:
