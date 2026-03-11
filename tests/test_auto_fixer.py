@@ -882,6 +882,7 @@ class TestRefixLabeling:
             patch("auto_fixer._contains_coderabbit_processing_marker", return_value=False),
             patch("auto_fixer._are_all_ci_checks_successful", return_value=True),
             patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
         ):
             auto_fixer._update_done_label_if_completed(
                 repo="owner/repo",
@@ -897,12 +898,14 @@ class TestRefixLabeling:
                 summarize_only=False,
             )
         mock_set_done.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_not_called()
 
-    def test_update_done_label_skips_when_review_fix_added_commit(self):
+    def test_update_done_label_sets_running_when_review_fix_added_commit(self):
         with (
             patch("auto_fixer._contains_coderabbit_processing_marker") as mock_marker,
             patch("auto_fixer._are_all_ci_checks_successful") as mock_ci,
             patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
         ):
             auto_fixer._update_done_label_if_completed(
                 repo="owner/repo",
@@ -920,6 +923,30 @@ class TestRefixLabeling:
         mock_marker.assert_not_called()
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with("owner/repo", 1)
+
+    def test_update_done_label_sets_running_when_ci_not_success(self):
+        with (
+            patch("auto_fixer._contains_coderabbit_processing_marker", return_value=False),
+            patch("auto_fixer._are_all_ci_checks_successful", return_value=False),
+            patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
+        ):
+            auto_fixer._update_done_label_if_completed(
+                repo="owner/repo",
+                pr_number=2,
+                has_review_targets=False,
+                review_fix_started=False,
+                review_fix_added_commits=False,
+                review_fix_failed=False,
+                commits_by_phase=[],
+                pr_data={"reviews": [], "comments": []},
+                review_comments=[],
+                dry_run=False,
+                summarize_only=False,
+            )
+        mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with("owner/repo", 2)
 
     def test_update_done_label_skips_when_review_fix_failed(self):
         with patch("auto_fixer._set_pr_done_label") as mock_set_done:

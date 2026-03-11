@@ -895,24 +895,28 @@ def _update_done_label_if_completed(
     if dry_run or summarize_only:
         return
 
+    is_completed = True
     if review_fix_failed:
-        return
-
+        is_completed = False
     if commits_by_phase:
-        return
-
+        is_completed = False
     if has_review_targets and (not review_fix_started or review_fix_added_commits):
+        is_completed = False
+
+    if is_completed and _contains_coderabbit_processing_marker(pr_data, review_comments):
+        print(f"CodeRabbit is still processing PR #{pr_number}; mark as {REFIX_RUNNING_LABEL}.")
+        is_completed = False
+
+    if is_completed and not _are_all_ci_checks_successful(repo, pr_number):
+        is_completed = False
+
+    if is_completed:
+        print(f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}.")
+        _set_pr_done_label(repo, pr_number)
         return
 
-    if _contains_coderabbit_processing_marker(pr_data, review_comments):
-        print(f"CodeRabbit is still processing PR #{pr_number}; skip refix:done labeling.")
-        return
-
-    if not _are_all_ci_checks_successful(repo, pr_number):
-        return
-
-    print(f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}.")
-    _set_pr_done_label(repo, pr_number)
+    print(f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}.")
+    _set_pr_running_label(repo, pr_number)
 
 
 def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> list[tuple[str, int, str]]:
