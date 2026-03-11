@@ -92,6 +92,7 @@ models:
 ci_log_max_lines: 120
 
 # Automatically merge PR when it reaches refix:done state (optional, default false)
+# When merge completes, the refix:merged label is applied
 auto_merge: false
 
 # Automatically post `@coderabbitai resume` after a CodeRabbit rate-limit wait expires

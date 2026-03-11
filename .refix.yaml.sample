@@ -12,6 +12,7 @@ models:
 ci_log_max_lines: 120
 
 # Automatically merge PR when it reaches refix:done state (Optional)
+# When merge completes, refix:merged label is added.
 # Default: false
 auto_merge: false
 

@@ -100,12 +100,14 @@ from state_manager import (
 CODERABBIT_BOT_LOGIN = "coderabbitai"
 REFIX_RUNNING_LABEL = "refix:running"
 REFIX_DONE_LABEL = "refix:done"
+REFIX_MERGED_LABEL = "refix:merged"
 CODERABBIT_PROCESSING_MARKER = "Currently processing new changes in this PR."
 CODERABBIT_RATE_LIMIT_MARKER = "Rate limit exceeded"
 CODERABBIT_RESUME_COMMENT = "@coderabbitai resume"
 SUCCESSFUL_CI_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 REFIX_RUNNING_LABEL_COLOR = "FBCA04"
 REFIX_DONE_LABEL_COLOR = "0E8A16"
+REFIX_MERGED_LABEL_COLOR = "1D76DB"
 FAILED_CI_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "CANCELLED", "STALE", "STARTUP_FAILURE"}
 FAILED_CI_STATES = {"ERROR", "FAILURE"}
 GITHUB_ACTIONS_RUN_URL_PATTERN = re.compile(r"/actions/runs/(\d+)")
@@ -1151,6 +1153,12 @@ def _ensure_refix_labels(repo: str) -> None:
         color=REFIX_DONE_LABEL_COLOR,
         description="Refix finished review checks/fixes for now.",
     )
+    _ensure_repo_label_exists(
+        repo,
+        REFIX_MERGED_LABEL,
+        color=REFIX_MERGED_LABEL_COLOR,
+        description="PR has been merged after Refix auto-merge.",
+    )
 
 
 def _edit_pr_label(repo: str, pr_number: int, *, add: bool, label: str) -> bool:
@@ -1197,6 +1205,120 @@ def _set_pr_done_label(repo: str, pr_number: int) -> None:
     _ensure_refix_labels(repo)
     _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
     _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL)
+
+
+def _set_pr_merged_label(repo: str, pr_number: int) -> None:
+    _ensure_refix_labels(repo)
+    _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
+    _edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL)
+
+
+def _pr_has_label(pr_data: dict[str, Any], label_name: str) -> bool:
+    labels = pr_data.get("labels", [])
+    if not isinstance(labels, list):
+        return False
+    for label in labels:
+        if isinstance(label, dict) and str(label.get("name", "")).strip() == label_name:
+            return True
+    return False
+
+
+def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
+    """Add refix:merged label when PR is merged and eligible."""
+    cmd = ["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "mergedAt,labels,autoMergeRequest"]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        print(
+            f"Warning: failed to inspect merge state for PR #{pr_number}: {(result.stderr or '').strip()}",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        pr_data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError:
+        print(
+            f"Warning: failed to parse merge state for PR #{pr_number}",
+            file=sys.stderr,
+        )
+        return False
+    if not isinstance(pr_data, dict):
+        return False
+
+    merged_at = str(pr_data.get("mergedAt") or "").strip()
+    if not merged_at:
+        return False
+    if not _pr_has_label(pr_data, REFIX_DONE_LABEL):
+        return False
+    if _pr_has_label(pr_data, REFIX_MERGED_LABEL):
+        return False
+    if not pr_data.get("autoMergeRequest"):
+        return False
+
+    print(f"PR #{pr_number} is merged; adding {REFIX_MERGED_LABEL} label.")
+    _set_pr_merged_label(repo, pr_number)
+    return True
+
+
+def _backfill_merged_labels(repo: str, *, limit: int = 100) -> int:
+    """Backfill refix:merged label for merged PRs already marked refix:done."""
+    search_query = f'label:"{REFIX_DONE_LABEL}" -label:"{REFIX_MERGED_LABEL}"'
+    cmd = [
+        "gh",
+        "pr",
+        "list",
+        "--repo",
+        repo,
+        "--state",
+        "merged",
+        "--search",
+        search_query,
+        "--json",
+        "number",
+        "--limit",
+        str(limit),
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        print(
+            f"Warning: failed to list merged PRs for {repo}: {(result.stderr or '').strip()}",
+            file=sys.stderr,
+        )
+        return 0
+    try:
+        prs = json.loads(result.stdout) if result.stdout else []
+    except json.JSONDecodeError:
+        print(
+            f"Warning: failed to parse merged PR list for {repo}",
+            file=sys.stderr,
+        )
+        return 0
+    if not isinstance(prs, list):
+        return 0
+
+    count = 0
+    for pr in prs:
+        if not isinstance(pr, dict):
+            continue
+        pr_number = pr.get("number")
+        if not isinstance(pr_number, int):
+            continue
+        if _mark_pr_merged_label_if_needed(repo, pr_number):
+            count += 1
+    if count:
+        print(f"Backfilled {REFIX_MERGED_LABEL} on {count} merged PR(s) in {repo}.")
+    return count
 
 
 def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
@@ -1571,7 +1693,9 @@ def _update_done_label_if_completed(
         print(f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}.")
         _set_pr_done_label(repo, pr_number)
         if auto_merge_enabled:
-            _trigger_pr_auto_merge(repo, pr_number)
+            merge_requested = _trigger_pr_auto_merge(repo, pr_number)
+            if merge_requested:
+                _mark_pr_merged_label_if_needed(repo, pr_number)
         return
 
     print(f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}.")
@@ -1646,6 +1770,10 @@ def process_repo(
         print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
         fetch_failed = True
         return []
+    backfilled_count = 0
+    if auto_merge_enabled and not dry_run and not summarize_only:
+        backfill_limit = max_modified_prs if max_modified_prs > 0 else 100
+        backfilled_count = _backfill_merged_labels(repo, limit=backfill_limit)
 
     if not prs:
         print(f"No open PRs found in {repo}")
@@ -1664,7 +1792,7 @@ def process_repo(
                 continue
 
             # A上限チェック: 変更PR数の上限に達した場合、PR全体をスキップ
-            if max_modified_prs > 0 and len(modified_prs) >= max_modified_prs:
+            if max_modified_prs > 0 and len(modified_prs) + backfilled_count >= max_modified_prs:
                 print(f"\nSkipping PR #{pr_number}: max_modified_prs_per_run limit reached ({max_modified_prs})")
                 continue
 
@@ -2377,6 +2505,13 @@ def process_repo(
 
     if processed_count == 0 and not fetch_failed and not pr_fetch_failed:
         print(f"No unresolved reviews or behind PRs found in {repo}")
+    if auto_merge_enabled and not dry_run and not summarize_only:
+        if max_modified_prs > 0:
+            remaining = max_modified_prs - len(modified_prs) - backfilled_count
+            if remaining > 0:
+                _backfill_merged_labels(repo, limit=remaining)
+        else:
+            _backfill_merged_labels(repo)
     return commits_added_to
 
 
