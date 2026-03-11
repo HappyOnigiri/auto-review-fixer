@@ -1853,10 +1853,11 @@ def main():
         action="store_true",
         help="Show claude command without executing",
     )
+    _default_config = Path(__file__).resolve().parents[1] / ".refix.yaml"
     parser.add_argument(
         "--config",
-        default="../.refix.yaml",
-        help="Path to YAML config file (default: ../.refix.yaml)",
+        default=str(_default_config),
+        help="Path to YAML config file (default: <repo_root>/.refix.yaml)",
     )
     parser.add_argument(
         "--list-commands",
