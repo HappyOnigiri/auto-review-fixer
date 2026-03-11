@@ -50,6 +50,30 @@ class TestSummarizeReviews:
             )
             assert result == {"a": "b"}
 
+    def test_markdown_code_block_with_first_to_last_bracket_extraction(self):
+        """JSON wrapped in ```json block and/or with prefix/suffix messages parses via first [ to last ]."""
+        fake_stdout = """Here is the summarized result:
+
+```json
+[
+  {"id": "r1", "summary": "summary one"},
+  {"id": "r2", "summary": "summary two"}
+]
+```
+
+Hope this helps!"""
+        with patch("summarizer.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr="",
+            )
+            result = summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}, {"id": "r2", "body": "y"}],
+                [],
+            )
+            assert result == {"r1": "summary one", "r2": "summary two"}
+
     def test_success_logs_raw_output_in_foldable_group(self, capsys):
         """Successful summarization also prints raw output in group logs."""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'

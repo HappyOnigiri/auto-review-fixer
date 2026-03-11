@@ -501,6 +501,42 @@ def prepare_repository(
     return works_dir
 
 
+def _prepare_reports_dir(repo: str, works_dir: Path) -> Path:
+    """Create and return the report directory for a repository."""
+    owner, repo_name = repo.split("/", 1)
+    reports_root = works_dir.parent.parent / "reports"
+    reports_dir = reports_root / f"{owner}__{repo_name}"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    return reports_dir
+
+
+def _build_phase_report_path(reports_dir: Path, pr_number: int, phase_label: str) -> str:
+    """Build an absolute report file path for a PR phase."""
+    return str((reports_dir / f"pr_{pr_number}_{phase_label}.md").resolve())
+
+
+def _emit_runtime_pain_report_on_error(*, report_path: str, phase_label: str) -> None:
+    """Print runtime pain report content when Claude command fails."""
+    report_file = Path(report_path)
+    print(f"[{phase_label}:runtime-pain-report] {report_file}", file=sys.stderr)
+    if not report_file.exists():
+        print("  report file not found.", file=sys.stderr)
+        return
+    try:
+        content = report_file.read_text(encoding="utf-8").strip()
+    except Exception as e:
+        print(f"  failed to read report file: {e}", file=sys.stderr)
+        return
+
+    if not content:
+        print("  report file is empty.", file=sys.stderr)
+        return
+
+    print("  --- begin report ---", file=sys.stderr)
+    print(content, file=sys.stderr)
+    print("  --- end report ---", file=sys.stderr)
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into a copy of base, preserving nested keys."""
     result = dict(base)
@@ -920,12 +956,26 @@ def _run_claude_prompt(
     *,
     works_dir: Path,
     prompt: str,
+    report_path: str,
     model: str,
     silent: bool,
     phase_label: str,
 ) -> str:
+    runtime_pain_report_instruction = f"""<runtime_pain_report>
+以下は実行時の課題レポート作成指示です。必ず守ってください。
+- 出力先ファイル: {_xml_escape(report_path)}
+- 出力タイミング: 作業ステップごと、または問題発生時に随時追記すること（作業の最後にまとめて書くのは禁止）
+- 追記方法: Bash ツール等で append すること（例: echo "..." >> {shlex.quote(report_path)}）
+- 報告項目:
+  1. ツールのセットアップやコマンド実行時の失敗・試行錯誤
+  2. 実装にあたって不足していたコンテキストやファイル
+  3. レビューコメントの曖昧さ、解釈に迷った点
+  4. 妥協した点や、人間の再確認が必要と思われる不確実な修正
+</runtime_pain_report>"""
+    prompt_with_report_instruction = f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
+
     prompt_file = works_dir / "_review_prompt.md"
-    prompt_file.write_text(prompt, encoding="utf-8")
+    prompt_file.write_text(prompt_with_report_instruction, encoding="utf-8")
     claude_cmd = [
         "claude",
         "--model",
@@ -940,9 +990,10 @@ def _run_claude_prompt(
     print(f"  cwd: {works_dir}")
     print(f"  command: {shlex.join(claude_cmd)}")
     print(f"  prompt file: {prompt_file}")
+    print(f"  runtime pain report file: {report_path}")
     if not silent:
         print("-" * SEPARATOR_LEN)
-        print(prompt)
+        print(prompt_with_report_instruction)
         print("-" * SEPARATOR_LEN)
     _log_endgroup()
     try:
@@ -983,6 +1034,7 @@ def _run_claude_prompt(
                 print(stderr.strip())
             _log_endgroup()
         if process.returncode != 0:
+            _emit_runtime_pain_report_on_error(report_path=report_path, phase_label=phase_label)
             if is_claude_usage_limit_error(stdout, stderr):
                 raise ClaudeUsageLimitError(
                     phase=phase_label,
@@ -2189,6 +2241,7 @@ def _process_single_pr(
     try:
         _log_group("Git repository setup")
         works_dir = prepare_repository(repo, branch_name, user_name, user_email)
+        reports_dir = _prepare_reports_dir(repo, works_dir)
         _log_endgroup()
     except Exception as e:
         _log_endgroup()
@@ -2229,9 +2282,11 @@ def _process_single_pr(
         else:
             print(f"[ci-fix] PR #{pr_number}: running CI-only Claude fix phase")
             try:
+                ci_report_path = _build_phase_report_path(reports_dir, pr_number, "ci-fix")
                 ci_commits = _run_claude_prompt(
                     works_dir=works_dir,
                     prompt=ci_fix_prompt,
+                    report_path=ci_report_path,
                     model=fix_model,
                     silent=True,
                     phase_label="ci-fix",
@@ -2314,9 +2369,13 @@ def _process_single_pr(
                     pr_number, pr_data.get("title", ""), base_branch
                 )
                 try:
+                    conflict_report_path = _build_phase_report_path(
+                        reports_dir, pr_number, "merge-conflict-resolution"
+                    )
                     conflict_commits = _run_claude_prompt(
                         works_dir=works_dir,
                         prompt=conflict_prompt,
+                        report_path=conflict_report_path,
                         model=fix_model,
                         silent=silent,
                         phase_label="merge-conflict-resolution",
@@ -2514,9 +2573,13 @@ def _process_single_pr(
             _set_pr_running_label(repo, pr_number)
             _remove_running_on_exit = True
             review_fix_started = True
+            review_report_path = _build_phase_report_path(
+                reports_dir, pr_number, "review-fix"
+            )
             review_commits = _run_claude_prompt(
                 works_dir=works_dir,
                 prompt=prompt,
+                report_path=review_report_path,
                 model=fix_model,
                 silent=silent,
                 phase_label="review-fix",

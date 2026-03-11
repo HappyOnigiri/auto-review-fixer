@@ -1989,13 +1989,15 @@ class TestMergeStrategyHelpers:
 
 
 class TestRunClaudePrompt:
-    def test_usage_limit_raises(self, tmp_path):
+    def test_usage_limit_raises(self, tmp_path, capsys):
         process = Mock()
         process.communicate.return_value = (
             "You've hit your limit · resets Mar 13, 4pm (UTC)",
             "",
         )
         process.returncode = 1
+        report_path = tmp_path / "pr_1_review-fix.md"
+        report_path.write_text("- setup failed once", encoding="utf-8")
 
         with (
             patch(
@@ -2010,15 +2012,21 @@ class TestRunClaudePrompt:
                 auto_fixer._run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
+                    report_path=str(report_path.resolve()),
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
                 )
+        err = capsys.readouterr().err
+        assert "runtime-pain-report" in err
+        assert "setup failed once" in err
 
-    def test_nonzero_exit_raises_command_failed(self, tmp_path):
+    def test_nonzero_exit_raises_command_failed(self, tmp_path, capsys):
         process = Mock()
         process.communicate.return_value = ("API Error: invalid header", "")
         process.returncode = 1
+        report_path = tmp_path / "pr_1_review-fix.md"
+        report_path.write_text("- missing context file", encoding="utf-8")
 
         with (
             patch(
@@ -2033,10 +2041,14 @@ class TestRunClaudePrompt:
                 auto_fixer._run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
+                    report_path=str(report_path.resolve()),
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
                 )
+        err = capsys.readouterr().err
+        assert "runtime-pain-report" in err
+        assert "missing context file" in err
 
     def test_success_output_with_limit_phrase_does_not_raise(self, tmp_path):
         process = Mock()
@@ -2045,6 +2057,15 @@ class TestRunClaudePrompt:
             "",
         )
         process.returncode = 0
+        captured_prompt = ""
+
+        def popen_side_effect(*args, **kwargs):
+            nonlocal captured_prompt
+            prompt_file = tmp_path / "_review_prompt.md"
+            captured_prompt = prompt_file.read_text(encoding="utf-8")
+            return process
+
+        report_path = str((tmp_path / "pr_1_review-fix.md").resolve())
         with (
             patch(
                 "auto_fixer.subprocess.run",
@@ -2053,18 +2074,21 @@ class TestRunClaudePrompt:
                     Mock(returncode=0, stdout="", stderr=""),
                 ],
             ),
-            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
             patch("auto_fixer._log_group"),
             patch("auto_fixer._log_endgroup"),
         ):
             result = auto_fixer._run_claude_prompt(
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
+                report_path=report_path,
                 model="sonnet",
                 silent=True,
                 phase_label="review-fix",
             )
             assert result == ""
+            assert "<runtime_pain_report>" in captured_prompt
+            assert report_path in captured_prompt
 
 
 class TestExpandRepositories:
