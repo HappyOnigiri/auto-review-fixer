@@ -25,8 +25,19 @@ def _is_target_file(path: str) -> bool:
 
 
 def _tracked_files() -> list[Path]:
+    rev_parse = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if rev_parse.returncode != 0:
+        raise RuntimeError(rev_parse.stderr.strip() or "git rev-parse failed")
+    repo_root = Path(rev_parse.stdout.strip())
+
     result = subprocess.run(
-        ["git", "ls-files"],
+        ["git", "-C", str(repo_root), "ls-files", "--full-name"],
         capture_output=True,
         text=True,
         check=False,
@@ -35,7 +46,7 @@ def _tracked_files() -> list[Path]:
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "git ls-files failed")
     return [
-        Path(line)
+        repo_root / line
         for line in result.stdout.splitlines()
         if line and _is_target_file(line)
     ]
