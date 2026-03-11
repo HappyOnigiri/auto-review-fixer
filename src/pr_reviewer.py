@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 # Set UTF-8 encoding for output
-if sys.stdout.encoding != "utf-8":
+if sys.stdout.encoding != "utf-8" and hasattr(sys.stdout, "buffer"):
     import io
 
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
