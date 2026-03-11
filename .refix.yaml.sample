@@ -20,6 +20,21 @@ coderabbit_auto_resume_max_per_run: 1
 # Default: false (skip DRAFT PRs)
 process_draft_prs: false
 
+# 1回の実行で変更を加えるPRの最大件数（0=無制限、Optional）
+# ラベル付け替え、コメント投稿、state comment 更新などすべての変更を含む
+# Default: 0
+max_modified_prs_per_run: 0
+
+# 1回の実行でコミットを追加するPRの最大件数（0=無制限、Optional）
+# base branch マージ、CI修正、レビュー修正の push を含む
+# Default: 2
+max_committed_prs_per_run: 2
+
+# 1回の実行でClaude修正を実行するPRの最大件数（0=無制限、Optional）
+# CI修正、コンフリクト解消、レビュー修正を含む
+# Default: 0
+max_claude_prs_per_run: 0
+
 # Target repository settings (Required)
 # List the target repositories and their corresponding git commit settings.
 repositories:
