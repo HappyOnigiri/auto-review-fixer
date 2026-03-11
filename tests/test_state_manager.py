@@ -80,7 +80,7 @@ def test_format_state_row_generates_markdown_row():
 
 
 def test_render_state_comment_trims_oldest_rows_to_fit_limit(monkeypatch):
-    monkeypatch.setattr(state_manager, "STATE_COMMENT_MAX_LENGTH", 400)
+    monkeypatch.setattr(state_manager, "STATE_COMMENT_MAX_LENGTH", 1000)
     entries = [
         state_manager.StateEntry(
             comment_id=f"discussion_r{i}",
@@ -92,9 +92,9 @@ def test_render_state_comment_trims_oldest_rows_to_fit_limit(monkeypatch):
 
     body = state_manager.render_state_comment(entries)
 
-    # Visible portion (before archived-ids comment) must fit within the limit
+    # Total body (including archived-ids footer) must fit within the limit
+    assert len(body) <= 1000
     visible_part = body.split("<!-- archived-ids:")[0] if "<!-- archived-ids:" in body else body
-    assert len(visible_part) <= 400
     assert "discussion_r19" in visible_part
     assert "discussion_r0" not in visible_part
     # Trimmed IDs are preserved in the hidden archived-ids section
