@@ -196,7 +196,7 @@ The workflow:
 3. installs the Claude CLI,
 4. writes `.refix.yaml` from the GitHub Actions variable `REFIX_CONFIG_YAML`,
 5. configures Git authentication for push operations, and
-6. runs `python auto_fixer.py --config ../.refix.yaml`.
+6. changes to the `src` directory and runs `python auto_fixer.py --config ../.refix.yaml`.
 
 ### Required GitHub Actions configuration
 
