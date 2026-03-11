@@ -1871,6 +1871,7 @@ class TestRunClaudePrompt:
                 auto_fixer._run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
+                    report_path=str((tmp_path / "pr_1_review-fix.md").resolve()),
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
@@ -1894,6 +1895,7 @@ class TestRunClaudePrompt:
                 auto_fixer._run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
+                    report_path=str((tmp_path / "pr_1_review-fix.md").resolve()),
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
@@ -1906,6 +1908,15 @@ class TestRunClaudePrompt:
             "",
         )
         process.returncode = 0
+        captured_prompt = ""
+
+        def popen_side_effect(*args, **kwargs):
+            nonlocal captured_prompt
+            prompt_file = tmp_path / "_review_prompt.md"
+            captured_prompt = prompt_file.read_text(encoding="utf-8")
+            return process
+
+        report_path = str((tmp_path / "pr_1_review-fix.md").resolve())
         with (
             patch(
                 "auto_fixer.subprocess.run",
@@ -1914,18 +1925,21 @@ class TestRunClaudePrompt:
                     Mock(returncode=0, stdout="", stderr=""),
                 ],
             ),
-            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
             patch("auto_fixer._log_group"),
             patch("auto_fixer._log_endgroup"),
         ):
             result = auto_fixer._run_claude_prompt(
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
+                report_path=report_path,
                 model="sonnet",
                 silent=True,
                 phase_label="review-fix",
             )
             assert result == ""
+            assert "<runtime_pain_report>" in captured_prompt
+            assert report_path in captured_prompt
 
 class TestExpandRepositories:
     def test_no_wildcard_returns_original(self):
