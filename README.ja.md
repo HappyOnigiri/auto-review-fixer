@@ -20,6 +20,8 @@
 - 修正後にレビュー スレッドを解決する
 - PR 上の状態管理コメントと `refix:running` / `refix:done` ラベルで進捗を記録する
 
+CodeRabbit がレビュー側のレートリミットに到達した場合でも、`refix` は PR を `refix:running` のまま維持し、CI 修正とベースブランチ追従だけを進め、レビュー修正と auto-merge は再開可能になるまで保留します。
+
 ## 主な機能
 
 ### レビュー要約
@@ -89,6 +91,12 @@ models:
 
 ci_log_max_lines: 120
 
+auto_merge: false
+
+coderabbit_auto_resume: false
+
+process_draft_prs: false
+
 repositories:
   - repo: "owner/repo"
     user_name: "Refix Bot"
@@ -149,6 +157,16 @@ PR が `refix:done` 状態になった際に自動マージします。
 
 `false`（デフォルト）の場合、ドラフト PR はスキップされます。`true` にすると、通常のオープン PR と同様にドラフト PR も処理されます。
 
+#### `coderabbit_auto_resume`
+
+CodeRabbit のレートリミットコメントに記載された待機時間が経過したあと、自動で `@coderabbitai resume` コメントを投稿するかどうかを設定します。
+
+- 型: boolean
+- 必須: いいえ
+- デフォルト: `false`
+
+レートリミット中は、`refix` は PR を `refix:running` に保ち、レビュー修正と auto-merge を止めつつ、CI 修正とベースブランチ取り込みは継続します。この設定を `true` にすると、待機時間経過後に自動で CodeRabbit の再開を促します。
+
 #### `repositories`
 
 `refix` が処理する対象リポジトリの一覧です。
@@ -198,6 +216,7 @@ PR が `refix:done` 状態になった際に自動マージします。
 - 未知のキーは即エラーではなく、警告を出して無視されます。
 - `models.summarize` で要約処理で使用するモデルを指定します。この設定は環境変数 `REFIX_MODEL_SUMMARIZE` より優先されます。
 - `models.fix` で修正処理で使用するモデルを指定します。
+- `coderabbit_auto_resume` は、最新の CodeRabbit レートリミット通知より後にすでに `@coderabbitai resume` コメントがある場合は重複投稿しません。
 
 ## GitHub Actions での実行方法
 
@@ -247,6 +266,12 @@ models:
   fix: "sonnet"
 
 ci_log_max_lines: 120
+
+auto_merge: false
+
+coderabbit_auto_resume: false
+
+process_draft_prs: false
 
 repositories:
   - repo: "your-org/your-repo"
