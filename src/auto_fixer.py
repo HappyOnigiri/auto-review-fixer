@@ -146,20 +146,20 @@ def _normalize_auto_resume_state(
     auto_resume_run_state: dict[str, int] | None = None,
 ) -> dict[str, int]:
     """Normalize CodeRabbit auto-resume state."""
-    max_per_run = int(
-        runtime_config.get(
-            "coderabbit_auto_resume_max_per_run",
-            default_config["coderabbit_auto_resume_max_per_run"],
-        )
+    raw_max_per_run = runtime_config.get(
+        "coderabbit_auto_resume_max_per_run",
+        default_config["coderabbit_auto_resume_max_per_run"],
     )
-    if max_per_run < 1:
+    if isinstance(raw_max_per_run, int) and not isinstance(raw_max_per_run, bool) and raw_max_per_run >= 1:
+        max_per_run = raw_max_per_run
+    else:
         max_per_run = default_config["coderabbit_auto_resume_max_per_run"]
 
     if auto_resume_run_state is None:
         auto_resume_run_state = {"posted": 0, "max_per_run": max_per_run}
     else:
-        auto_resume_run_state.setdefault("posted", 0)
-        auto_resume_run_state.setdefault("max_per_run", max_per_run)
+        auto_resume_run_state["posted"] = int(auto_resume_run_state.get("posted", 0))
+        auto_resume_run_state["max_per_run"] = max_per_run
 
     return auto_resume_run_state
 
@@ -254,18 +254,14 @@ def load_config(filepath: str) -> dict[str, Any]:
 
     coderabbit_auto_resume_max_per_run = parsed.get("coderabbit_auto_resume_max_per_run")
     if coderabbit_auto_resume_max_per_run is not None:
-        if isinstance(coderabbit_auto_resume_max_per_run, bool):
+        if (
+            not isinstance(coderabbit_auto_resume_max_per_run, int)
+            or isinstance(coderabbit_auto_resume_max_per_run, bool)
+            or coderabbit_auto_resume_max_per_run < 1
+        ):
             print("Error: coderabbit_auto_resume_max_per_run must be an integer >= 1.", file=sys.stderr)
             sys.exit(1)
-        try:
-            parsed_max_per_run = int(coderabbit_auto_resume_max_per_run)
-        except (TypeError, ValueError):
-            print("Error: coderabbit_auto_resume_max_per_run must be an integer >= 1.", file=sys.stderr)
-            sys.exit(1)
-        if parsed_max_per_run < 1:
-            print("Error: coderabbit_auto_resume_max_per_run must be an integer >= 1.", file=sys.stderr)
-            sys.exit(1)
-        config["coderabbit_auto_resume_max_per_run"] = parsed_max_per_run
+        config["coderabbit_auto_resume_max_per_run"] = coderabbit_auto_resume_max_per_run
 
     process_draft_prs = parsed.get("process_draft_prs")
     if process_draft_prs is not None:

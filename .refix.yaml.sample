@@ -12,7 +12,8 @@ auto_merge: false
 # Default: false
 coderabbit_auto_resume: false
 
-# Maximum number of `@coderabbitai resume` comments posted in a single run (Optional)
+# Maximum number of `@coderabbitai resume` comments posted in a single run (Optional, min: 1)
+# The code enforces coderabbit_auto_resume_max_per_run >= 1.
 # Default: 1
 coderabbit_auto_resume_max_per_run: 1
 
