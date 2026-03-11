@@ -213,7 +213,7 @@ def _get_authenticated_github_user() -> str | None:
     )
     if result.returncode == 0 and result.stdout.strip():
         username = result.stdout.strip()
-        if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$", username):
+        if re.match(r"^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}(\[bot\])?$", username):
             return username
     return None
 
