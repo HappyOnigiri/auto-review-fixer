@@ -4,7 +4,7 @@
 # デフォルトで有効にするエージェント
 default_agents = ["antigravity", "cursor", "claude"]
 
-# AGENTS.md に集約して生成（Cloud Code はこれを読み込む）
+# AGENTS.md に集約して生成（Claude Code はこれを読み込む）
 [agents.claude]
 enabled = true
 output_path = "AGENTS.md"
