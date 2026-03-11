@@ -138,8 +138,8 @@ def _normalize_auto_resume_state(
     runtime_config: dict[str, Any],
     default_config: dict[str, Any],
     auto_resume_run_state: dict[str, int] | None = None,
-) -> tuple[dict[str, int], bool]:
-    """Normalize CodeRabbit auto-resume state and process_draft_prs flag."""
+) -> dict[str, int]:
+    """Normalize CodeRabbit auto-resume state."""
     max_per_run = int(
         runtime_config.get(
             "coderabbit_auto_resume_max_per_run",
@@ -155,10 +155,17 @@ def _normalize_auto_resume_state(
         auto_resume_run_state.setdefault("posted", 0)
         auto_resume_run_state.setdefault("max_per_run", max_per_run)
 
-    process_draft_prs = bool(
+    return auto_resume_run_state
+
+
+def get_process_draft_prs(
+    runtime_config: dict[str, Any],
+    default_config: dict[str, Any],
+) -> bool:
+    """Extract process_draft_prs flag."""
+    return bool(
         runtime_config.get("process_draft_prs", default_config["process_draft_prs"])
     )
-    return auto_resume_run_state, process_draft_prs
 
 
 def load_config(filepath: str) -> dict[str, Any]:
@@ -1549,9 +1556,10 @@ def process_repo(
     coderabbit_auto_resume_enabled = bool(
         runtime_config.get("coderabbit_auto_resume", DEFAULT_CONFIG["coderabbit_auto_resume"])
     )
-    auto_resume_run_state, process_draft_prs = _normalize_auto_resume_state(
+    auto_resume_run_state = _normalize_auto_resume_state(
         runtime_config, DEFAULT_CONFIG, auto_resume_run_state
     )
+    process_draft_prs = get_process_draft_prs(runtime_config, DEFAULT_CONFIG)
 
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
@@ -1712,14 +1720,14 @@ def process_repo(
                     auto_resume_enabled=coderabbit_auto_resume_enabled,
                     remaining_resume_posts=max(
                         0,
-                        int(auto_resume_run_state.get("max_per_run", 1))
-                        - int(auto_resume_run_state.get("posted", 0)),
+                        int(auto_resume_run_state["max_per_run"])
+                        - int(auto_resume_run_state["posted"]),
                     ),
                     dry_run=dry_run,
                     summarize_only=summarize_only,
                 )
                 if posted_resume_comment:
-                    auto_resume_run_state["posted"] = int(auto_resume_run_state.get("posted", 0)) + 1
+                    auto_resume_run_state["posted"] = int(auto_resume_run_state["posted"]) + 1
 
             has_review_targets = bool(unresolved_reviews or unresolved_comments)
             if not has_review_targets and not is_behind and not has_failing_ci:
@@ -2341,7 +2349,7 @@ def main():
         print("[SUMMARIZE ONLY MODE]")
 
     commits_added_to: list[tuple[str, int, str]] = []
-    auto_resume_run_state, _ = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
+    auto_resume_run_state = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
     for repo_info in repos:
         try:
             results = process_repo(
