@@ -176,6 +176,7 @@ models:
   fix: claude-sonnet
 ci_log_max_lines: 250
 auto_merge: true
+coderabbit_auto_resume: true
 repositories:
   - repo: owner/repo1
     user_name: Bot User
@@ -192,6 +193,7 @@ repositories:
             },
             "ci_log_max_lines": 250,
             "auto_merge": True,
+            "coderabbit_auto_resume": True,
             "process_draft_prs": False,
             "repositories": [
                 {
@@ -221,6 +223,7 @@ repositories:
         assert config["models"]["fix"] == "sonnet"
         assert config["ci_log_max_lines"] == 120
         assert config["auto_merge"] is False
+        assert config["coderabbit_auto_resume"] is False
         assert config["process_draft_prs"] is False
         assert config["repositories"] == [
             {"repo": "owner/repo1", "user_name": None, "user_email": None}
@@ -250,6 +253,19 @@ repositories:
         )
         config = auto_fixer.load_config(str(config_file))
         assert config["process_draft_prs"] is True
+
+    def test_coderabbit_auto_resume_requires_boolean(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
 
     def test_process_draft_prs_type_error_exits(self, tmp_path):
         config_file = tmp_path / "config.yaml"
@@ -640,6 +656,98 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
         )
 
 
+class TestCodeRabbitRateLimitHelpers:
+    RATE_LIMIT_BODY = """
+> [!WARNING]
+> ## Rate limit exceeded
+>
+> `@HappyOnigiri` has exceeded the limit for the number of commits that can be reviewed per hour. Please wait **5 minutes and 11 seconds** before requesting another review.
+""".strip()
+
+    def test_extract_coderabbit_rate_limit_status(self):
+        status = auto_fixer._extract_coderabbit_rate_limit_status(
+            {
+                "id": 55,
+                "body": self.RATE_LIMIT_BODY,
+                "updated_at": "2026-03-11T12:00:00Z",
+                "html_url": "https://github.com/owner/repo/issues/1#issuecomment-55",
+            }
+        )
+
+        assert status is not None
+        assert status["comment_id"] == 55
+        assert status["wait_text"] == "5 minutes and 11 seconds"
+        assert status["wait_seconds"] == 311
+        assert status["resume_after"].isoformat() == "2026-03-11T12:05:11+00:00"
+
+    def test_get_active_coderabbit_rate_limit_ignores_stale_notice(self):
+        pr_data = {
+            "reviews": [
+                {
+                    "author": {"login": "coderabbitai"},
+                    "submittedAt": "2026-03-11T12:10:00Z",
+                }
+            ]
+        }
+        issue_comments = [
+            {
+                "id": 55,
+                "body": self.RATE_LIMIT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": "2026-03-11T12:00:00Z",
+            }
+        ]
+
+        status = auto_fixer._get_active_coderabbit_rate_limit(pr_data, [], issue_comments)
+        assert status is None
+
+    def test_maybe_auto_resume_posts_comment_when_wait_elapsed(self):
+        now = auto_fixer.datetime.now(auto_fixer.timezone.utc)
+        status = {
+            "updated_at": now,
+            "resume_after": now - auto_fixer.timedelta(seconds=1),
+        }
+        with patch("auto_fixer._post_issue_comment", return_value=True) as mock_post:
+            posted = auto_fixer._maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                dry_run=False,
+                summarize_only=False,
+            )
+
+        assert posted is True
+        mock_post.assert_called_once_with("owner/repo", 1, "@coderabbitai resume")
+
+    def test_maybe_auto_resume_skips_when_resume_already_exists(self):
+        threshold = auto_fixer.datetime(2026, 3, 11, 12, 0, tzinfo=auto_fixer.timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        issue_comments = [
+            {
+                "body": "@coderabbitai resume",
+                "updated_at": "2026-03-11T12:01:00Z",
+            }
+        ]
+        with patch("auto_fixer._post_issue_comment") as mock_post:
+            posted = auto_fixer._maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=issue_comments,
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                dry_run=False,
+                summarize_only=False,
+            )
+
+        assert posted is False
+        mock_post.assert_not_called()
+
+
 class TestProcessRepo:
     """Thin orchestration tests for process_repo(). All external deps mocked."""
 
@@ -686,6 +794,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch_pr_details,
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer._update_done_label_if_completed"),
@@ -710,6 +819,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -782,6 +892,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=review_comments),
             patch("auto_fixer.fetch_review_threads", return_value=thread_map),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -849,6 +960,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -895,6 +1007,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -907,6 +1020,61 @@ class TestProcessRepo:
 
         assert call_order == ["ci-fix"]
         mock_upsert_state_comment.assert_not_called()
+
+    def test_rate_limit_skips_review_fix_but_runs_ci_and_merge_base(self, tmp_path):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [
+                {"id": "r1", "body": "fix review", "author": {"login": "coderabbitai[bot]"}}
+            ],
+            "statusCheckRollup": [
+                {"name": "ci/test", "conclusion": "FAILURE", "detailsUrl": "https://example.com/ci/test"}
+            ],
+        }
+        issue_comments = [
+            {
+                "id": 99,
+                "body": TestCodeRabbitRateLimitHelpers.RATE_LIMIT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": "2999-03-11T12:00:00Z",
+            }
+        ]
+        call_order: list[str] = []
+
+        def run_claude_side_effect(*, phase_label, **kwargs):
+            call_order.append(phase_label)
+            if phase_label == "ci-fix":
+                return "aaa111 ci fix"
+            raise AssertionError(f"Unexpected phase_label: {phase_label}")
+
+        def merge_side_effect(*args, **kwargs):
+            call_order.append("merge-base")
+            return (False, False)
+
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=issue_comments),
+            patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer._collect_ci_failure_materials", return_value=[]),
+            patch("auto_fixer._merge_base_branch", side_effect=merge_side_effect),
+            patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
+            patch("auto_fixer._set_pr_running_label"),
+            patch("auto_fixer._update_done_label_if_completed") as mock_update_done,
+            patch("auto_fixer.summarize_reviews") as mock_summarize,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"})
+
+        assert call_order == ["ci-fix", "merge-base"]
+        mock_summarize.assert_not_called()
+        assert mock_update_done.call_args.kwargs["coderabbit_rate_limit_active"] is True
 
     def test_summarize_only_stops_before_fix_and_state_update(self, tmp_path, capsys):
         """summarize_only=True -> no fix model, no state comment update."""
@@ -924,6 +1092,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -954,6 +1123,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.summarize_reviews", return_value={}),
@@ -981,6 +1151,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch(
@@ -1010,6 +1181,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("behind", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -1045,6 +1217,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path) as mock_prepare,
@@ -1071,6 +1244,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_pr_details", return_value=pr_data),
             patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
             patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
@@ -1187,6 +1361,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
             )
@@ -1213,6 +1388,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
                 auto_merge_enabled=True,
@@ -1239,6 +1415,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
             )
@@ -1265,6 +1442,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
             )
@@ -1287,6 +1465,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
             )
@@ -1306,6 +1485,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=True,
                 summarize_only=False,
             )
@@ -1324,6 +1504,7 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=True,
             )
@@ -1347,8 +1528,36 @@ class TestRefixLabeling:
                 commits_by_phase=[],
                 pr_data={"reviews": [], "comments": []},
                 review_comments=[],
+                issue_comments=[],
                 dry_run=False,
                 summarize_only=False,
+            )
+        mock_ci.assert_not_called()
+        mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with("owner/repo", 1)
+
+    def test_update_done_label_skips_when_coderabbit_rate_limit_active(self):
+        with (
+            patch("auto_fixer._contains_coderabbit_processing_marker", return_value=False),
+            patch("auto_fixer._are_all_ci_checks_successful") as mock_ci,
+            patch("auto_fixer._set_pr_done_label") as mock_set_done,
+            patch("auto_fixer._set_pr_running_label") as mock_set_running,
+        ):
+            auto_fixer._update_done_label_if_completed(
+                repo="owner/repo",
+                pr_number=1,
+                has_review_targets=False,
+                review_fix_started=False,
+                review_fix_added_commits=False,
+                review_fix_failed=False,
+                state_saved=True,
+                commits_by_phase=[],
+                pr_data={"reviews": [], "comments": []},
+                review_comments=[],
+                issue_comments=[],
+                dry_run=False,
+                summarize_only=False,
+                coderabbit_rate_limit_active=True,
             )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()

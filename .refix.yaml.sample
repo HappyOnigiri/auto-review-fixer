@@ -8,6 +8,10 @@ ci_log_max_lines: 120
 # Default: false
 auto_merge: false
 
+# Automatically post `@coderabbitai resume` after a CodeRabbit rate-limit wait expires (Optional)
+# Default: false
+coderabbit_auto_resume: false
+
 # Whether to process DRAFT PRs (Optional)
 # Default: false (skip DRAFT PRs)
 process_draft_prs: false

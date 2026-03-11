@@ -20,6 +20,8 @@ For each configured repository, `refix` can:
 - resolve review threads after successful fixes, and
 - persist progress in a PR state comment and with labels such as `refix:running` and `refix:done`.
 
+When CodeRabbit reports a review-side rate limit, `refix` keeps the PR in `refix:running`, still allows CI repair and base-branch catch-up, and skips review-fix / auto-merge until CodeRabbit can resume.
+
 ## Features
 
 ### Review summarization
@@ -92,6 +94,10 @@ ci_log_max_lines: 120
 # Automatically merge PR when it reaches refix:done state (optional, default false)
 auto_merge: false
 
+# Automatically post `@coderabbitai resume` after a CodeRabbit rate-limit wait expires
+# (optional, default false)
+coderabbit_auto_resume: false
+
 # Whether to process draft PRs (optional)
 # Default: false (draft PRs are skipped)
 process_draft_prs: false
@@ -157,6 +163,16 @@ Whether to include draft PRs in the processing targets.
 
 When set to `false` (the default), draft PRs are skipped. Set to `true` to process draft PRs alongside regular open PRs.
 
+#### `coderabbit_auto_resume`
+
+Whether `refix` should automatically post `@coderabbitai resume` after a CodeRabbit rate-limit comment says the wait time has elapsed.
+
+- Type: boolean
+- Required: no
+- Default: `false`
+
+When a rate-limit notice is active, `refix` keeps the PR in `refix:running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed.
+
 #### `repositories`
 
 List of repositories that `refix` should process.
@@ -205,6 +221,7 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - `repositories` must be present and must contain at least one entry.
 - Unknown keys are ignored with warnings rather than treated as hard errors.
 - `models.summarize` in YAML takes priority over the `REFIX_MODEL_SUMMARIZE` environment variable when selecting the summarization model.
+- The `coderabbit_auto_resume` option only affects active CodeRabbit rate-limit comments; duplicate `@coderabbitai resume` comments are avoided when one has already been posted after the latest rate-limit notice.
 
 ## Running in CI with GitHub Actions
 
