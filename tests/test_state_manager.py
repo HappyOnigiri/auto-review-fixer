@@ -57,6 +57,15 @@ def test_parse_state_entries_falls_back_for_broken_rows():
     ]
 
 
+def test_parse_state_entries_does_not_readd_archived_ids_as_entries():
+    text = (
+        "<!-- auto-review-fixer-state-comment -->\n"
+        "\n<!-- archived-ids: r123,discussion_r456 -->"
+    )
+    entries = state_manager.parse_state_entries(text)
+    assert entries == []
+
+
 def test_format_state_row_generates_markdown_row():
     row = state_manager.format_state_row(
         "discussion_r456",

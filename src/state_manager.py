@@ -83,7 +83,8 @@ def parse_state_entries(text: str) -> list[StateEntry]:
             )
         )
 
-    fallback_ids = parse_processed_ids(text)
+    text_without_footer = ARCHIVED_IDS_PATTERN.sub("", text or "")
+    fallback_ids = parse_processed_ids(text_without_footer)
     for comment_id in fallback_ids:
         if comment_id in seen:
             continue
