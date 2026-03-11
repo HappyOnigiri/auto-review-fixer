@@ -4,6 +4,10 @@ models:
 
 ci_log_max_lines: 120
 
+# Automatically merge PR when it reaches refix:done state (Optional)
+# Default: false
+auto_merge: false
+
 # Whether to process DRAFT PRs (Optional)
 # Default: false (skip DRAFT PRs)
 process_draft_prs: false
