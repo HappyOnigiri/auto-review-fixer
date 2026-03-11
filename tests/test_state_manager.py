@@ -102,6 +102,15 @@ def test_render_state_comment_trims_oldest_rows_to_fit_limit(monkeypatch):
     assert "discussion_r0" in body
 
 
+def test_render_state_comment_hides_description_in_html_comment():
+    body = state_manager.render_state_comment([])
+
+    assert (
+        "<!-- このコメントは Auto Review Fixer が処理状態を記録するためのものです。"
+        "手動で編集・削除しないでください。 -->"
+    ) in body
+
+
 def test_load_state_comment_extracts_latest_marker_comment_and_ids():
     state_body = state_manager.render_state_comment(
         [

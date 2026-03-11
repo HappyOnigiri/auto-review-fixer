@@ -12,8 +12,8 @@ import re
 STATE_COMMENT_MARKER = "<!-- auto-review-fixer-state-comment -->"
 STATE_COMMENT_TITLE = "### 🤖 Auto Review Fixer Status"
 STATE_COMMENT_DESCRIPTION = (
-    "このコメントは Auto Review Fixer が処理状態を記録するためのものです。"
-    "手動で編集・削除しないでください。"
+    "<!-- このコメントは Auto Review Fixer が処理状態を記録するためのものです。"
+    "手動で編集・削除しないでください。 -->"
 )
 STATE_COMMENT_MAX_LENGTH = 60000
 STATE_ID_PATTERN = re.compile(r"\[(r\d+|discussion_r\d+)\](?:\([^)]+\))?")
