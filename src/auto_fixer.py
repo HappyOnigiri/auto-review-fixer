@@ -1613,6 +1613,10 @@ def process_repo(
                 continue
             try:
                 issue_comments = fetch_issue_comments(repo, pr_number)
+            except RuntimeError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                pr_fetch_failed = True
+                continue
             except Exception as e:
                 print(f"Error: could not fetch issue comments: {e}", file=sys.stderr)
                 pr_fetch_failed = True

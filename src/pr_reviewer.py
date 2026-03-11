@@ -131,13 +131,11 @@ def fetch_issue_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding="utf-8")
     if result.returncode != 0:
-        print(f"Warning: failed to fetch issue comments: {result.stderr}", file=sys.stderr)
-        return []
+        raise RuntimeError(f"failed to fetch issue comments: {result.stderr}")
     try:
         data = json.loads(result.stdout) if result.stdout else []
-    except json.JSONDecodeError:
-        print("Warning: failed to parse issue comments response", file=sys.stderr)
-        return []
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"failed to parse issue comments response: {e}") from e
     return _flatten_paginated_response(data)
 
 
