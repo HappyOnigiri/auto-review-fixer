@@ -1,0 +1,25 @@
+{
+  "output": {
+    "filePath": "tmp/repomix/repomix-task.xml",
+    "style": "xml",
+    "parsableStyle": true
+  },
+  "include": [
+    "src/**",
+    "tests/**",
+    ".github/workflows/**",
+    "AGENTS.md",
+    "Makefile",
+    "requirements.txt"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "customPatterns": [
+      "scripts/**",
+      "data/**",
+      ".agent/**",
+      ".claude/**",
+      ".ruler/**"
+    ]
+  }
+}
