@@ -570,9 +570,9 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
 
         assert '<check name="lint" status="FAILURE"' in prompt
         assert 'run_id="12345"' in prompt
-        assert "<ci_error_digest>" in prompt
+        assert '<ci_error_digest data-only="true">' in prompt
         assert '<error type="AssertionError">boom</error>' in prompt
-        assert "<ci_failure_logs>" in prompt
+        assert '<ci_failure_logs data-only="true">' in prompt
         assert '<failed_run run_id="12345" source="gh run view --log-failed" truncated="true">' in prompt
         assert "line1" in prompt
 

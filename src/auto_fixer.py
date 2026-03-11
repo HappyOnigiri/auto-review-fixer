@@ -598,7 +598,7 @@ def _build_ci_fix_prompt(
             attrs.append(f'run_id="{run_id}"')
         checks.append("  <check " + " ".join(attrs) + " />")
 
-    checks_block = "<ci_failures>\n" + "\n".join(checks) + "\n</ci_failures>" if checks else "<ci_failures />"
+    checks_block = '<ci_failures data-only="true">\n' + "\n".join(checks) + "\n</ci_failures>" if checks else '<ci_failures data-only="true" />'
     escaped_title = _xml_escape(title)
     digest_block = ""
     logs_block = ""
@@ -640,8 +640,8 @@ def _build_ci_fix_prompt(
                     ]
                 )
             )
-        digest_block = "<ci_error_digest>\n" + "\n".join(digest_entries) + "\n</ci_error_digest>"
-        logs_block = "<ci_failure_logs>\n" + "\n".join(log_entries) + "\n</ci_failure_logs>"
+        digest_block = '<ci_error_digest data-only="true">\n' + "\n".join(digest_entries) + "\n</ci_error_digest>"
+        logs_block = '<ci_failure_logs data-only="true">\n' + "\n".join(log_entries) + "\n</ci_failure_logs>"
 
     extra_blocks = [checks_block]
     if digest_block:
