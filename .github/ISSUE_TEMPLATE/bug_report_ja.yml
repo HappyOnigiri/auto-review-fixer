@@ -1,0 +1,66 @@
+name: Bug report (日本語)
+description: refix の再現可能な問題を報告する
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        バグの報告ありがとうございます。再現と調査に必要な情報をできるだけ詳しくお願いします。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何が起きましたか？
+      placeholder: 問題の簡潔な説明
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 正確な手順を記載してください。
+      placeholder: |
+        1. ... を設定
+        2. ... を実行
+        3. ... を確認
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      placeholder: どのような結果を期待していましたか？
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      placeholder: 実際には何が起きましたか？
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: 関連する設定
+      description: シークレットをマスクしたうえで、`.refix.yaml` の関連部分を共有してください。
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・スクリーンショット
+      description: ターミナル出力、ワークフローログ、またはスクリーンショットがあれば貼り付けてください。
+  - type: input
+    id: version
+    attributes:
+      label: バージョンまたはコミット
+      description: 使用しているバージョン、ブランチ、またはコミットは？
+      placeholder: main / v1.2.3 / abc1234
+  - type: input
+    id: environment
+    attributes:
+      label: 環境
+      description: OS、Python バージョン、実行コンテキスト。
+      placeholder: ubuntu-latest, Python 3.12, GitHub Actions
