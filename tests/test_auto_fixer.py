@@ -190,6 +190,7 @@ repositories:
                 "fix": "claude-sonnet",
             },
             "ci_log_max_lines": 250,
+            "process_draft_prs": False,
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -217,9 +218,36 @@ repositories:
         assert config["models"]["summarize"] == "haiku"
         assert config["models"]["fix"] == "sonnet"
         assert config["ci_log_max_lines"] == 120
+        assert config["process_draft_prs"] is False
         assert config["repositories"] == [
             {"repo": "owner/repo1", "user_name": None, "user_email": None}
         ]
+
+    def test_process_draft_prs_can_be_enabled(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+process_draft_prs: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+
+        config = auto_fixer.load_config(str(config_file))
+        assert config["process_draft_prs"] is True
+
+    def test_process_draft_prs_type_error_exits(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+process_draft_prs: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
 
     def test_yaml_parse_error_exits(self, tmp_path):
         config_file = tmp_path / "config.yaml"
@@ -612,6 +640,44 @@ class TestProcessRepo:
             assert "No open PRs found" in out
             mock_run.assert_not_called()
             mock_popen.assert_not_called()
+
+    def test_draft_pr_is_skipped_by_default(self):
+        prs = [{"number": 1, "title": "Draft PR", "isDraft": True}]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch_pr_details,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"})
+
+        mock_fetch_pr_details.assert_not_called()
+
+    def test_draft_pr_is_processed_when_enabled(self):
+        prs = [{"number": 1, "title": "Draft PR", "isDraft": True}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Draft PR",
+            "reviews": [],
+            "comments": [],
+        }
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "process_draft_prs": True,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch_pr_details,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer._update_done_label_if_completed"),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+
+        mock_fetch_pr_details.assert_called_once_with("owner/repo", 1)
 
     def test_dry_run_no_external_commands(self, tmp_path, capsys):
         """dry_run=True -> no Claude API calls, no git clone."""
