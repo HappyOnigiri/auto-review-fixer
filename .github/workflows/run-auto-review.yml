@@ -35,7 +35,12 @@ jobs:
       - name: Generate config.yaml from GitHub Variables
         env:
           REFIX_CONFIG_YAML: ${{ vars.REFIX_CONFIG_YAML }}
-        run: printf '%s\n' "$REFIX_CONFIG_YAML" > src/config.yaml
+        run: |
+          if [ -z "$REFIX_CONFIG_YAML" ]; then
+            echo "Error: REFIX_CONFIG_YAML is not set or empty" >&2
+            exit 1
+          fi
+          printf '%s\n' "$REFIX_CONFIG_YAML" > src/config.yaml
 
       - name: Run auto review fixer
         env:
