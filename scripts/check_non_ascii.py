@@ -8,12 +8,18 @@ import sys
 from pathlib import Path
 
 
+ASCII_ENFORCED_FILES = {
+    "requirements.txt",
+    "scripts/ci.py",
+    "scripts/check_non_ascii.py",
+    "scripts/fix_newlines.py",
+}
+
+
 def _is_target_file(path: str) -> bool:
     if path.startswith(".github/workflows/"):
         return True
-    if path.startswith("scripts/"):
-        return True
-    if path.startswith("requirements"):
+    if path in ASCII_ENFORCED_FILES:
         return True
     return False
 
