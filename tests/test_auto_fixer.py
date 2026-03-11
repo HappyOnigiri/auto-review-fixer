@@ -166,144 +166,165 @@ class TestGeneratePrompt:
         assert "</instructions>\n\n<review_data>" in prompt
 
 
-class TestLoadReposFromEnv:
-    """Tests for load_repos_from_env()."""
+class TestLoadConfig:
+    def test_valid_config_with_all_keys(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+models:
+  summarize: claude-haiku
+  fix: claude-sonnet
+ci_log_max_lines: 250
+repositories:
+  - repo: owner/repo1
+    user_name: Bot User
+    user_email: bot@example.com
+  - repo: owner/repo2
+""".strip()
+        )
 
-    def test_empty_returns_empty_list(self):
-        with patch.dict(os.environ, {"REPOS": ""}, clear=False):
-            assert auto_fixer.load_repos_from_env() == []
-
-    def test_valid_single_repo(self):
-        with patch.dict(os.environ, {"REPOS": "owner/repo"}, clear=False):
-            repos = auto_fixer.load_repos_from_env()
-            assert len(repos) == 1
-            assert repos[0]["repo"] == "owner/repo"
-            assert repos[0]["user_name"] is None
-            assert repos[0]["user_email"] is None
-
-    def test_valid_repo_with_user_config(self):
-        with patch.dict(
-            os.environ,
-            {"REPOS": "owner/repo:User Name:user@example.com"},
-            clear=False,
-        ):
-            repos = auto_fixer.load_repos_from_env()
-            assert len(repos) == 1
-            assert repos[0]["repo"] == "owner/repo"
-            assert repos[0]["user_name"] == "User Name"
-            assert repos[0]["user_email"] == "user@example.com"
-
-    def test_invalid_repo_format_skipped(self):
-        with patch.dict(
-            os.environ,
-            {"REPOS": "invalid,owner/repo,bad/"},
-            clear=False,
-        ):
-            repos = auto_fixer.load_repos_from_env()
-            assert len(repos) == 1
-            assert repos[0]["repo"] == "owner/repo"
-
-    def test_multiple_repos(self):
-        with patch.dict(
-            os.environ,
-            {"REPOS": "a/b,c/d:name:email"},
-            clear=False,
-        ):
-            repos = auto_fixer.load_repos_from_env()
-            assert len(repos) == 2
-            assert repos[0]["repo"] == "a/b"
-            assert repos[1]["repo"] == "c/d"
-            assert repos[1]["user_name"] == "name"
-            assert repos[1]["user_email"] == "email"
-
-    def test_owner_slash_star_expands_all_repositories(self):
-        gh_result = Mock(returncode=0, stdout='[{"nameWithOwner":"owner/r1"},{"nameWithOwner":"owner/r2"}]', stderr="")
-        with (
-            patch.dict(
-                os.environ,
-                {"REPOS": "owner/*:User Name:user@example.com"},
-                clear=False,
-            ),
-            patch("auto_fixer.subprocess.run", return_value=gh_result) as mock_run,
-        ):
-            repos = auto_fixer.load_repos_from_env()
-
-        assert repos == [
-            {"repo": "owner/r1", "user_name": "User Name", "user_email": "user@example.com"},
-            {"repo": "owner/r2", "user_name": "User Name", "user_email": "user@example.com"},
-        ]
-        mock_run.assert_called_once_with(
-            [
-                "gh",
-                "repo",
-                "list",
-                "owner",
-                "--limit",
-                "1000",
-                "--json",
-                "nameWithOwner",
+        config = auto_fixer.load_config(str(config_file))
+        assert config == {
+            "models": {
+                "summarize": "claude-haiku",
+                "fix": "claude-sonnet",
+            },
+            "ci_log_max_lines": 250,
+            "repositories": [
+                {
+                    "repo": "owner/repo1",
+                    "user_name": "Bot User",
+                    "user_email": "bot@example.com",
+                },
+                {
+                    "repo": "owner/repo2",
+                    "user_name": None,
+                    "user_email": None,
+                },
             ],
-            capture_output=True,
-            text=True,
-            check=False,
-            encoding="utf-8",
+        }
+
+    def test_optional_keys_use_defaults(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/repo1
+""".strip()
         )
 
-    def test_partial_wildcard_filters_repositories(self):
-        gh_result = Mock(
-            returncode=0,
-            stdout='[{"nameWithOwner":"owner/repo-a"},{"nameWithOwner":"owner/tool"},{"nameWithOwner":"owner/repo-b"}]',
-            stderr="",
-        )
-        with (
-            patch.dict(os.environ, {"REPOS": "owner/repo*"}, clear=False),
-            patch("auto_fixer.subprocess.run", return_value=gh_result),
-        ):
-            repos = auto_fixer.load_repos_from_env()
-
-        assert repos == [
-            {"repo": "owner/repo-a", "user_name": None, "user_email": None},
-            {"repo": "owner/repo-b", "user_name": None, "user_email": None},
+        config = auto_fixer.load_config(str(config_file))
+        assert config["models"]["summarize"] == "haiku"
+        assert config["models"]["fix"] == "sonnet"
+        assert config["ci_log_max_lines"] == 120
+        assert config["repositories"] == [
+            {"repo": "owner/repo1", "user_name": None, "user_email": None}
         ]
 
-    def test_owner_wildcard_still_unsupported(self):
-        with (
-            patch.dict(os.environ, {"REPOS": "own*/repo"}, clear=False),
-            patch("auto_fixer.subprocess.run") as mock_run,
-        ):
-            repos = auto_fixer.load_repos_from_env()
+    def test_yaml_parse_error_exits(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/repo1
+    user_name: bot
+   user_email: invalid-indent
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
 
-        assert repos == []
-        mock_run.assert_not_called()
+    def test_missing_repositories_exits(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+models:
+  summarize: custom
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
 
-    def test_wildcard_expansion_error_raises(self):
-        gh_result = Mock(returncode=1, stdout="", stderr="boom")
-        with (
-            patch.dict(os.environ, {"REPOS": "owner/*"}, clear=False),
-            patch("auto_fixer.subprocess.run", return_value=gh_result),
-        ):
-            with pytest.raises(RuntimeError):
-                auto_fixer.load_repos_from_env()
+    def test_empty_repositories_exits(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories: []
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    def test_unknown_keys_warns_and_continues(self, tmp_path, capsys):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+invalid_top: true
+models:
+  summarize: custom-haiku
+  invalid_model_key: 123
+repositories:
+  - repo: owner/repo1
+    invalid_repo_key: ignored
+""".strip()
+        )
+
+        config = auto_fixer.load_config(str(config_file))
+        err = capsys.readouterr().err
+        assert "Warning: Unknown key 'invalid_top' found in config." in err
+        assert "Warning: Unknown key 'invalid_model_key' found in config." in err
+        assert "Warning: Unknown key 'invalid_repo_key' found in config." in err
+        assert config["models"]["summarize"] == "custom-haiku"
+        assert config["repositories"][0]["repo"] == "owner/repo1"
 
 
 class TestMain:
-    def test_repos_env_empty_exits_with_error(self, capsys):
+    def test_load_config_error_exits_with_error(self):
         with (
             patch.object(sys, "argv", ["auto_fixer.py"]),
-            patch.dict(os.environ, {"REPOS": "   "}, clear=False),
             patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", side_effect=SystemExit(1)),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 auto_fixer.main()
-
         assert exc_info.value.code == 1
-        err = capsys.readouterr().err
-        assert "REPOS is set but empty" in err
+
+    def test_main_passes_loaded_config_to_process_repo(self):
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "custom.yaml"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=config) as mock_load_config,
+            patch("auto_fixer.process_repo", return_value=[]) as mock_process_repo,
+        ):
+            auto_fixer.main()
+
+        mock_load_config.assert_called_once_with("custom.yaml")
+        mock_process_repo.assert_called_once_with(
+            {"repo": "owner/repo", "user_name": None, "user_email": None},
+            dry_run=False,
+            silent=False,
+            summarize_only=False,
+            config=config,
+        )
 
     def test_usage_limit_exits_nonzero_immediately(self, capsys):
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
         with (
-            patch.object(sys, "argv", ["auto_fixer.py", "owner/repo"]),
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=config),
             patch(
                 "auto_fixer.process_repo",
                 side_effect=ClaudeUsageLimitError(
@@ -322,9 +343,15 @@ class TestMain:
         assert "Failing CI immediately" in err
 
     def test_claude_nonzero_exits_nonzero_immediately(self, capsys):
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [{"repo": "owner/repo", "user_name": None, "user_email": None}],
+        }
         with (
-            patch.object(sys, "argv", ["auto_fixer.py", "owner/repo"]),
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=config),
             patch(
                 "auto_fixer.process_repo",
                 side_effect=ClaudeCommandFailedError(
@@ -343,37 +370,6 @@ class TestMain:
         assert "Failing CI immediately" in err
         assert "stdout: API Error" in err
         assert "stderr: bad headers" in err
-
-
-class TestLoadReposFromFile:
-    """Tests for load_repos_from_file()."""
-
-    def test_valid_file(self, tmp_path):
-        f = tmp_path / "repos.txt"
-        f.write_text("owner/repo:User:user@x.com\n")
-        repos = auto_fixer.load_repos_from_file(str(f))
-        assert len(repos) == 1
-        assert repos[0]["repo"] == "owner/repo"
-        assert repos[0]["user_name"] == "User"
-        assert repos[0]["user_email"] == "user@x.com"
-
-    def test_skips_empty_lines_and_comments(self, tmp_path):
-        f = tmp_path / "repos.txt"
-        f.write_text("""
-# comment
-owner/repo
-
-a/b:name:email
-""")
-        repos = auto_fixer.load_repos_from_file(str(f))
-        assert len(repos) == 2
-        assert repos[0]["repo"] == "owner/repo"
-        assert repos[1]["repo"] == "a/b"
-
-    def test_file_not_found_exits(self):
-        with pytest.raises(SystemExit) as exc_info:
-            auto_fixer.load_repos_from_file("/nonexistent/path/repos.txt")
-        assert exc_info.value.code == 1
 
 
 class TestSetupClaudeSettings:
@@ -582,7 +578,11 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
         )
 
         with patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=log_text, stderr="")) as mock_run:
-            materials = auto_fixer._collect_ci_failure_materials("owner/repo", failing_contexts)
+            materials = auto_fixer._collect_ci_failure_materials(
+                "owner/repo",
+                failing_contexts,
+                max_lines=120,
+            )
 
         assert len(materials) == 1
         assert materials[0]["run_id"] == "12345"
