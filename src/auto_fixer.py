@@ -5,7 +5,6 @@ Fetches open PRs, gets unresolved reviews, and runs Claude to fix them.
 """
 
 import argparse
-import fnmatch
 import json
 import os
 import re
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import yaml
 from claude_limit import (
     ClaudeCommandFailedError,
     ClaudeUsageLimitError,
@@ -94,136 +94,131 @@ REFIX_DONE_LABEL_COLOR = "0E8A16"
 FAILED_CI_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "CANCELLED", "STALE", "STARTUP_FAILURE"}
 FAILED_CI_STATES = {"ERROR", "FAILURE"}
 GITHUB_ACTIONS_RUN_URL_PATTERN = re.compile(r"/actions/runs/(\d+)")
+DEFAULT_CONFIG: dict[str, Any] = {
+    "models": {
+        "summarize": "haiku",
+        "fix": "sonnet",
+    },
+    "ci_log_max_lines": 120,
+    "repositories": [],
+}
+ALLOWED_CONFIG_TOP_LEVEL_KEYS = {"models", "ci_log_max_lines", "repositories"}
+ALLOWED_MODEL_KEYS = {"summarize", "fix"}
+ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 
 
-def _list_repositories_for_owner(owner: str) -> list[str]:
-    """List repositories for the specified user/organization owner."""
-    cmd = [
-        "gh",
-        "repo",
-        "list",
-        owner,
-        "--limit",
-        "1000",
-        "--json",
-        "nameWithOwner",
-    ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Error listing repositories for '{owner}': {result.stderr.strip()}")
+def _warn_unknown_config_keys(config_section: dict[str, Any], allowed_keys: set[str]) -> None:
+    unknown_keys = sorted(set(config_section.keys()) - allowed_keys)
+    for key in unknown_keys:
+        print(f"Warning: Unknown key '{key}' found in config.", file=sys.stderr)
 
+
+def load_config(filepath: str) -> dict[str, Any]:
+    """Load and validate YAML config."""
     try:
-        data = json.loads(result.stdout) if result.stdout else []
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse repository list for '{owner}'") from e
-
-    if not isinstance(data, list):
-        raise RuntimeError(f"Unexpected response while listing repositories for '{owner}'")
-
-    repos: list[str] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        name_with_owner = item.get("nameWithOwner")
-        if isinstance(name_with_owner, str) and name_with_owner.startswith(f"{owner}/"):
-            repos.append(name_with_owner)
-    return repos
-
-
-def _match_repo_pattern(repo_full_name: str, owner: str, name_pattern: str) -> bool:
-    """Match owner/name against a simple wildcard pattern in repository name."""
-    if not repo_full_name.startswith(f"{owner}/"):
-        return False
-    repo_name = repo_full_name.split("/", 1)[1]
-    return fnmatch.fnmatchcase(repo_name, name_pattern)
-
-
-def _expand_repo_spec(owner: str, name_spec: str) -> list[str]:
-    """Expand repo spec into concrete owner/repo names."""
-    if "*" not in name_spec:
-        return [f"{owner}/{name_spec}"]
-
-    expanded_repos = _list_repositories_for_owner(owner)
-    return [repo for repo in expanded_repos if _match_repo_pattern(repo, owner, name_spec)]
-
-
-def load_repos_from_env() -> list[dict[str, str | None]]:
-    """Load repository list from REPOS environment variable.
-
-    Format:
-      - owner/repo:user.name:user.email
-      - owner/*:user.name:user.email      (all repositories under owner)
-      - owner/repo*:user.name:user.email  (wildcard match in repo name)
-    """
-    repos_env = os.environ.get("REPOS", "").strip()
-    if not repos_env:
-        return []
-    repos: list[dict[str, str | None]] = []
-    for entry in repos_env.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-        parts = entry.split(":", 2)
-        repo_spec = parts[0]
-        segments = repo_spec.split("/")
-        if len(segments) != 2 or not segments[0] or not segments[1]:
-            print(
-                f"Warning: skipping invalid repo entry '{repo_spec}' (expected owner/name)",
-                file=sys.stderr,
-            )
-            continue
-        owner, name = segments
-        if "*" in owner:
-            print(
-                f"Warning: skipping invalid wildcard repo entry '{repo_spec}' (owner wildcard is not supported)",
-                file=sys.stderr,
-            )
-            continue
-
-        user_name = parts[1] if len(parts) > 1 else None
-        user_email = parts[2] if len(parts) > 2 else None
-        expanded_repo_specs = _expand_repo_spec(owner, name)
-        for expanded_repo in expanded_repo_specs:
-            repos.append({"repo": expanded_repo, "user_name": user_name, "user_email": user_email})
-    return repos
-
-
-def load_repos_from_file(filepath: str) -> list[dict[str, str | None]]:
-    """Load repository list from file with optional git user config.
-
-    Format: owner/repo:user.name:user.email
-    Example: HappyOnigiri/ComfyUI-Meld:Claude HappyOnigiri:253838257+NodeMeld@users.noreply.github.com
-    """
-    repos = []
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                # Skip empty lines and comments
-                if not line or line.startswith("#"):
-                    continue
-
-                # Parse repo entry
-                parts = line.split(":")
-                repo = parts[0]
-                user_name = parts[1] if len(parts) > 1 else None
-                user_email = parts[2] if len(parts) > 2 else None
-
-                repos.append({
-                    "repo": repo,
-                    "user_name": user_name,
-                    "user_email": user_email,
-                })
+        config_text = Path(filepath).read_text(encoding="utf-8")
     except FileNotFoundError:
-        print(f"Error: {filepath} not found", file=sys.stderr)
+        print(f"Error: config file not found: {filepath}", file=sys.stderr)
         sys.exit(1)
-    return repos
+
+    try:
+        parsed = yaml.safe_load(config_text)
+    except yaml.YAMLError as e:
+        print(f"Error: failed to parse YAML config '{filepath}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if parsed is None:
+        parsed = {}
+    if not isinstance(parsed, dict):
+        print("Error: config root must be a mapping/object.", file=sys.stderr)
+        sys.exit(1)
+
+    _warn_unknown_config_keys(parsed, ALLOWED_CONFIG_TOP_LEVEL_KEYS)
+
+    config: dict[str, Any] = {
+        "models": dict(DEFAULT_CONFIG["models"]),
+        "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
+        "repositories": [],
+    }
+
+    models = parsed.get("models")
+    if models is not None:
+        if not isinstance(models, dict):
+            print("Error: models must be a mapping/object.", file=sys.stderr)
+            sys.exit(1)
+        _warn_unknown_config_keys(models, ALLOWED_MODEL_KEYS)
+
+        summarize_model = models.get("summarize")
+        if summarize_model is not None:
+            if not isinstance(summarize_model, str) or not summarize_model.strip():
+                print("Error: models.summarize must be a non-empty string.", file=sys.stderr)
+                sys.exit(1)
+            config["models"]["summarize"] = summarize_model.strip()
+
+        fix_model = models.get("fix")
+        if fix_model is not None:
+            if not isinstance(fix_model, str) or not fix_model.strip():
+                print("Error: models.fix must be a non-empty string.", file=sys.stderr)
+                sys.exit(1)
+            config["models"]["fix"] = fix_model.strip()
+
+    ci_log_max_lines = parsed.get("ci_log_max_lines")
+    if ci_log_max_lines is not None:
+        try:
+            config["ci_log_max_lines"] = max(20, int(ci_log_max_lines))
+        except (TypeError, ValueError):
+            print("Error: ci_log_max_lines must be an integer.", file=sys.stderr)
+            sys.exit(1)
+
+    repositories = parsed.get("repositories")
+    if not isinstance(repositories, list) or not repositories:
+        print("Error: repositories is required and must be a non-empty list.", file=sys.stderr)
+        sys.exit(1)
+
+    normalized_repositories: list[dict[str, str | None]] = []
+    for index, item in enumerate(repositories):
+        if not isinstance(item, dict):
+            print(
+                f"Error: repositories[{index}] must be a mapping/object.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _warn_unknown_config_keys(item, ALLOWED_REPOSITORY_KEYS)
+
+        repo_name = item.get("repo")
+        if not isinstance(repo_name, str) or not repo_name.strip():
+            print(
+                f"Error: repositories[{index}].repo is required and must be a non-empty string.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        user_name = item.get("user_name")
+        if user_name is not None and not isinstance(user_name, str):
+            print(
+                f"Error: repositories[{index}].user_name must be a string when specified.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        user_email = item.get("user_email")
+        if user_email is not None and not isinstance(user_email, str):
+            print(
+                f"Error: repositories[{index}].user_email must be a string when specified.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        normalized_repositories.append(
+            {
+                "repo": repo_name.strip(),
+                "user_name": user_name.strip() if isinstance(user_name, str) and user_name.strip() else None,
+                "user_email": user_email.strip() if isinstance(user_email, str) and user_email.strip() else None,
+            }
+        )
+
+    config["repositories"] = normalized_repositories
+    return config
 
 
 def prepare_repository(
@@ -535,13 +530,14 @@ def _select_ci_failure_log_excerpt(log_text: str, max_lines: int) -> tuple[list[
     return excerpt, truncated
 
 
-def _collect_ci_failure_materials(repo: str, failing_contexts: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _collect_ci_failure_materials(
+    repo: str,
+    failing_contexts: list[dict[str, str]],
+    *,
+    max_lines: int,
+) -> list[dict[str, Any]]:
     """Fetch failed CI logs and build structured prompt materials."""
-    raw_max_lines = os.environ.get("REFIX_CI_LOG_MAX_LINES", "120").strip() or "120"
-    try:
-        max_lines = max(20, int(raw_max_lines))
-    except ValueError:
-        max_lines = 120
+    max_lines = max(20, max_lines)
 
     materials: list[dict[str, Any]] = []
     seen_run_ids: set[str] = set()
@@ -1158,7 +1154,13 @@ def _update_done_label_if_completed(
     _set_pr_running_label(repo, pr_number)
 
 
-def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent: bool = False, summarize_only: bool = False) -> list[tuple[str, int, str]]:
+def process_repo(
+    repo_info: dict[str, str | None],
+    dry_run: bool = False,
+    silent: bool = False,
+    summarize_only: bool = False,
+    config: dict[str, Any] | None = None,
+) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
 
     Args:
@@ -1166,6 +1168,12 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
         dry_run: If True, show command without executing
         silent: If True, minimize log output (default: False = show debug-level logs)
     """
+    runtime_config = config or DEFAULT_CONFIG
+    model_config = runtime_config.get("models", {})
+    summarize_model = str(model_config.get("summarize", DEFAULT_CONFIG["models"]["summarize"])).strip()
+    fix_model = str(model_config.get("fix", DEFAULT_CONFIG["models"]["fix"])).strip()
+    ci_log_max_lines = int(runtime_config.get("ci_log_max_lines", DEFAULT_CONFIG["ci_log_max_lines"]))
+
     repo = repo_info["repo"]
     user_name = repo_info.get("user_name")
     user_email = repo_info.get("user_email")
@@ -1342,7 +1350,6 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
 
             if summarize_only:
                 if has_review_targets:
-                    summarize_model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
                     print()
                     if dry_run:
                         print("\n[DRY RUN] Would summarize:")
@@ -1400,13 +1407,16 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 print(f"Error preparing repository: {e}", file=sys.stderr)
                 continue
 
-            fix_model = os.environ.get("REFIX_MODEL_FIX", "sonnet").strip() or "sonnet"
             ci_commits = ""
 
             if has_failing_ci:
                 ci_failure_materials: list[dict[str, Any]] = []
                 if not dry_run:
-                    ci_failure_materials = _collect_ci_failure_materials(repo, failing_ci_contexts)
+                    ci_failure_materials = _collect_ci_failure_materials(
+                        repo,
+                        failing_ci_contexts,
+                        max_lines=ci_log_max_lines,
+                    )
                     if ci_failure_materials:
                         print(
                             f"[ci-fix] PR #{pr_number}: attached failed CI logs for "
@@ -1567,7 +1577,6 @@ def process_repo(repo_info: dict[str, str | None], dry_run: bool = False, silent
                 continue
 
             # Summarize reviews before passing to code-fix model
-            summarize_model = os.environ.get("REFIX_MODEL_SUMMARIZE", "haiku").strip() or "haiku"
             print()
             if dry_run:
                 print("\n[DRY RUN] Would summarize:")
@@ -1793,21 +1802,15 @@ def main():
         description="Auto Review Fixer - Automatically fix CodeRabbit reviews"
     )
     parser.add_argument(
-        "repos",
-        nargs="*",
-        help="Target repositories (owner/repo format). If not provided, reads from repos.txt",
-    )
-    parser.add_argument(
         "-n",
         "--dry-run",
         action="store_true",
         help="Show claude command without executing",
     )
     parser.add_argument(
-        "-f",
-        "--file",
-        default="repos.txt",
-        help="Repository list file (default: repos.txt)",
+        "--config",
+        default="config.yaml",
+        help="Path to YAML config file (default: config.yaml)",
     )
     parser.add_argument(
         "--list-commands",
@@ -1833,32 +1836,8 @@ def main():
     args = parser.parse_args()
 
     load_dotenv()
-
-    # Get repositories: CLI args > REPOS env var > repos.txt file
-    if args.repos:
-        repos = [{"repo": r, "user_name": None, "user_email": None} for r in args.repos]
-    else:
-        repos_env = os.environ.get("REPOS")
-        if repos_env is not None and not repos_env.strip():
-            print(
-                "Error: REPOS is set but empty. Set REPOS or unset it to use repos.txt.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        repos = load_repos_from_env()
-        if repos:
-            print(f"Loaded {len(repos)} repository(ies) from REPOS environment variable")
-        else:
-            # Try repos.txt in current directory, then parent directory
-            repos_file = Path(args.file)
-            if not repos_file.exists():
-                repos_file = Path("..") / args.file
-            repos = load_repos_from_file(str(repos_file))
-
-    if not repos:
-        print("No repositories to process")
-        sys.exit(1)
+    config = load_config(args.config)
+    repos = config["repositories"]
 
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
@@ -1869,7 +1848,13 @@ def main():
     commits_added_to: list[tuple[str, int, str]] = []
     for repo_info in repos:
         try:
-            results = process_repo(repo_info, dry_run=args.dry_run, silent=args.silent, summarize_only=args.summarize_only)
+            results = process_repo(
+                repo_info,
+                dry_run=args.dry_run,
+                silent=args.silent,
+                summarize_only=args.summarize_only,
+                config=config,
+            )
             if results:
                 commits_added_to.extend(results)
         except KeyboardInterrupt:

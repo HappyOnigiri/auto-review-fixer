@@ -32,9 +32,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
+      - name: Generate config.yaml from GitHub Variables
+        run: |
+          cat <<'EOF' > src/config.yaml
+          ${{ vars.REFIX_CONFIG_YAML }}
+          EOF
+
       - name: Run auto review fixer
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
-          REPOS: ${{ vars.REPOS }}
-        run: cd src && python auto_fixer.py
+        run: cd src && python auto_fixer.py --config config.yaml
