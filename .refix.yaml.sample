@@ -1,19 +1,7 @@
-# ==========================================
-# Auto Review Fixer (refix) Configuration File
-# ==========================================
-
-# Model settings (Optional)
-# Specifies the models to use when executing the Claude CLI.
-# Options: "haiku", "sonnet", "opus", etc.
 models:
-  # Model used for summarizing code reviews (Default: "haiku")
   summarize: "haiku"
-  # Model used for automatically fixing code (Default: "sonnet")
   fix: "sonnet"
 
-# Maximum number of lines for CI error logs included in the prompt (Optional)
-# Minimum value is 20.
-# Default: 120
 ci_log_max_lines: 120
 
 # Automatically merge PR when it reaches refix:done state (Optional)
@@ -21,24 +9,35 @@ ci_log_max_lines: 120
 # Default: false
 auto_merge: false
 
+# Automatically post `@coderabbitai resume` after a CodeRabbit rate-limit wait expires (Optional)
+# Default: false
+coderabbit_auto_resume: false
+
+# Maximum number of `@coderabbitai resume` comments posted in a single run (Optional, min: 1)
+# The code enforces coderabbit_auto_resume_max_per_run >= 1.
+# Default: 1
+coderabbit_auto_resume_max_per_run: 1
+
 # Whether to process DRAFT PRs (Optional)
 # Default: false (skip DRAFT PRs)
 process_draft_prs: false
 
+# 1回の実行で変更を加えるPRの最大件数（0=無制限、Optional）
+# ラベル付け替え、コメント投稿、state comment 更新などすべての変更を含む
+# Default: 0
+max_modified_prs_per_run: 0
+
+# 1回の実行でコミットを追加するPRの最大件数（0=無制限、Optional）
+# base branch マージ、CI修正、レビュー修正の push を含む
+# Default: 2
+max_committed_prs_per_run: 2
+
+# 1回の実行でClaude修正を実行するPRの最大件数（0=無制限、Optional）
+# CI修正、コンフリクト解消、レビュー修正を含む
+# Default: 0
+max_claude_prs_per_run: 0
+
 # Target repository settings (Required)
 # List the target repositories and their corresponding git commit settings.
 repositories:
-  - # Repository name (Required: format "owner/repo")
-    # You can use wildcards. Examples:
-    # - Single repo: "owner/repo"
-    # - Wildcard in repo name: "owner/repo*"
-    # - All repos for owner/org: "owner/*"
-    repo: "octocat/Hello-World"
-    
-    # git user.name for fix commits (Optional)
-    # If omitted, the existing repository settings will be used.
-    user_name: "Refix Bot"
-    
-    # git user.email for fix commits (Optional)
-    # If omitted, the existing repository settings will be used.
-    user_email: "bot@example.com"
+  - repo: "owner/repo"

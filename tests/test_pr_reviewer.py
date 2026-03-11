@@ -39,3 +39,16 @@ def test_fetch_pr_review_comments_flattens_paginated_response():
         comments = pr_reviewer.fetch_pr_review_comments("owner/repo", 1)
 
     assert comments == [{"id": 10, "body": "a"}, {"id": 11, "body": "b"}]
+
+
+def test_fetch_issue_comments_flattens_paginated_response():
+    result = Mock(
+        returncode=0,
+        stdout='[[{"id": 21, "body": "a"}], [{"id": 22, "body": "b"}]]',
+        stderr="",
+    )
+
+    with patch("pr_reviewer.subprocess.run", return_value=result):
+        comments = pr_reviewer.fetch_issue_comments("owner/repo", 1)
+
+    assert comments == [{"id": 21, "body": "a"}, {"id": 22, "body": "b"}]
