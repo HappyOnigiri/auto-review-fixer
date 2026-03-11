@@ -187,6 +187,24 @@ Timezone used when writing `処理日時` in the PR state comment.
 
 You can set either `JST` (alias for `Asia/Tokyo`) or any valid IANA timezone such as `UTC`, `Asia/Tokyo`, or `America/Los_Angeles`.
 
+Commonly used timezone examples:
+
+- `JST` (alias of `Asia/Tokyo`)
+- `UTC`
+- `Asia/Seoul`
+- `Asia/Shanghai`
+- `Asia/Singapore`
+- `Asia/Kolkata`
+- `Europe/London`
+- `Europe/Berlin`
+- `Europe/Paris`
+- `America/New_York`
+- `America/Chicago`
+- `America/Denver`
+- `America/Los_Angeles`
+- `Australia/Sydney`
+- `Pacific/Auckland`
+
 #### `repositories`
 
 List of repositories that `refix` should process.
