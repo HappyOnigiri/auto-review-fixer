@@ -185,6 +185,19 @@ def summarize_reviews(
                     pass
                 pos = idx + 1
 
+        # 前後にメッセージや ```json などがある場合: 最初の [ から最後の ] までを抽出してパース
+        if parsed is None:
+            first_bracket = text.find("[")
+            last_bracket = text.rfind("]")
+            if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+                candidate = text[first_bracket : last_bracket + 1]
+                try:
+                    obj = json.loads(candidate)
+                    if isinstance(obj, list):
+                        parsed = obj
+                except json.JSONDecodeError:
+                    pass
+
         if parsed is None:
             raise ValueError("No JSON array found in response")
         summaries = {
