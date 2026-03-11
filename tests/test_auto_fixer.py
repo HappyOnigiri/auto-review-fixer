@@ -816,6 +816,7 @@ class TestProcessRepo:
             patch("auto_fixer._merge_base_branch", side_effect=merge_side_effect),
             patch("auto_fixer.summarize_reviews", return_value={"r1": "review summary"}),
             patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
+            patch("auto_fixer._set_pr_running_label"),
             patch("auto_fixer.subprocess.run", side_effect=run_side_effect),
             patch("auto_fixer.record_pr_attempt") as mock_record_attempt,
             patch("auto_fixer.mark_processed") as mock_mark_processed,
