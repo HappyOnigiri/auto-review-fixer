@@ -52,7 +52,7 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
     Does not run fix model or update the PR state comment. (for verification)
 
   make setup
-    Install dependencies and create .env template.""")
+    Install dependencies and create .env and .refix.yaml templates.""")
         sys.exit(0)
     if args.list_commands:
         print("""Auto Review Fixer - Makefile targets:
@@ -71,7 +71,7 @@ if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
     要約のみ実行して結果を表示（修正モデル実行・状態コメント更新なし）
 
   make setup
-    依存パッケージをインストールし .env テンプレートを作成""")
+    依存パッケージをインストールし、.env および .refix.yaml テンプレートを作成""")
         sys.exit(0)
 
 from dotenv import load_dotenv
@@ -1798,6 +1798,42 @@ def process_repo(
     return commits_added_to
 
 
+def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand repositories containing wildcards (e.g., owner/*) using gh cli."""
+    expanded: list[dict[str, Any]] = []
+    for repo_info in repos:
+        repo_name = repo_info["repo"]
+        if repo_name.endswith("/*"):
+            owner = repo_name[:-2]
+            print(f"Expanding wildcard repository: {repo_name}")
+            cmd = ["gh", "repo", "list", owner, "--json", "nameWithOwner", "--jq", ".[].nameWithOwner", "--limit", "1000"]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                encoding="utf-8",
+            )
+            if result.returncode != 0:
+                print(f"Error: failed to expand {repo_name}: {(result.stderr or '').strip()}", file=sys.stderr)
+                sys.exit(1)
+            
+            lines = result.stdout.strip().splitlines()
+            if not lines:
+                print(f"Error: no repositories found for {repo_name}", file=sys.stderr)
+                sys.exit(1)
+            
+            for line in lines:
+                resolved_name = line.strip()
+                if resolved_name:
+                    new_info = dict(repo_info)
+                    new_info["repo"] = resolved_name
+                    expanded.append(new_info)
+        else:
+            expanded.append(repo_info)
+    return expanded
+
+
 def main():
     # CI環境ではPythonのstdout/stderrがフルバッファモードになり、
     # subprocessの直接fd書き込みと順序が逆転する。
@@ -1806,6 +1842,7 @@ def main():
         sys.stdout.reconfigure(line_buffering=True)
     if hasattr(sys.stderr, 'reconfigure'):
         sys.stderr.reconfigure(line_buffering=True)
+
 
     parser = argparse.ArgumentParser(
         description="Auto Review Fixer - Automatically fix CodeRabbit reviews"
@@ -1816,10 +1853,11 @@ def main():
         action="store_true",
         help="Show claude command without executing",
     )
+    _default_config = Path(__file__).resolve().parents[1] / ".refix.yaml"
     parser.add_argument(
         "--config",
-        default="config.yaml",
-        help="Path to YAML config file (default: config.yaml)",
+        default=str(_default_config),
+        help="Path to YAML config file (default: <repo_root>/.refix.yaml)",
     )
     parser.add_argument(
         "--list-commands",
@@ -1846,7 +1884,7 @@ def main():
 
     load_dotenv()
     config = load_config(args.config)
-    repos = config["repositories"]
+    repos = expand_repositories(config["repositories"])
 
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:

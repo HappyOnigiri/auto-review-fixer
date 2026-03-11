@@ -40,10 +40,10 @@ jobs:
             echo "Error: REFIX_CONFIG_YAML is not set or empty" >&2
             exit 1
           fi
-          printf '%s\n' "$REFIX_CONFIG_YAML" > src/config.yaml
+          printf '%s\n' "$REFIX_CONFIG_YAML" > .refix.yaml
 
       - name: Run auto review fixer
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: cd src && python auto_fixer.py --config config.yaml
+        run: cd src && python auto_fixer.py --config ../.refix.yaml

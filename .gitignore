@@ -138,7 +138,7 @@ Thumbs.db
 .claude/worktrees/
 works/
 data/
-repos.txt
+.refix.yaml
 
 # Env
 .envrc
