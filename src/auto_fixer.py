@@ -1787,6 +1787,7 @@ def _backfill_merged_labels(
 def _trigger_pr_auto_merge(
     repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
 ) -> bool:
+    enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     cmd = ["gh", "pr", "merge", str(pr_number), "--repo", repo, "--auto", "--merge"]
     result = subprocess.run(
         cmd,
@@ -1797,6 +1798,7 @@ def _trigger_pr_auto_merge(
     )
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
+        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
         return _edit_pr_label(
             repo,
             pr_number,
@@ -1810,6 +1812,7 @@ def _trigger_pr_auto_merge(
     combined_lower = f"{stdout_text}\n{stderr_text}".lower()
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
+        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
         _edit_pr_label(
             repo,
             pr_number,
