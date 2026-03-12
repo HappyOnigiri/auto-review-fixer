@@ -95,7 +95,7 @@ def fetch_pr_details(repo: str, pr_number: int) -> dict[str, Any]:
     """Fetch PR details including commits, reviews, comments, and branch name.
     NOTE: statusCheckRollup (GraphQL) must NOT be used - Fine-grained PAT cannot access it.
     Uses REST check-runs API for CI status only."""
-    base_json = "number,title,body,commits,reviews,comments,createdAt,updatedAt,headRefName,baseRefName"
+    base_json = "number,title,body,commits,reviews,comments,createdAt,updatedAt,headRefName,baseRefName,headRefOid"
     cmd = [
         "gh",
         "pr",
@@ -123,13 +123,16 @@ def fetch_pr_details(repo: str, pr_number: int) -> dict[str, Any]:
         pr_data = {}
 
     # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
-    commits = pr_data.get("commits") or []
-    if commits:
-        head_oid = commits[-1].get("oid") if isinstance(commits[-1], dict) else None
-        if head_oid:
-            check_runs = _fetch_check_runs_via_rest(repo, head_oid)
-            if check_runs:
-                pr_data["check_runs"] = check_runs
+    # Use headRefOid as primary source to avoid the 100-commit limit of gh pr view --json commits
+    head_oid = str(pr_data.get("headRefOid") or "").strip()
+    if not head_oid:
+        commits = pr_data.get("commits") or []
+        if commits:
+            head_oid = str(commits[-1].get("oid") or "") if isinstance(commits[-1], dict) else ""
+    if head_oid:
+        check_runs = _fetch_check_runs_via_rest(repo, head_oid)
+        if check_runs:
+            pr_data["check_runs"] = check_runs
 
     normalized_reviews = fetch_pr_reviews(repo, pr_number)
     if normalized_reviews:
