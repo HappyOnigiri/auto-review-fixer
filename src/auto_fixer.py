@@ -1619,31 +1619,36 @@ def _set_pr_running_label(
         _ensure_refix_labels(repo)
     else:
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+    changed = False
     if done_enabled and (pr_data is None or _pr_has_label(pr_data, REFIX_DONE_LABEL)):
         if enabled_pr_label_keys is None:
-            _edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL)
+            if _edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL):
+                changed = True
         else:
-            _edit_pr_label(
+            if _edit_pr_label(
                 repo,
                 pr_number,
                 add=False,
                 label=REFIX_DONE_LABEL,
                 enabled_pr_label_keys=enabled,
-            )
+            ):
+                changed = True
     if running_enabled and (
         pr_data is None or not _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            _edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL)
+            if _edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL):
+                changed = True
         else:
-            _edit_pr_label(
+            if _edit_pr_label(
                 repo,
                 pr_number,
                 add=True,
                 label=REFIX_RUNNING_LABEL,
                 enabled_pr_label_keys=enabled,
-            )
-    return True
+            ):
+                changed = True
+    return changed
 
 
 def _set_pr_done_label(
@@ -1669,73 +1674,86 @@ def _set_pr_done_label(
         _ensure_refix_labels(repo)
     else:
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+    changed = False
     if running_enabled and (
         pr_data is None or _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
+            if _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
+                changed = True
         else:
-            _edit_pr_label(
+            if _edit_pr_label(
                 repo,
                 pr_number,
                 add=False,
                 label=REFIX_RUNNING_LABEL,
                 enabled_pr_label_keys=enabled,
-            )
+            ):
+                changed = True
     if done_enabled and (
         pr_data is None or not _pr_has_label(pr_data, REFIX_DONE_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL)
+            if _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL):
+                changed = True
         else:
-            _edit_pr_label(
+            if _edit_pr_label(
                 repo,
                 pr_number,
                 add=True,
                 label=REFIX_DONE_LABEL,
                 enabled_pr_label_keys=enabled,
-            )
-    return True
+            ):
+                changed = True
+    return changed
 
 
 def _set_pr_merged_label(
     repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
-) -> None:
+) -> bool:
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     if not (
         "running" in enabled or "auto_merge_requested" in enabled or "merged" in enabled
     ):
-        return
+        return False
+    changed = False
     if enabled_pr_label_keys is None:
         _ensure_refix_labels(repo)
-        _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
-        _edit_pr_label(
+        if _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
+            changed = True
+        if _edit_pr_label(
             repo, pr_number, add=False, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
-        )
-        _edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL)
+        ):
+            changed = True
+        if _edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL):
+            changed = True
     else:
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        _edit_pr_label(
+        if _edit_pr_label(
             repo,
             pr_number,
             add=False,
             label=REFIX_RUNNING_LABEL,
             enabled_pr_label_keys=enabled,
-        )
-        _edit_pr_label(
+        ):
+            changed = True
+        if _edit_pr_label(
             repo,
             pr_number,
             add=False,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled,
-        )
-        _edit_pr_label(
+        ):
+            changed = True
+        if _edit_pr_label(
             repo,
             pr_number,
             add=True,
             label=REFIX_MERGED_LABEL,
             enabled_pr_label_keys=enabled,
-        )
+        ):
+            changed = True
+    return changed
 
 
 def _pr_has_label(pr_data: dict[str, Any], label_name: str) -> bool:
@@ -1803,10 +1821,8 @@ def _mark_pr_merged_label_if_needed(
 
     print(f"PR #{pr_number} is merged; adding {REFIX_MERGED_LABEL} label.")
     if enabled_pr_label_keys is None:
-        _set_pr_merged_label(repo, pr_number)
-    else:
-        _set_pr_merged_label(repo, pr_number, enabled_pr_label_keys=enabled)
-    return True
+        return _set_pr_merged_label(repo, pr_number)
+    return _set_pr_merged_label(repo, pr_number, enabled_pr_label_keys=enabled)
 
 
 def _backfill_merged_labels(

@@ -1957,7 +1957,7 @@ class TestRefixLabeling:
     def test_set_pr_running_label_ensures_labels_before_edit(self):
         with (
             patch("auto_fixer._ensure_refix_labels") as mock_ensure,
-            patch("auto_fixer._edit_pr_label") as mock_edit,
+            patch("auto_fixer._edit_pr_label", return_value=True) as mock_edit,
         ):
             auto_fixer._set_pr_running_label("owner/repo", 9)
 
@@ -1996,7 +1996,7 @@ class TestRefixLabeling:
     def test_set_pr_done_label_ensures_labels_before_edit(self):
         with (
             patch("auto_fixer._ensure_refix_labels") as mock_ensure,
-            patch("auto_fixer._edit_pr_label") as mock_edit,
+            patch("auto_fixer._edit_pr_label", return_value=True) as mock_edit,
         ):
             auto_fixer._set_pr_done_label("owner/repo", 11)
 
@@ -2011,7 +2011,7 @@ class TestRefixLabeling:
     def test_set_pr_merged_label_ensures_labels_before_edit(self):
         with (
             patch("auto_fixer._ensure_refix_labels") as mock_ensure,
-            patch("auto_fixer._edit_pr_label") as mock_edit,
+            patch("auto_fixer._edit_pr_label", return_value=True) as mock_edit,
         ):
             auto_fixer._set_pr_merged_label("owner/repo", 12)
 
@@ -2060,10 +2060,10 @@ class TestRefixLabeling:
             enabled_pr_label_keys={"done"},
         )
 
-    def test_backfill_merged_labels_skips_when_merged_label_disabled(self):
+    def test_backfill_merged_labels_skips_when_no_merge_related_labels_enabled(self):
         with patch("auto_fixer.subprocess.run") as mock_run:
             count = auto_fixer._backfill_merged_labels(
-                "owner/repo", enabled_pr_label_keys={"running", "done"}
+                "owner/repo", enabled_pr_label_keys={"done"}
             )
         assert count == 0
         mock_run.assert_not_called()
@@ -2105,7 +2105,7 @@ class TestRefixLabeling:
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr=""),
             ),
-            patch("auto_fixer._set_pr_merged_label") as mock_set_merged,
+            patch("auto_fixer._set_pr_merged_label", return_value=True) as mock_set_merged,
         ):
             ok = auto_fixer._mark_pr_merged_label_if_needed("owner/repo", 21)
         assert ok is True
