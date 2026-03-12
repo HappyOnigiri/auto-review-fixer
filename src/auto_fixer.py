@@ -370,6 +370,16 @@ def load_config(filepath: str) -> dict[str, Any]:
                 continue
             seen_enabled_labels.add(normalized_label_key)
             normalized_enabled_labels.append(normalized_label_key)
+        if "merged" in seen_enabled_labels and not (
+            seen_enabled_labels & {"running", "done", "auto_merge_requested"}
+        ):
+            allowed_merge_sub_keys = ", ".join(sorted({"running", "done", "auto_merge_requested"}))
+            print(
+                f'Error: enabled_pr_labels includes "merged" but none of: {allowed_merge_sub_keys}. '
+                f'At least one of these must be included alongside "merged".',
+                file=sys.stderr,
+            )
+            sys.exit(1)
         config["enabled_pr_labels"] = normalized_enabled_labels
 
     coderabbit_auto_resume = parsed.get("coderabbit_auto_resume")
