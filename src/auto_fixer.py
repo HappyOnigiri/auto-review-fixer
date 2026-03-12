@@ -101,6 +101,7 @@ CODERABBIT_BOT_LOGIN = "coderabbitai"
 REFIX_RUNNING_LABEL = "refix:running"
 REFIX_DONE_LABEL = "refix:done"
 REFIX_MERGED_LABEL = "refix:merged"
+REFIX_AUTO_MERGE_REQUESTED_LABEL = "refix:auto-merge-requested"
 CODERABBIT_PROCESSING_MARKER = "Currently processing new changes in this PR."
 CODERABBIT_RATE_LIMIT_MARKER = "Rate limit exceeded"
 CODERABBIT_REVIEW_FAILED_MARKER = "## Review failed"
@@ -110,6 +111,7 @@ SUCCESSFUL_CI_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 REFIX_RUNNING_LABEL_COLOR = "FBCA04"
 REFIX_DONE_LABEL_COLOR = "0E8A16"
 REFIX_MERGED_LABEL_COLOR = "1D76DB"
+REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR = "C2E0C6"
 FAILED_CI_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "CANCELLED", "STALE", "STARTUP_FAILURE"}
 FAILED_CI_STATES = {"ERROR", "FAILURE"}
 GITHUB_ACTIONS_RUN_URL_PATTERN = re.compile(r"/actions/runs/(\d+)")
@@ -1237,6 +1239,12 @@ def _ensure_refix_labels(repo: str) -> None:
         color=REFIX_MERGED_LABEL_COLOR,
         description="PR has been merged after Refix auto-merge.",
     )
+    _ensure_repo_label_exists(
+        repo,
+        REFIX_AUTO_MERGE_REQUESTED_LABEL,
+        color=REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR,
+        description="Refix has requested auto-merge for this PR.",
+    )
 
 
 def _edit_pr_label(repo: str, pr_number: int, *, add: bool, label: str) -> bool:
@@ -1288,6 +1296,7 @@ def _set_pr_done_label(repo: str, pr_number: int) -> None:
 def _set_pr_merged_label(repo: str, pr_number: int) -> None:
     _ensure_refix_labels(repo)
     _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
+    _edit_pr_label(repo, pr_number, add=False, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
     _edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL)
 
 
@@ -1333,6 +1342,8 @@ def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
         return False
     if not _pr_has_label(pr_data, REFIX_DONE_LABEL):
         return False
+    if not _pr_has_label(pr_data, REFIX_AUTO_MERGE_REQUESTED_LABEL):
+        return False
     if _pr_has_label(pr_data, REFIX_MERGED_LABEL):
         return False
 
@@ -1343,7 +1354,7 @@ def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
 
 def _backfill_merged_labels(repo: str, *, limit: int = 100) -> int:
     """Backfill refix:merged label for merged PRs already marked refix:done."""
-    search_query = f'label:"{REFIX_DONE_LABEL}" -label:"{REFIX_MERGED_LABEL}"'
+    search_query = f'label:"{REFIX_DONE_LABEL}" label:"{REFIX_AUTO_MERGE_REQUESTED_LABEL}" -label:"{REFIX_MERGED_LABEL}"'
     cmd = [
         "gh",
         "pr",
@@ -1408,6 +1419,7 @@ def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
     )
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
+        _edit_pr_label(repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
         return True
 
     stderr_text = (result.stderr or "").strip()
@@ -1415,6 +1427,7 @@ def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
     combined_lower = f"{stdout_text}\n{stderr_text}".lower()
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
+        _edit_pr_label(repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
         return True
 
     details = stderr_text or stdout_text or "unknown error"
