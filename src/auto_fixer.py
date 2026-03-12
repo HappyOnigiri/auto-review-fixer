@@ -3635,10 +3635,11 @@ def main():
                 print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
                 continue
     finally:
-        try:
-            save_cache(updated_at_cache)
-        except Exception as e:
-            print(f"Warning: failed to save cache: {e}", file=sys.stderr)
+        if not args.dry_run and not args.summarize_only:
+            try:
+                save_cache(updated_at_cache)
+            except Exception as e:
+                print(f"Warning: failed to save cache: {e}", file=sys.stderr)
 
     if global_coderabbit_resumed_prs:
         print("\n" + "=" * SEPARATOR_LEN)
