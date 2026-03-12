@@ -95,7 +95,8 @@ ci_log_max_lines: 120
 # When merge completes, the refix:merged label is applied
 auto_merge: false
 
-# Automatically post `@coderabbitai resume` after a CodeRabbit rate-limit wait expires
+# Automatically post `@coderabbitai resume` when CodeRabbit can be resumed automatically
+# (rate-limit wait expiry or "Review failed" status caused by head commit changes)
 # (optional, default false)
 coderabbit_auto_resume: false
 
