@@ -104,6 +104,24 @@ def test_render_state_comment_trims_oldest_rows_to_fit_limit(monkeypatch):
     assert "discussion_r0" in body
 
 
+def test_render_state_comment_uses_updated_review_summary_title():
+    body = state_manager.render_state_comment([])
+
+    assert "<summary>対応済みレビュー一覧</summary>" in body
+    assert "System Use Only" not in body
+
+
+def test_render_state_comment_includes_execution_report_section():
+    body = state_manager.render_state_comment(
+        [],
+        report_body="#### レビュー修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Missing context",
+    )
+
+    assert state_manager.REPORT_SECTION_START_MARKER in body
+    assert "<summary>実行レポート</summary>" in body
+    assert "#### レビュー修正" in body
+
+
 def test_render_state_comment_raises_on_archived_id_overflow(monkeypatch):
     monkeypatch.setattr(state_manager, "STATE_COMMENT_MAX_LENGTH", 500)
     # Fill the comment body to near the limit using many archived IDs
@@ -144,7 +162,8 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
                 url="https://github.com/owner/repo/pull/1#discussion_r123",
                 processed_at="2026-03-11 12:00:00",
             )
-        ]
+        ],
+        report_body="#### レビュー修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Missing context",
     )
     result = Mock(
         returncode=0,
@@ -174,6 +193,16 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
             processed_at="2026-03-11 12:00:00 UTC",
         )
     ]
+    assert "#### レビュー修正" in comment.report_body
+
+
+def test_parse_processed_ids_ignores_report_section_content():
+    text = state_manager.render_state_comment(
+        [],
+        report_body="#### レビュー修正\n\n- related id: discussion_r999",
+    )
+
+    assert state_manager.parse_processed_ids(text) == []
 
 
 def test_upsert_state_comment_creates_when_missing():
@@ -248,3 +277,33 @@ def test_upsert_state_comment_updates_when_existing():
     assert cmd[:4] == ["gh", "api", "repos/owner/repo/issues/comments/99", "-X"]
     assert "PATCH" in cmd
     assert any(arg.startswith("body=") for arg in cmd)
+
+
+def test_upsert_state_comment_writes_report_body_without_new_entries():
+    with (
+        patch(
+            "state_manager.load_state_comment",
+            return_value=state_manager.StateComment(
+                github_comment_id=None,
+                body="",
+                entries=[],
+                processed_ids=set(),
+                archived_ids=set(),
+                report_body="",
+            ),
+        ),
+        patch(
+            "state_manager.subprocess.run",
+            return_value=Mock(returncode=0, stdout="", stderr=""),
+        ) as mock_run,
+    ):
+        state_manager.upsert_state_comment(
+            "owner/repo",
+            7,
+            [],
+            report_body="#### CI 修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Retry",
+        )
+
+    cmd = mock_run.call_args.args[0]
+    assert cmd[:5] == ["gh", "pr", "comment", "7", "--repo"]
+    assert "#### CI 修正" in cmd[-1]

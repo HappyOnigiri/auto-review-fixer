@@ -18,6 +18,9 @@ STATE_COMMENT_DESCRIPTION = (
     "手動で編集・削除しないでください。 -->"
 )
 STATE_COMMENT_MAX_LENGTH = 60000
+REPORT_SECTION_START_MARKER = "<!-- refix-execution-report-start -->"
+REPORT_SECTION_END_MARKER = "<!-- refix-execution-report-end -->"
+REPORT_SECTION_SUMMARY = "実行レポート"
 STATE_ID_PATTERN = re.compile(r"\[(r\d+|discussion_r\d+)\](?:\([^)]+\))?")
 STATE_ID_FALLBACK_PATTERN = re.compile(r"\b(r\d+|discussion_r\d+)\b")
 LEGACY_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
@@ -26,6 +29,14 @@ STATE_TABLE_ROW_PATTERN = re.compile(
     re.MULTILINE,
 )
 ARCHIVED_IDS_PATTERN = re.compile(r"<!-- archived-ids: ([^>]+) -->")
+REPORT_SECTION_PATTERN = re.compile(
+    re.escape(REPORT_SECTION_START_MARKER)
+    + r"\n<details>\n<summary>"
+    + re.escape(REPORT_SECTION_SUMMARY)
+    + r"</summary>\n\n(?P<body>.*?)\n</details>\n"
+    + re.escape(REPORT_SECTION_END_MARKER),
+    re.DOTALL,
+)
 DEFAULT_STATE_COMMENT_TIMEZONE = "JST"
 STATE_TIMEZONE_ALIASES = {
     "JST": "Asia/Tokyo",
@@ -46,6 +57,7 @@ class StateComment:
     entries: list[StateEntry]
     processed_ids: set[str]
     archived_ids: set[str]
+    report_body: str = ""
 
 
 def normalize_state_timezone_name(timezone_name: str) -> str:
@@ -79,6 +91,7 @@ def parse_processed_ids(text: str) -> list[str]:
     """Extract processed IDs from a state comment body without crashing."""
     if not text:
         return []
+    text = strip_report_section(text)
 
     matches = STATE_ID_PATTERN.findall(text)
     if not matches:
@@ -103,6 +116,7 @@ def _normalize_legacy_processed_at(processed_at: str) -> str:
 
 def parse_state_entries(text: str) -> list[StateEntry]:
     """Parse structured entries from a state comment body."""
+    text = strip_report_section(text)
     entries: list[StateEntry] = []
     seen: set[str] = set()
 
@@ -132,14 +146,97 @@ def parse_state_entries(text: str) -> list[StateEntry]:
     return entries
 
 
+def strip_report_section(text: str) -> str:
+    """Remove the rendered report block from a state comment body."""
+    return REPORT_SECTION_PATTERN.sub("", text or "")
+
+
+def extract_report_body(text: str) -> str:
+    """Extract the markdown body stored in the execution report block."""
+    match = REPORT_SECTION_PATTERN.search(text or "")
+    if not match:
+        return ""
+    return match.group("body").strip()
+
+
 def format_state_row(comment_id: str, url: str, processed_at: str) -> str:
     """Format a single markdown table row for the state comment."""
     id_cell = f"[{comment_id}]({url})" if url else comment_id
     return f"| {id_cell} | {processed_at} |"
 
 
+def _build_state_comment_body(entries: list[StateEntry], report_body: str) -> str:
+    """Build the visible body portion of the state comment."""
+    rows = "\n".join(
+        format_state_row(
+            entry.comment_id,
+            entry.url,
+            entry.processed_at,
+        )
+        for entry in entries
+    )
+    body_lines = [
+        STATE_COMMENT_MARKER,
+        STATE_COMMENT_TITLE,
+        STATE_COMMENT_DESCRIPTION,
+        "",
+        "<details>",
+        "<summary>対応済みレビュー一覧</summary>",
+        "",
+        "| Comment ID | 処理日時 |",
+        "|---|---|",
+        rows,
+        "",
+        "</details>",
+    ]
+    normalized_report_body = (report_body or "").strip()
+    if normalized_report_body:
+        body_lines.extend(
+            [
+                "",
+                REPORT_SECTION_START_MARKER,
+                "<details>",
+                f"<summary>{REPORT_SECTION_SUMMARY}</summary>",
+                "",
+                normalized_report_body,
+                "",
+                "</details>",
+                REPORT_SECTION_END_MARKER,
+            ]
+        )
+    return "\n".join(body_lines)
+
+
+def _truncate_report_body_to_fit(
+    entries: list[StateEntry], report_body: str, max_length: int
+) -> str:
+    """Truncate the report block so the state comment can still fit."""
+    normalized_report_body = (report_body or "").strip()
+    if not normalized_report_body:
+        return ""
+
+    truncation_notice = "\n\n*古い実行レポートは長さ制限のため省略されています。*"
+    report_scaffold_length = len(_build_state_comment_body(entries, "x")) - 1
+    available_report_length = max_length - report_scaffold_length
+    if available_report_length <= 0:
+        return ""
+    if len(normalized_report_body) <= available_report_length:
+        return normalized_report_body
+    if available_report_length <= len(truncation_notice):
+        return ""
+
+    kept = normalized_report_body[
+        : available_report_length - len(truncation_notice)
+    ].rstrip()
+    if not kept:
+        return ""
+    return kept + truncation_notice
+
+
 def render_state_comment(
-    entries: list[StateEntry], archived_ids: set[str] | None = None
+    entries: list[StateEntry],
+    archived_ids: set[str] | None = None,
+    report_body: str = "",
 ) -> str:
     """Render the full state comment, trimming oldest rows if necessary."""
     # accumulated_archived starts with any IDs previously archived (trimmed in prior renders).
@@ -147,36 +244,14 @@ def render_state_comment(
     # are added here so they remain queryable even after disappearing from the table.
     accumulated_archived: set[str] = set(archived_ids or set())
     trimmed_entries = list(entries)
+    truncated_report_body = (report_body or "").strip()
     # Iteratively remove the oldest entry from trimmed_entries until the visible portion
     # of the comment body fits within STATE_COMMENT_MAX_LENGTH.
     # format_state_row renders each entry as a markdown table row; rows are joined and
     # embedded in a <details> block. The oldest rows are dropped first to keep the most
     # recent processing history visible within GitHub's comment size limit.
     while True:
-        rows = "\n".join(
-            format_state_row(
-                entry.comment_id,
-                entry.url,
-                entry.processed_at,
-            )
-            for entry in trimmed_entries
-        )
-        body = "\n".join(
-            [
-                STATE_COMMENT_MARKER,
-                STATE_COMMENT_TITLE,
-                STATE_COMMENT_DESCRIPTION,
-                "",
-                "<details>",
-                "<summary>処理済みレビュー一覧 (System Use Only)</summary>",
-                "",
-                "| Comment ID | 処理日時 |",
-                "|---|---|",
-                rows,
-                "",
-                "</details>",
-            ]
-        )
+        body = _build_state_comment_body(trimmed_entries, truncated_report_body)
         footer = (
             f"\n<!-- archived-ids: {','.join(sorted(accumulated_archived))} -->"
             if accumulated_archived
@@ -184,6 +259,19 @@ def render_state_comment(
         )
         if len(body) + len(footer) <= STATE_COMMENT_MAX_LENGTH:
             return body + footer
+        if trimmed_entries:
+            removed = trimmed_entries.pop(0)
+            accumulated_archived.add(removed.comment_id)
+            continue
+        if truncated_report_body:
+            shortened_report_body = _truncate_report_body_to_fit(
+                trimmed_entries,
+                truncated_report_body,
+                STATE_COMMENT_MAX_LENGTH - len(footer),
+            )
+            if shortened_report_body != truncated_report_body:
+                truncated_report_body = shortened_report_body
+                continue
         if not trimmed_entries:
             # Cannot trim entries further; fit archived IDs into remaining budget
             remaining = STATE_COMMENT_MAX_LENGTH - len(body)
@@ -214,8 +302,6 @@ def render_state_comment(
                     )
                 footer = f"{prefix}{','.join(truncated_ids)}{suffix}"
             return body + footer
-        removed = trimmed_entries.pop(0)
-        accumulated_archived.add(removed.comment_id)
 
 
 def create_state_entry(
@@ -305,6 +391,7 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
             entries=[],
             processed_ids=set(),
             archived_ids=set(),
+            report_body="",
         )
 
     merged_entries: list[StateEntry] = []
@@ -330,16 +417,17 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
         entries=merged_entries,
         processed_ids={entry.comment_id for entry in merged_entries} | archived_ids,
         archived_ids=archived_ids,
+        report_body=extract_report_body(str(latest_comment.get("body") or "")),
     )
 
 
 def upsert_state_comment(
-    repo: str, pr_number: int, new_entries: list[StateEntry]
+    repo: str,
+    pr_number: int,
+    new_entries: list[StateEntry],
+    report_body: str | None = None,
 ) -> None:
     """Create or update the state comment for a PR."""
-    if not new_entries:
-        return
-
     state = load_state_comment(repo, pr_number)
     merged_entries = list(state.entries)
     seen_ids = set(state.processed_ids)
@@ -349,7 +437,15 @@ def upsert_state_comment(
         seen_ids.add(entry.comment_id)
         merged_entries.append(entry)
 
-    body = render_state_comment(merged_entries, archived_ids=state.archived_ids)
+    next_report_body = state.report_body if report_body is None else report_body.strip()
+    if not merged_entries and not next_report_body:
+        return
+
+    body = render_state_comment(
+        merged_entries,
+        archived_ids=state.archived_ids,
+        report_body=next_report_body,
+    )
     if state.github_comment_id is None:
         cmd = [
             "gh",

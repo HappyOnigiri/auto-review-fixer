@@ -181,6 +181,7 @@ models:
   summarize: claude-haiku
   fix: claude-sonnet
 ci_log_max_lines: 250
+execution_report: true
 auto_merge: true
 coderabbit_auto_resume: true
 coderabbit_auto_resume_max_per_run: 3
@@ -200,6 +201,7 @@ repositories:
                 "fix": "claude-sonnet",
             },
             "ci_log_max_lines": 250,
+            "execution_report": True,
             "auto_merge": True,
             "coderabbit_auto_resume": True,
             "coderabbit_auto_resume_max_per_run": 3,
@@ -235,6 +237,7 @@ repositories:
         assert config["models"]["summarize"] == "haiku"
         assert config["models"]["fix"] == "sonnet"
         assert config["ci_log_max_lines"] == 120
+        assert config["execution_report"] is False
         assert config["auto_merge"] is False
         assert config["coderabbit_auto_resume"] is False
         assert config["coderabbit_auto_resume_max_per_run"] == 1
@@ -252,6 +255,19 @@ repositories:
         config_file.write_text(
             """
 auto_merge: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.load_config(str(config_file))
+        assert exc_info.value.code == 1
+
+    def test_execution_report_requires_boolean(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+execution_report: "true"
 repositories:
   - repo: owner/repo1
 """.strip()
@@ -1499,6 +1515,67 @@ class TestProcessRepo:
         assert call_order == ["ci-fix"]
         mock_upsert_state_comment.assert_not_called()
 
+    def test_ci_only_path_records_report_in_state_comment_when_enabled(self, tmp_path):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "statusCheckRollup": [
+                {
+                    "name": "ci/test",
+                    "conclusion": "FAILURE",
+                    "detailsUrl": "https://example.com/ci/test",
+                }
+            ],
+        }
+        config = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "execution_report": True,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+
+        def capture_report(report_blocks, phase_label, report_path):
+            assert phase_label == "ci-fix"
+            assert report_path
+            report_blocks.append(
+                "#### CI 修正\n\n### 2026-03-12 10:00:00 UTC src/test.py Retry"
+            )
+
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.prepare_repository", return_value=tmp_path),
+            patch("auto_fixer._collect_ci_failure_materials", return_value=[]),
+            patch("auto_fixer._run_claude_prompt", return_value="aaa111 ci fix"),
+            patch(
+                "auto_fixer._capture_state_comment_report",
+                side_effect=capture_report,
+            ),
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="", stderr=""),
+            ),
+            patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
+            patch("auto_fixer._update_done_label_if_completed"),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
+
+        mock_upsert_state_comment.assert_called_once()
+        args = mock_upsert_state_comment.call_args.args
+        kwargs = mock_upsert_state_comment.call_args.kwargs
+        assert args == ("owner/repo", 1, [])
+        assert "#### CI 修正" in kwargs["report_body"]
+
     def test_rate_limit_skips_review_fix_but_runs_ci_and_merge_base(self, tmp_path):
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
@@ -2366,14 +2443,17 @@ class TestRunClaudePrompt:
         )
         process.returncode = 1
         report_path = tmp_path / "pr_1_review-fix.md"
-        report_path.write_text("- setup failed once", encoding="utf-8")
+
+        def popen_side_effect(*args, **kwargs):
+            report_path.write_text("- setup failed once", encoding="utf-8")
+            return process
 
         with (
             patch(
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
             ),
-            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
             patch("auto_fixer._log_group"),
             patch("auto_fixer._log_endgroup"),
         ):
@@ -2382,6 +2462,7 @@ class TestRunClaudePrompt:
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
                     report_path=str(report_path.resolve()),
+                    report_enabled=True,
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
@@ -2395,14 +2476,17 @@ class TestRunClaudePrompt:
         process.communicate.return_value = ("API Error: invalid header", "")
         process.returncode = 1
         report_path = tmp_path / "pr_1_review-fix.md"
-        report_path.write_text("- missing context file", encoding="utf-8")
+
+        def popen_side_effect(*args, **kwargs):
+            report_path.write_text("- missing context file", encoding="utf-8")
+            return process
 
         with (
             patch(
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
             ),
-            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
             patch("auto_fixer._log_group"),
             patch("auto_fixer._log_endgroup"),
         ):
@@ -2411,6 +2495,7 @@ class TestRunClaudePrompt:
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
                     report_path=str(report_path.resolve()),
+                    report_enabled=True,
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
@@ -2451,6 +2536,7 @@ class TestRunClaudePrompt:
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
                 report_path=report_path,
+                report_enabled=True,
                 model="sonnet",
                 silent=True,
                 phase_label="review-fix",
@@ -2458,6 +2544,7 @@ class TestRunClaudePrompt:
             assert result == ""
             assert "<runtime_pain_report>" in captured_prompt
             assert report_path in captured_prompt
+            assert "### YYYY-MM-DD hh:mm:ss UTC {file_path} {title}" in captured_prompt
 
     def test_success_shows_report_when_not_silent_with_content(self, tmp_path, capsys):
         """When silent=False and report has content, report is shown in stderr."""
@@ -2465,16 +2552,19 @@ class TestRunClaudePrompt:
         process.communicate.return_value = ("", "")
         process.returncode = 0
         report_path = tmp_path / "pr_1_review-fix.md"
-        report_path.write_text(
-            "- ambiguous review comment\n- missing file", encoding="utf-8"
-        )
+
+        def popen_side_effect(*args, **kwargs):
+            report_path.write_text(
+                "- ambiguous review comment\n- missing file", encoding="utf-8"
+            )
+            return process
 
         with (
             patch(
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout="", stderr=""),
             ),
-            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
             patch("auto_fixer._log_group"),
             patch("auto_fixer._log_endgroup"),
         ):
@@ -2482,6 +2572,7 @@ class TestRunClaudePrompt:
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
                 report_path=str(report_path.resolve()),
+                report_enabled=True,
                 model="sonnet",
                 silent=False,
                 phase_label="review-fix",
@@ -2494,7 +2585,7 @@ class TestRunClaudePrompt:
     def test_success_shows_empty_when_not_silent_with_empty_report(
         self, tmp_path, capsys
     ):
-        """When silent=False and report is empty, 'report file is empty.' is shown."""
+        """When silent=False and report is empty, a neutral message is shown."""
         process = Mock()
         process.communicate.return_value = ("", "")
         process.returncode = 0
@@ -2514,13 +2605,14 @@ class TestRunClaudePrompt:
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
                 report_path=str(report_path.resolve()),
+                report_enabled=True,
                 model="sonnet",
                 silent=False,
                 phase_label="review-fix",
             )
         err = capsys.readouterr().err
         assert "[report review-fix]" in err
-        assert "report file is empty." in err
+        assert "レポート出力なし" in err
 
     def test_success_does_not_show_report_when_silent(self, tmp_path, capsys):
         """When silent=True and success, report is not shown."""
@@ -2543,12 +2635,50 @@ class TestRunClaudePrompt:
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
                 report_path=str(report_path.resolve()),
+                report_enabled=True,
                 model="sonnet",
                 silent=True,
                 phase_label="review-fix",
             )
         err = capsys.readouterr().err
         assert "[report]" not in err
+
+    def test_report_instruction_is_omitted_when_disabled(self, tmp_path):
+        process = Mock()
+        process.communicate.return_value = ("", "")
+        process.returncode = 0
+        captured_prompt = ""
+
+        def popen_side_effect(*args, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = (tmp_path / "_review_prompt.md").read_text(
+                encoding="utf-8"
+            )
+            return process
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                side_effect=[
+                    Mock(returncode=0, stdout="abc123\n", stderr=""),
+                    Mock(returncode=0, stdout="", stderr=""),
+                ],
+            ),
+            patch("auto_fixer.subprocess.Popen", side_effect=popen_side_effect),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                report_path=None,
+                report_enabled=False,
+                model="sonnet",
+                silent=True,
+                phase_label="review-fix",
+            )
+
+        assert "<runtime_pain_report>" not in captured_prompt
 
 
 class TestExpandRepositories:
