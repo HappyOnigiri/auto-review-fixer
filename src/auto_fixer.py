@@ -2700,7 +2700,7 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
         )
-        _cacheable = not bool(active_rate_limit) and not bool(active_review_failed)
+        _cacheable = not dry_run and not bool(active_rate_limit) and not bool(active_review_failed)
         if commits_by_phase:
             return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
         return False, True, None, _cacheable
