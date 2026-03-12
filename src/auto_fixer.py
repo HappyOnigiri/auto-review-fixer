@@ -2997,9 +2997,10 @@ def _process_single_pr(
     )
 
     modified_prs.add((repo, pr_number))
+    _cacheable = not dry_run
     if commits_by_phase:
-        return False, True, (repo, pr_number, "\n".join(commits_by_phase)), True
-    return False, True, None, True
+        return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
+    return False, True, None, _cacheable
 
 
 def process_repo(
