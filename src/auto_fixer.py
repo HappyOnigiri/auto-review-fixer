@@ -1406,16 +1406,38 @@ def _edit_pr_label(repo: str, pr_number: int, *, add: bool, label: str) -> bool:
     return False
 
 
-def _set_pr_running_label(repo: str, pr_number: int) -> None:
+def _set_pr_running_label(
+    repo: str, pr_number: int, *, pr_data: dict[str, Any] | None = None
+) -> None:
+    """Set refix:running, remove refix:done. Skips no-op edits to avoid updating PR."""
+    if (
+        pr_data
+        and _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
+        and not _pr_has_label(pr_data, REFIX_DONE_LABEL)
+    ):
+        return
     _ensure_refix_labels(repo)
-    _edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL)
-    _edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL)
+    if pr_data is None or _pr_has_label(pr_data, REFIX_DONE_LABEL):
+        _edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL)
+    if pr_data is None or not _pr_has_label(pr_data, REFIX_RUNNING_LABEL):
+        _edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL)
 
 
-def _set_pr_done_label(repo: str, pr_number: int) -> None:
+def _set_pr_done_label(
+    repo: str, pr_number: int, *, pr_data: dict[str, Any] | None = None
+) -> None:
+    """Set refix:done, remove refix:running. Skips no-op edits to avoid updating PR."""
+    if (
+        pr_data
+        and _pr_has_label(pr_data, REFIX_DONE_LABEL)
+        and not _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
+    ):
+        return
     _ensure_refix_labels(repo)
-    _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
-    _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL)
+    if pr_data is None or _pr_has_label(pr_data, REFIX_RUNNING_LABEL):
+        _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL)
+    if pr_data is None or not _pr_has_label(pr_data, REFIX_DONE_LABEL):
+        _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL)
 
 
 def _set_pr_merged_label(repo: str, pr_number: int) -> None:
@@ -1562,7 +1584,9 @@ def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
     combined_lower = f"{stdout_text}\n{stderr_text}".lower()
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
-        _edit_pr_label(repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
+        _edit_pr_label(
+            repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
+        )
         return True
 
     details = stderr_text or stdout_text or "unknown error"
@@ -1780,6 +1804,27 @@ def _latest_coderabbit_activity_at(
     return latest
 
 
+def _latest_coderabbit_review_submitted_at(pr_data: dict[str, Any]) -> datetime | None:
+    """Get the latest CodeRabbit review submission time (reviews only, no comments).
+
+    Used to detect if a rate-limit or review-failed notice is stale: only a new
+    review submission indicates CodeRabbit has completed a new review cycle.
+    Issue/review comments (e.g. Nitpick, Walkthrough) can be posted from different
+    runs and do not mean the rate limit is resolved.
+    """
+    latest: datetime | None = None
+    for review in pr_data.get("reviews", []):
+        login = str(review.get("author", {}).get("login", ""))
+        if not _is_coderabbit_login(login):
+            continue
+        ts = _parse_github_timestamp(
+            str(review.get("submittedAt") or "")
+        ) or _parse_github_timestamp(str(review.get("updatedAt") or ""))
+        if ts is not None and (latest is None or ts > latest):
+            latest = ts
+    return latest
+
+
 def _get_active_coderabbit_rate_limit(
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
@@ -1802,13 +1847,11 @@ def _get_active_coderabbit_rate_limit(
     if latest_rate_limit is None:
         return None
 
-    latest_activity = _latest_coderabbit_activity_at(
-        pr_data, review_comments, issue_comments
-    )
-    if (
-        latest_activity is not None
-        and latest_activity > latest_rate_limit["updated_at"]
-    ):
+    # Only consider rate limit "stale" when CodeRabbit has submitted a new review.
+    # Issue/review comments (Nitpick, Walkthrough, etc.) can be from different runs
+    # and do not indicate the rate limit is resolved.
+    latest_review = _latest_coderabbit_review_submitted_at(pr_data)
+    if latest_review is not None and latest_review > latest_rate_limit["updated_at"]:
         return None
     return latest_rate_limit
 
@@ -1835,13 +1878,9 @@ def _get_active_coderabbit_review_failed(
     if latest_review_failed is None:
         return None
 
-    latest_activity = _latest_coderabbit_activity_at(
-        pr_data, review_comments, issue_comments
-    )
-    if (
-        latest_activity is not None
-        and latest_activity > latest_review_failed["updated_at"]
-    ):
+    # Only consider review-failed "stale" when CodeRabbit has submitted a new review.
+    latest_review = _latest_coderabbit_review_submitted_at(pr_data)
+    if latest_review is not None and latest_review > latest_review_failed["updated_at"]:
         return None
     return latest_review_failed
 
@@ -2061,7 +2100,7 @@ def _update_done_label_if_completed(
         print(
             f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}."
         )
-        _set_pr_done_label(repo, pr_number)
+        _set_pr_done_label(repo, pr_number, pr_data=pr_data)
         if auto_merge_enabled:
             merge_requested = _trigger_pr_auto_merge(repo, pr_number)
             if merge_requested:
@@ -2071,7 +2110,7 @@ def _update_done_label_if_completed(
     print(
         f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
     )
-    _set_pr_running_label(repo, pr_number)
+    _set_pr_running_label(repo, pr_number, pr_data=pr_data)
 
 
 def _process_single_pr(
@@ -2240,7 +2279,7 @@ def _process_single_pr(
             f"(wait={active_rate_limit['wait_text']}, resume_after={active_rate_limit['resume_after'].isoformat()})"
         )
         if not dry_run and not summarize_only:
-            _set_pr_running_label(repo, pr_number)
+            _set_pr_running_label(repo, pr_number, pr_data=pr_data)
             modified_prs.add((repo, pr_number))
         posted_resume_comment = _maybe_auto_resume_coderabbit_review(
             repo=repo,
@@ -2268,7 +2307,7 @@ def _process_single_pr(
             f"CodeRabbit review failed status is active for PR #{pr_number}; head commit changed during review."
         )
         if not dry_run and not summarize_only:
-            _set_pr_running_label(repo, pr_number)
+            _set_pr_running_label(repo, pr_number, pr_data=pr_data)
             modified_prs.add((repo, pr_number))
         can_attempt_resume = True
         if active_rate_limit and active_rate_limit["resume_after"] > datetime.now(
@@ -2773,7 +2812,7 @@ def _process_single_pr(
     else:
         _remove_running_on_exit = False
         try:
-            _set_pr_running_label(repo, pr_number)
+            _set_pr_running_label(repo, pr_number, pr_data=pr_data)
             _remove_running_on_exit = True
             review_fix_started = True
             review_report_path = _build_phase_report_path(
@@ -3070,7 +3109,9 @@ def process_repo(
         if global_backfilled_count is not None:
             global_backfilled_count[0] += backfilled_count
     total_backfilled = (
-        global_backfilled_count[0] if global_backfilled_count is not None else backfilled_count
+        global_backfilled_count[0]
+        if global_backfilled_count is not None
+        else backfilled_count
     )
 
     if not prs:

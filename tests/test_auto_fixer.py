@@ -898,6 +898,37 @@ class TestCodeRabbitRateLimitHelpers:
         )
         assert status is None
 
+    def test_get_active_coderabbit_rate_limit_keeps_active_when_only_issue_comment_after(
+        self,
+    ):
+        """Rate limit stays active when CodeRabbit posts an issue comment (e.g. Nitpick)
+        after the rate limit notice, but no new review submission.
+
+        Issue comments can be from different runs; only a review submission indicates
+        the rate limit is resolved. See: GamePortal PR #44.
+        """
+        pr_data = {"reviews": []}
+        issue_comments = [
+            {
+                "id": 55,
+                "body": self.RATE_LIMIT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": "2026-03-11T12:00:00Z",
+            },
+            {
+                "id": 56,
+                "body": "Nitpick: consider adding a fallback link.",
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": "2026-03-11T12:04:00Z",
+            },
+        ]
+
+        status = auto_fixer._get_active_coderabbit_rate_limit(
+            pr_data, [], issue_comments
+        )
+        assert status is not None
+        assert status["comment_id"] == 55
+
     def test_extract_coderabbit_review_failed_status(self):
         status = auto_fixer._extract_coderabbit_review_failed_status(
             {
@@ -1695,7 +1726,7 @@ class TestProcessRepo:
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
 
-        mock_set_running.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_called_once_with("owner/repo", 1, pr_data=pr_data)
 
     def test_process_repo_passes_state_comment_timezone_to_create_state_entry(
         self, tmp_path
@@ -1797,6 +1828,30 @@ class TestRefixLabeling:
                 call("owner/repo", 9, add=True, label="refix:running"),
             ]
         )
+
+    def test_set_pr_running_label_skips_edit_when_already_has_running(self):
+        """When PR already has refix:running and no refix:done, skip gh pr edit to avoid updating PR."""
+        pr_data = {"labels": [{"name": "refix:running"}]}
+        with (
+            patch("auto_fixer._ensure_refix_labels") as mock_ensure,
+            patch("auto_fixer._edit_pr_label") as mock_edit,
+        ):
+            auto_fixer._set_pr_running_label("owner/repo", 9, pr_data=pr_data)
+
+        mock_ensure.assert_not_called()
+        mock_edit.assert_not_called()
+
+    def test_set_pr_done_label_skips_edit_when_already_has_done(self):
+        """When PR already has refix:done and no refix:running, skip gh pr edit to avoid updating PR."""
+        pr_data = {"labels": [{"name": "refix:done"}]}
+        with (
+            patch("auto_fixer._ensure_refix_labels") as mock_ensure,
+            patch("auto_fixer._edit_pr_label") as mock_edit,
+        ):
+            auto_fixer._set_pr_done_label("owner/repo", 11, pr_data=pr_data)
+
+        mock_ensure.assert_not_called()
+        mock_edit.assert_not_called()
 
     def test_set_pr_done_label_ensures_labels_before_edit(self):
         with (
@@ -1970,7 +2025,9 @@ class TestRefixLabeling:
                 dry_run=False,
                 summarize_only=False,
             )
-        mock_set_done.assert_called_once_with("owner/repo", 1)
+        mock_set_done.assert_called_once_with(
+            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+        )
         mock_set_running.assert_not_called()
         mock_auto_merge.assert_not_called()
 
@@ -2003,7 +2060,9 @@ class TestRefixLabeling:
                 summarize_only=False,
                 auto_merge_enabled=True,
             )
-        mock_set_done.assert_called_once_with("owner/repo", 3)
+        mock_set_done.assert_called_once_with(
+            "owner/repo", 3, pr_data={"reviews": [], "comments": []}
+        )
         mock_set_running.assert_not_called()
         mock_auto_merge.assert_called_once_with("owner/repo", 3)
         mock_mark_merged.assert_called_once_with("owner/repo", 3)
@@ -2033,7 +2092,9 @@ class TestRefixLabeling:
         mock_marker.assert_not_called()
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
-        mock_set_running.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_called_once_with(
+            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+        )
 
     def test_update_done_label_sets_running_when_ci_not_success(self):
         with (
@@ -2060,7 +2121,9 @@ class TestRefixLabeling:
                 summarize_only=False,
             )
         mock_set_done.assert_not_called()
-        mock_set_running.assert_called_once_with("owner/repo", 2)
+        mock_set_running.assert_called_once_with(
+            "owner/repo", 2, pr_data={"reviews": [], "comments": []}
+        )
 
     def test_update_done_label_skips_when_review_fix_failed(self):
         with (
@@ -2083,7 +2146,9 @@ class TestRefixLabeling:
                 summarize_only=False,
             )
         mock_set_done.assert_not_called()
-        mock_set_running.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_called_once_with(
+            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+        )
 
     def test_update_done_label_skips_when_dry_run(self):
         with patch("auto_fixer._set_pr_done_label") as mock_set_done:
@@ -2149,7 +2214,9 @@ class TestRefixLabeling:
             )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
-        mock_set_running.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_called_once_with(
+            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+        )
 
     def test_update_done_label_skips_when_coderabbit_rate_limit_active(self):
         with (
@@ -2178,7 +2245,9 @@ class TestRefixLabeling:
             )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
-        mock_set_running.assert_called_once_with("owner/repo", 1)
+        mock_set_running.assert_called_once_with(
+            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+        )
 
 
 class TestMergeStrategyHelpers:
