@@ -2202,7 +2202,9 @@ class TestRefixLabeling:
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr=""),
             ),
-            patch("auto_fixer._set_pr_merged_label", return_value=True) as mock_set_merged,
+            patch(
+                "auto_fixer._set_pr_merged_label", return_value=True
+            ) as mock_set_merged,
         ):
             ok = auto_fixer._mark_pr_merged_label_if_needed("owner/repo", 21)
         assert ok is True

@@ -373,7 +373,9 @@ def load_config(filepath: str) -> dict[str, Any]:
         if "merged" in seen_enabled_labels and not (
             seen_enabled_labels & {"running", "done", "auto_merge_requested"}
         ):
-            allowed_merge_sub_keys = ", ".join(sorted({"running", "done", "auto_merge_requested"}))
+            allowed_merge_sub_keys = ", ".join(
+                sorted({"running", "done", "auto_merge_requested"})
+            )
             print(
                 f'Error: enabled_pr_labels includes "merged" but none of: {allowed_merge_sub_keys}. '
                 f'At least one of these must be included alongside "merged".',
@@ -1852,7 +1854,11 @@ def _backfill_merged_labels(
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     if "merged" not in enabled:
         return 0
-    if "done" not in enabled and "auto_merge_requested" not in enabled and "running" not in enabled:
+    if (
+        "done" not in enabled
+        and "auto_merge_requested" not in enabled
+        and "running" not in enabled
+    ):
         return 0
     search_parts = []
     if "done" in enabled:
@@ -2491,7 +2497,9 @@ def _update_done_label_if_completed(
         merge_triggered = False
         if auto_merge_enabled:
             if enabled_pr_label_keys is None:
-                merge_state_reached, label_modified = _trigger_pr_auto_merge(repo, pr_number)
+                merge_state_reached, label_modified = _trigger_pr_auto_merge(
+                    repo, pr_number
+                )
             else:
                 merge_state_reached, label_modified = _trigger_pr_auto_merge(
                     repo,
@@ -2785,7 +2793,12 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
         ):
             modified_prs.add((repo, pr_number))
-        return False, count_pr, None, not bool(active_rate_limit) and not bool(active_review_failed)
+        return (
+            False,
+            count_pr,
+            None,
+            not bool(active_rate_limit) and not bool(active_review_failed),
+        )
 
     # B上限チェック: コミット追加PR数の上限に達しているか
     commit_limit_reached = (
@@ -3193,9 +3206,18 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
         ):
             modified_prs.add((repo, pr_number))
-        _cacheable = not dry_run and not bool(active_rate_limit) and not bool(active_review_failed)
+        _cacheable = (
+            not dry_run
+            and not bool(active_rate_limit)
+            and not bool(active_review_failed)
+        )
         if commits_by_phase:
-            return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
+            return (
+                False,
+                True,
+                (repo, pr_number, "\n".join(commits_by_phase)),
+                _cacheable,
+            )
         return False, True, None, _cacheable
 
     # レビュー修正をスキップすべきかの判定
@@ -3481,9 +3503,7 @@ def _process_single_pr(
                 except Exception:
                     _latest = state_comment
                 report_body_to_save = (
-                    _merge_state_comment_report_body(
-                        _latest.report_body, report_blocks
-                    )
+                    _merge_state_comment_report_body(_latest.report_body, report_blocks)
                     if execution_report_enabled
                     else _latest.report_body.strip()
                 )

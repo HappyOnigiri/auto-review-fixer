@@ -48,8 +48,50 @@ def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:
     return items
 
 
+def _fetch_check_runs_via_rest(repo: str, ref: str) -> list[dict[str, Any]]:
+    """Fetch check runs for a commit via REST API. Returns statusCheckRollup-format list.
+    Fine-grained PAT cannot access GraphQL statusCheckRollup; REST check-runs may work
+    for some repos. On 403 or error, returns []."""
+    cmd = [
+        "gh",
+        "api",
+        f"repos/{repo}/commits/{ref}/check-runs",
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        return []
+    try:
+        data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError:
+        return []
+    runs = data.get("check_runs") or []
+    # Convert to statusCheckRollup format expected by _extract_failing_ci_contexts
+    rollup: list[dict[str, Any]] = []
+    for r in runs:
+        if not isinstance(r, dict):
+            continue
+        rollup.append(
+            {
+                "name": r.get("name") or "",
+                "conclusion": (r.get("conclusion") or "").upper(),
+                "state": (r.get("status") or "").upper(),
+                "detailsUrl": r.get("details_url") or r.get("html_url") or "",
+                "targetUrl": r.get("details_url") or r.get("html_url") or "",
+            }
+        )
+    return rollup
+
+
 def fetch_pr_details(repo: str, pr_number: int) -> dict[str, Any]:
-    """Fetch PR details including commits, reviews, comments, and branch name."""
+    """Fetch PR details including commits, reviews, comments, and branch name.
+    Uses REST check-runs API for CI status (Fine-grained PAT cannot use GraphQL statusCheckRollup)."""
+    base_json = "number,title,body,commits,reviews,comments,createdAt,updatedAt,headRefName,baseRefName"
     cmd = [
         "gh",
         "pr",
@@ -58,10 +100,33 @@ def fetch_pr_details(repo: str, pr_number: int) -> dict[str, Any]:
         "--repo",
         repo,
         "--json",
-        "number,title,body,commits,reviews,comments,createdAt,updatedAt,headRefName,baseRefName,statusCheckRollup",
+        base_json,
     ]
-    raw = run_gh_command(cmd)
-    pr_data: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        print(f"Error: {result.stderr}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        pr_data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError:
+        print("Warning: failed to parse gh pr view output", file=sys.stderr)
+        pr_data = {}
+
+    # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
+    commits = pr_data.get("commits") or []
+    if commits:
+        head_oid = commits[-1].get("oid") if isinstance(commits[-1], dict) else None
+        if head_oid:
+            check_runs = _fetch_check_runs_via_rest(repo, head_oid)
+            if check_runs:
+                pr_data["statusCheckRollup"] = check_runs
+
     normalized_reviews = fetch_pr_reviews(repo, pr_number)
     if normalized_reviews:
         pr_data["reviews"] = normalized_reviews
