@@ -3103,10 +3103,11 @@ def _process_single_pr(
                         state_comment.report_body, report_blocks
                     )
                     if execution_report_enabled
-                    else ""
+                    else state_comment.report_body.strip()
                 )
                 should_write_state_comment = bool(state_entries) or (
-                    report_body_to_save != state_comment.report_body.strip()
+                    execution_report_enabled
+                    and report_body_to_save != state_comment.report_body.strip()
                 )
                 if should_write_state_comment:
                     try:
