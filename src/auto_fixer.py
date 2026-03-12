@@ -163,6 +163,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_modified_prs_per_run": 0,
     "max_committed_prs_per_run": 2,
     "max_claude_prs_per_run": 0,
+    "ci_empty_as_success": True,
+    "ci_empty_grace_minutes": 5,
     "repositories": [],
 }
 ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
@@ -178,6 +180,8 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "max_modified_prs_per_run",
     "max_committed_prs_per_run",
     "max_claude_prs_per_run",
+    "ci_empty_as_success",
+    "ci_empty_grace_minutes",
     "repositories",
 }
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
@@ -296,6 +300,8 @@ def load_config(filepath: str) -> dict[str, Any]:
         "max_modified_prs_per_run": DEFAULT_CONFIG["max_modified_prs_per_run"],
         "max_committed_prs_per_run": DEFAULT_CONFIG["max_committed_prs_per_run"],
         "max_claude_prs_per_run": DEFAULT_CONFIG["max_claude_prs_per_run"],
+        "ci_empty_as_success": DEFAULT_CONFIG["ci_empty_as_success"],
+        "ci_empty_grace_minutes": DEFAULT_CONFIG["ci_empty_grace_minutes"],
         "repositories": [],
     }
 
@@ -467,6 +473,39 @@ def load_config(filepath: str) -> dict[str, Any]:
                 )
                 sys.exit(1)
             config[limit_key] = int_value
+
+    ci_empty_as_success = parsed.get("ci_empty_as_success")
+    if ci_empty_as_success is not None:
+        if not isinstance(ci_empty_as_success, bool):
+            print("Error: ci_empty_as_success must be a boolean.", file=sys.stderr)
+            sys.exit(1)
+        config["ci_empty_as_success"] = ci_empty_as_success
+
+    ci_empty_grace_minutes = parsed.get("ci_empty_grace_minutes")
+    if ci_empty_grace_minutes is not None:
+        if isinstance(ci_empty_grace_minutes, bool) or isinstance(ci_empty_grace_minutes, float):
+            print(
+                "Error: ci_empty_grace_minutes must be a non-negative integer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if isinstance(ci_empty_grace_minutes, int):
+            grace_int = ci_empty_grace_minutes
+        elif isinstance(ci_empty_grace_minutes, str) and ci_empty_grace_minutes.isdigit():
+            grace_int = int(ci_empty_grace_minutes)
+        else:
+            print(
+                "Error: ci_empty_grace_minutes must be a non-negative integer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if grace_int < 0:
+            print(
+                "Error: ci_empty_grace_minutes must be a non-negative integer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        config["ci_empty_grace_minutes"] = grace_int
 
     repositories = parsed.get("repositories")
     if not isinstance(repositories, list) or not repositories:
@@ -1982,7 +2021,13 @@ def _trigger_pr_auto_merge(
     return False, False
 
 
-def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
+def _are_all_ci_checks_successful(
+    repo: str,
+    pr_number: int,
+    *,
+    ci_empty_as_success: bool = True,
+    ci_empty_grace_minutes: int = 5,
+) -> bool | None:
     """Check if all CI checks are successful via REST API.
     NOTE: statusCheckRollup / gh pr checks (GraphQL) must NOT be used - Fine-grained PAT cannot access it."""
     # Get head commit SHA
@@ -1997,7 +2042,7 @@ def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
         head_sha := (head_result.stdout or "").strip()
     ):
         print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
-        return False
+        return None
 
     # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
     result = subprocess.run(
@@ -2009,12 +2054,15 @@ def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
     )
     if result.returncode != 0:
         print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
-        return False
+        return None
     try:
         data = json.loads(result.stdout) if result.stdout else []
     except json.JSONDecodeError:
-        print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
-        return False
+        print(
+            f"Warning: failed to parse CI check state for PR #{pr_number}",
+            file=sys.stderr,
+        )
+        return None
 
     runs: list[dict[str, Any]] = []
     for page in (data if isinstance(data, list) else [data]):
@@ -2025,8 +2073,55 @@ def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
     classic = _fetch_classic_statuses_via_rest(repo, head_sha)
 
     if not runs and not classic:
-        print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
-        return False
+        if not ci_empty_as_success:
+            print(
+                f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
+            )
+            return False
+        # checks empty: if last commit is older than grace period, treat as no CI
+        commit_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/commits/{head_sha}",
+                "--jq",
+                ".commit.committer.date",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+        )
+        if commit_result.returncode != 0 or not (
+            date_str := (commit_result.stdout or "").strip()
+        ):
+            print(
+                f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
+            )
+            return None
+        try:
+            # jq outputs JSON string; parse to get raw date string
+            if date_str.startswith('"') and date_str.endswith('"'):
+                date_str = json.loads(date_str)
+            commit_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if commit_dt.tzinfo is None:
+                commit_dt = commit_dt.replace(tzinfo=timezone.utc)
+            elapsed = datetime.now(timezone.utc) - commit_dt
+            if elapsed < timedelta(minutes=ci_empty_grace_minutes):
+                print(
+                    f"CI checks unavailable for PR #{pr_number} "
+                    f"(empty, commit < {ci_empty_grace_minutes}min ago); skip refix:done labeling."
+                )
+                return None  # grace period: retry after elapsed; do not cache updatedAt
+        except (ValueError, TypeError):
+            print(
+                f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
+            )
+            return None
+        print(
+            f"PR #{pr_number}: no CI checks, commit >{ci_empty_grace_minutes}min ago; treat as success."
+        )
+        return True
 
     # Evaluate check runs: completed runs must have conclusion in SUCCESSFUL set
     conclusions: list[str] = []
@@ -2482,9 +2577,17 @@ def _update_done_label_if_completed(
     coderabbit_rate_limit_active: bool = False,
     coderabbit_review_failed_active: bool = False,
     enabled_pr_label_keys: set[str] | None = None,
-) -> bool:
+    ci_empty_as_success: bool = True,
+    ci_empty_grace_minutes: int = 5,
+) -> tuple[bool, bool]:
+    """Returns (label_was_updated, ci_grace_pending).
+
+    ci_grace_pending is True when CI checks are empty and commit is within the grace
+    window, meaning the result may change as time passes without a PR update.
+    Callers should set cacheable=False when ci_grace_pending is True.
+    """
     if dry_run or summarize_only:
-        return False
+        return False, False
 
     is_completed = True
     if review_fix_failed:
@@ -2516,8 +2619,19 @@ def _update_done_label_if_completed(
         )
         is_completed = False
 
-    if is_completed and not _are_all_ci_checks_successful(repo, pr_number):
-        is_completed = False
+    ci_grace_pending = False
+    if is_completed:
+        ci_check_result = _are_all_ci_checks_successful(
+            repo,
+            pr_number,
+            ci_empty_as_success=ci_empty_as_success,
+            ci_empty_grace_minutes=ci_empty_grace_minutes,
+        )
+        if ci_check_result is None:
+            ci_grace_pending = True
+            is_completed = False
+        elif not ci_check_result:
+            is_completed = False
 
     if is_completed:
         print(
@@ -2555,18 +2669,21 @@ def _update_done_label_if_completed(
                         enabled_pr_label_keys=enabled_pr_label_keys,
                     )
             merge_triggered = label_modified
-        return done_changed or merge_triggered
+        return done_changed or merge_triggered, ci_grace_pending
 
     print(
         f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
     )
     if enabled_pr_label_keys is None:
-        return _set_pr_running_label(repo, pr_number, pr_data=pr_data)
-    return _set_pr_running_label(
-        repo,
-        pr_number,
-        pr_data=pr_data,
-        enabled_pr_label_keys=enabled_pr_label_keys,
+        return _set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
+    return (
+        _set_pr_running_label(
+            repo,
+            pr_number,
+            pr_data=pr_data,
+            enabled_pr_label_keys=enabled_pr_label_keys,
+        ),
+        ci_grace_pending,
     )
 
 
@@ -2596,6 +2713,8 @@ def _process_single_pr(
     user_name: Any,
     user_email: Any,
     backfilled_count: int = 0,
+    ci_empty_as_success: bool = True,
+    ci_empty_grace_minutes: int = 5,
 ) -> tuple[bool, bool, tuple[str, int, str] | None, bool]:
     """Process a single PR within process_repo's main loop.
 
@@ -2812,7 +2931,7 @@ def _process_single_pr(
             f"No unresolved reviews, not behind, and no failing CI for PR #{pr_number}"
         )
         count_pr = bool(active_rate_limit)
-        if _update_done_label_if_completed(
+        _done_updated, _ci_grace = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=False,
@@ -2830,13 +2949,16 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             enabled_pr_label_keys=enabled_pr_label_keys,
-        ):
+            ci_empty_as_success=ci_empty_as_success,
+            ci_empty_grace_minutes=ci_empty_grace_minutes,
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         return (
             False,
             count_pr,
             None,
-            not bool(active_rate_limit) and not bool(active_review_failed),
+            not bool(active_rate_limit) and not bool(active_review_failed) and not _ci_grace,
         )
 
     # B上限チェック: コミット追加PR数の上限に達しているか
@@ -3225,7 +3347,7 @@ def _process_single_pr(
                     f"commits may not be pushed to origin/{branch_name}. "
                     f"details: {unpushed_info}"
                 )
-        if _update_done_label_if_completed(
+        _done_updated, _ci_grace = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=False,
@@ -3243,12 +3365,16 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             enabled_pr_label_keys=enabled_pr_label_keys,
-        ):
+            ci_empty_as_success=ci_empty_as_success,
+            ci_empty_grace_minutes=ci_empty_grace_minutes,
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         _cacheable = (
             not dry_run
             and not bool(active_rate_limit)
             and not bool(active_review_failed)
+            and not _ci_grace
         )
         if commits_by_phase:
             return (
@@ -3299,7 +3425,7 @@ def _process_single_pr(
             f"Skipping review-fix for PR #{pr_number} because {skip_review_fix_reason}; "
             "CI repair and merge-base handling already ran."
         )
-        if _update_done_label_if_completed(
+        _done_updated, _ = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=has_review_targets,
@@ -3317,7 +3443,10 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             enabled_pr_label_keys=enabled_pr_label_keys,
-        ):
+            ci_empty_as_success=ci_empty_as_success,
+            ci_empty_grace_minutes=ci_empty_grace_minutes,
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         if commits_by_phase:
             return False, True, (repo, pr_number, "\n".join(commits_by_phase)), False
@@ -3621,7 +3750,7 @@ def _process_single_pr(
                     enabled_pr_label_keys=enabled_pr_label_keys,
                 )
 
-    if _update_done_label_if_completed(
+    _done_updated, _ci_grace = _update_done_label_if_completed(
         repo=repo,
         pr_number=pr_number,
         has_review_targets=has_review_targets,
@@ -3639,7 +3768,10 @@ def _process_single_pr(
         coderabbit_rate_limit_active=bool(active_rate_limit),
         coderabbit_review_failed_active=bool(active_review_failed),
         enabled_pr_label_keys=enabled_pr_label_keys,
-    ):
+        ci_empty_as_success=ci_empty_as_success,
+        ci_empty_grace_minutes=ci_empty_grace_minutes,
+    )
+    if _done_updated:
         modified_prs.add((repo, pr_number))
     _cacheable = (
         not dry_run
@@ -3647,6 +3779,7 @@ def _process_single_pr(
         and not review_fix_failed
         and not bool(active_rate_limit)
         and not bool(active_review_failed)
+        and not _ci_grace
     )
     if commits_by_phase:
         return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
@@ -3720,6 +3853,14 @@ def process_repo(
     max_claude_prs = int(
         runtime_config.get(
             "max_claude_prs_per_run", DEFAULT_CONFIG["max_claude_prs_per_run"]
+        )
+    )
+    ci_empty_as_success = bool(
+        runtime_config.get("ci_empty_as_success", DEFAULT_CONFIG["ci_empty_as_success"])
+    )
+    ci_empty_grace_minutes = int(
+        runtime_config.get(
+            "ci_empty_grace_minutes", DEFAULT_CONFIG["ci_empty_grace_minutes"]
         )
     )
 
@@ -3837,6 +3978,8 @@ def process_repo(
                     user_name=user_name,
                     user_email=user_email,
                     backfilled_count=total_backfilled,
+                    ci_empty_as_success=ci_empty_as_success,
+                    ci_empty_grace_minutes=ci_empty_grace_minutes,
                 )
             )
             if this_pr_fetch_failed:

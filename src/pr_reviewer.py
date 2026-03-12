@@ -104,6 +104,8 @@ def _fetch_classic_statuses_via_rest(repo: str, sha: str) -> list[dict[str, Any]
         data = json.loads(result.stdout) if result.stdout else {}
     except json.JSONDecodeError:
         return []
+    if not isinstance(data, dict):
+        return []
     statuses = data.get("statuses") or []
     normalized: list[dict[str, Any]] = []
     for s in statuses:

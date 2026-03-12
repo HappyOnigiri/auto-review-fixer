@@ -216,6 +216,8 @@ repositories:
             "max_modified_prs_per_run": 0,
             "max_committed_prs_per_run": 2,
             "max_claude_prs_per_run": 0,
+            "ci_empty_as_success": True,
+            "ci_empty_grace_minutes": 5,
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -1253,7 +1255,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, updated_at_cache=cache)
 
@@ -1284,7 +1286,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, updated_at_cache=cache)
 
@@ -1317,7 +1319,7 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
         ):
             auto_fixer.process_repo(
                 {"repo": "owner/repo"},
@@ -1624,7 +1626,7 @@ class TestProcessRepo:
                 return_value=Mock(returncode=0, stdout="", stderr=""),
             ),
             patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
 
@@ -1688,7 +1690,7 @@ class TestProcessRepo:
             patch("auto_fixer._merge_base_branch", side_effect=merge_side_effect),
             patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed") as mock_update_done,
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)) as mock_update_done,
             patch("auto_fixer.summarize_reviews") as mock_summarize,
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
@@ -1757,7 +1759,7 @@ class TestProcessRepo:
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
             patch(
                 "auto_fixer._post_issue_comment", return_value=True
             ) as mock_post_issue_comment,
@@ -1920,7 +1922,7 @@ class TestProcessRepo:
                 "auto_fixer.prepare_repository", return_value=tmp_path
             ) as mock_prepare,
             patch("auto_fixer._merge_base_branch", return_value=(False, False)),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
 
@@ -1949,7 +1951,7 @@ class TestProcessRepo:
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
             patch("auto_fixer._run_claude_prompt", return_value=""),
             patch("auto_fixer._set_pr_running_label") as mock_set_running,
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
             patch("auto_fixer.upsert_state_comment"),
             patch(
                 "auto_fixer.subprocess.run",
@@ -2018,7 +2020,7 @@ class TestProcessRepo:
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
             patch("auto_fixer._run_claude_prompt", return_value=""),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
             patch("auto_fixer.upsert_state_comment"),
             patch("auto_fixer.subprocess.run", side_effect=_run_side_effect),
             patch(
@@ -2533,6 +2535,82 @@ class TestRefixLabeling:
         )
 
 
+class TestAreAllCiChecksSuccessful:
+    """Tests for _are_all_ci_checks_successful with ci_empty_as_success / ci_empty_grace_minutes."""
+
+    def test_empty_checks_ci_empty_as_success_false_returns_false(self):
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
+                Mock(returncode=0, stdout="{}", stderr=""),  # classic statuses (empty)
+            ]
+            result = auto_fixer._are_all_ci_checks_successful(
+                "owner/repo", 1, ci_empty_as_success=False
+            )
+        assert result is False
+        assert mock_run.call_count == 3
+
+    def test_empty_checks_commit_old_treats_as_success(self):
+        from datetime import datetime, timezone, timedelta
+
+        old_date = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
+                Mock(returncode=0, stdout="{}", stderr=""),  # classic statuses (empty)
+                Mock(returncode=0, stdout=f'"{old_date}"', stderr=""),  # commit date
+            ]
+            result = auto_fixer._are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=True,
+                ci_empty_grace_minutes=5,
+            )
+        assert result is True
+        assert mock_run.call_count == 4
+
+    def test_empty_checks_commit_recent_returns_false(self):
+        from datetime import datetime, timezone, timedelta
+
+        recent_date = (datetime.now(timezone.utc) - timedelta(minutes=2)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
+                Mock(returncode=0, stdout="{}", stderr=""),  # classic statuses (empty)
+                Mock(returncode=0, stdout=f'"{recent_date}"', stderr=""),  # commit date
+            ]
+            result = auto_fixer._are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=True,
+                ci_empty_grace_minutes=5,
+            )
+        assert result is None  # grace period: returns None so callers skip caching
+        assert mock_run.call_count == 4
+
+    def test_non_empty_checks_all_success_returns_true(self):
+        with patch("auto_fixer.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(
+                    returncode=0,
+                    stdout='[{"check_runs": [{"name": "build", "status": "completed", "conclusion": "success"}]}]',
+                    stderr="",
+                ),  # check-runs (non-empty, all success)
+                Mock(returncode=0, stdout="{}", stderr=""),  # classic statuses (empty)
+            ]
+            result = auto_fixer._are_all_ci_checks_successful("owner/repo", 1)
+        assert result is True
+        assert mock_run.call_count == 3
+
+
 class TestMergeStrategyHelpers:
     def test_conflict_with_review_targets_uses_two_calls(self):
         strategy = auto_fixer._determine_conflict_resolution_strategy(True)
@@ -2985,7 +3063,7 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(True, False)),
         ):
             auto_fixer.process_repo(
                 {"repo": "owner/repo"},
@@ -3078,7 +3156,7 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer._set_pr_running_label"),
             patch("auto_fixer._edit_pr_label"),
             patch("auto_fixer.upsert_state_comment"),
-            patch("auto_fixer._update_done_label_if_completed"),
+            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
             patch("auto_fixer.subprocess.run", side_effect=mock_run_side_effect),
             patch("auto_fixer.subprocess.Popen", return_value=mock_popen),
         ):

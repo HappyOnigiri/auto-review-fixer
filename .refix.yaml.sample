@@ -66,6 +66,13 @@ max_committed_prs_per_run: 2
 # Default: 0
 max_claude_prs_per_run: 0
 
+# When CI checks are empty, treat as success if last commit is older than grace period (Optional)
+# ci_empty_as_success: true = apply grace rule; false = always treat empty as unavailable
+# ci_empty_grace_minutes: minutes since last commit to consider "no CI configured"
+# Default: ci_empty_as_success true, ci_empty_grace_minutes 5
+ci_empty_as_success: true
+ci_empty_grace_minutes: 5
+
 # Target repository settings (Required)
 # List the target repositories and their corresponding git commit settings.
 repositories:
