@@ -84,6 +84,7 @@ from dotenv import load_dotenv
 
 from github_pr_fetcher import fetch_open_prs
 from pr_reviewer import (
+    _fetch_classic_statuses_via_rest,
     fetch_issue_comments,
     fetch_pr_details,
     fetch_pr_review_comments,
@@ -924,8 +925,9 @@ def _build_conflict_resolution_prompt(
 
 
 def _extract_failing_ci_contexts(pr_data: dict[str, Any]) -> list[dict[str, str]]:
-    """Extract failing CI contexts from PR statusCheckRollup payload."""
-    status_rollup = pr_data.get("statusCheckRollup") or []
+    """Extract failing CI contexts from pr_data['check_runs'] (REST check-runs format).
+    NOTE: statusCheckRollup (GraphQL) must NOT be used - Fine-grained PAT cannot access it."""
+    status_rollup = pr_data.get("check_runs") or []
     if not isinstance(status_rollup, list):
         return []
 
@@ -2024,22 +2026,35 @@ def _are_all_ci_checks_successful(
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
 ) -> bool | None:
-    cmd = ["gh", "pr", "checks", str(pr_number), "--repo", repo, "--json", "state"]
+    """Check if all CI checks are successful via REST API.
+    NOTE: statusCheckRollup / gh pr checks (GraphQL) must NOT be used - Fine-grained PAT cannot access it."""
+    # Get head commit SHA
+    head_result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+    )
+    if head_result.returncode != 0 or not (
+        head_sha := (head_result.stdout or "").strip()
+    ):
+        print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
+        return False
+
+    # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
     result = subprocess.run(
-        cmd,
+        ["gh", "api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate", "--slurp"],
         capture_output=True,
         text=True,
         check=False,
         encoding="utf-8",
     )
     if result.returncode != 0:
-        print(
-            f"Warning: failed to fetch CI check state for PR #{pr_number}: {(result.stderr or '').strip()}",
-            file=sys.stderr,
-        )
+        print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
         return False
     try:
-        checks = json.loads(result.stdout) if result.stdout else []
+        data = json.loads(result.stdout) if result.stdout else []
     except json.JSONDecodeError:
         print(
             f"Warning: failed to parse CI check state for PR #{pr_number}",
@@ -2047,27 +2062,21 @@ def _are_all_ci_checks_successful(
         )
         return False
 
-    if not isinstance(checks, list) or not checks:
+    runs: list[dict[str, Any]] = []
+    for page in (data if isinstance(data, list) else [data]):
+        if isinstance(page, dict):
+            runs.extend(r for r in (page.get("check_runs") or []) if isinstance(r, dict))
+
+    # Also fetch classic statuses (Jenkins, Travis, etc.)
+    classic = _fetch_classic_statuses_via_rest(repo, head_sha)
+
+    if not runs and not classic:
         if not ci_empty_as_success:
             print(
                 f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
             )
             return False
         # checks empty: if last commit is older than grace period, treat as no CI
-        head_result = subprocess.run(
-            ["gh", "api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
-            capture_output=True,
-            text=True,
-            check=False,
-            encoding="utf-8",
-        )
-        if head_result.returncode != 0 or not (
-            head_sha := (head_result.stdout or "").strip()
-        ):
-            print(
-                f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
-            )
-            return False
         commit_result = subprocess.run(
             [
                 "gh",
@@ -2112,18 +2121,37 @@ def _are_all_ci_checks_successful(
         )
         return True
 
-    states = [
-        str(check.get("state", "")).upper()
-        for check in checks
-        if isinstance(check, dict)
-    ]
-    if not states:
+    # Evaluate check runs: completed runs must have conclusion in SUCCESSFUL set
+    conclusions: list[str] = []
+    for r in runs:
+        if not isinstance(r, dict):
+            continue
+        status = str(r.get("status") or "").upper()
+        conclusion = str(r.get("conclusion") or "").upper()
+        if status != "COMPLETED":
+            # Still running
+            return False
+        conclusions.append(conclusion)
+
+    # Evaluate classic statuses (normalized: "conclusion" holds the uppercased state)
+    for cs in classic:
+        if not isinstance(cs, dict):
+            continue
+        state = str(cs.get("conclusion") or cs.get("state") or "").upper()
+        if not state or state == "PENDING":
+            # Still pending
+            return False
+        conclusions.append(state)
+
+    if not conclusions:
         print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
         return False
 
-    all_success = all(state in SUCCESSFUL_CI_STATES for state in states)
+    all_success = all(c in SUCCESSFUL_CI_STATES for c in conclusions)
     if not all_success:
-        print(f"CI checks not all successful for PR #{pr_number}: {', '.join(states)}")
+        print(
+            f"CI checks not all successful for PR #{pr_number}: {', '.join(conclusions)}"
+        )
     return all_success
 
 
