@@ -483,15 +483,17 @@ def load_config(filepath: str) -> dict[str, Any]:
 
     ci_empty_grace_minutes = parsed.get("ci_empty_grace_minutes")
     if ci_empty_grace_minutes is not None:
-        if isinstance(ci_empty_grace_minutes, bool):
+        if isinstance(ci_empty_grace_minutes, bool) or isinstance(ci_empty_grace_minutes, float):
             print(
                 "Error: ci_empty_grace_minutes must be a non-negative integer.",
                 file=sys.stderr,
             )
             sys.exit(1)
-        try:
+        if isinstance(ci_empty_grace_minutes, int):
+            grace_int = ci_empty_grace_minutes
+        elif isinstance(ci_empty_grace_minutes, str) and ci_empty_grace_minutes.isdigit():
             grace_int = int(ci_empty_grace_minutes)
-        except (TypeError, ValueError):
+        else:
             print(
                 "Error: ci_empty_grace_minutes must be a non-negative integer.",
                 file=sys.stderr,
