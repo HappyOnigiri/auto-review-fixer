@@ -2023,7 +2023,7 @@ def _are_all_ci_checks_successful(
     *,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
-) -> bool:
+) -> bool | None:
     cmd = ["gh", "pr", "checks", str(pr_number), "--repo", repo, "--json", "state"]
     result = subprocess.run(
         cmd,
@@ -2101,7 +2101,7 @@ def _are_all_ci_checks_successful(
                     f"CI checks unavailable for PR #{pr_number} "
                     f"(empty, commit < {ci_empty_grace_minutes}min ago); skip refix:done labeling."
                 )
-                return False
+                return None  # grace period: retry after elapsed; do not cache updatedAt
         except (ValueError, TypeError):
             print(
                 f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
@@ -2549,9 +2549,15 @@ def _update_done_label_if_completed(
     enabled_pr_label_keys: set[str] | None = None,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
-) -> bool:
+) -> tuple[bool, bool]:
+    """Returns (label_was_updated, ci_grace_pending).
+
+    ci_grace_pending is True when CI checks are empty and commit is within the grace
+    window, meaning the result may change as time passes without a PR update.
+    Callers should set cacheable=False when ci_grace_pending is True.
+    """
     if dry_run or summarize_only:
-        return False
+        return False, False
 
     is_completed = True
     if review_fix_failed:
@@ -2583,13 +2589,19 @@ def _update_done_label_if_completed(
         )
         is_completed = False
 
-    if is_completed and not _are_all_ci_checks_successful(
-        repo,
-        pr_number,
-        ci_empty_as_success=ci_empty_as_success,
-        ci_empty_grace_minutes=ci_empty_grace_minutes,
-    ):
-        is_completed = False
+    ci_grace_pending = False
+    if is_completed:
+        ci_check_result = _are_all_ci_checks_successful(
+            repo,
+            pr_number,
+            ci_empty_as_success=ci_empty_as_success,
+            ci_empty_grace_minutes=ci_empty_grace_minutes,
+        )
+        if ci_check_result is None:
+            ci_grace_pending = True
+            is_completed = False
+        elif not ci_check_result:
+            is_completed = False
 
     if is_completed:
         print(
@@ -2627,18 +2639,21 @@ def _update_done_label_if_completed(
                         enabled_pr_label_keys=enabled_pr_label_keys,
                     )
             merge_triggered = label_modified
-        return done_changed or merge_triggered
+        return done_changed or merge_triggered, ci_grace_pending
 
     print(
         f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
     )
     if enabled_pr_label_keys is None:
-        return _set_pr_running_label(repo, pr_number, pr_data=pr_data)
-    return _set_pr_running_label(
-        repo,
-        pr_number,
-        pr_data=pr_data,
-        enabled_pr_label_keys=enabled_pr_label_keys,
+        return _set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
+    return (
+        _set_pr_running_label(
+            repo,
+            pr_number,
+            pr_data=pr_data,
+            enabled_pr_label_keys=enabled_pr_label_keys,
+        ),
+        ci_grace_pending,
     )
 
 
@@ -2886,7 +2901,7 @@ def _process_single_pr(
             f"No unresolved reviews, not behind, and no failing CI for PR #{pr_number}"
         )
         count_pr = bool(active_rate_limit)
-        if _update_done_label_if_completed(
+        _done_updated, _ci_grace = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=False,
@@ -2906,13 +2921,14 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
-        ):
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         return (
             False,
             count_pr,
             None,
-            not bool(active_rate_limit) and not bool(active_review_failed),
+            not bool(active_rate_limit) and not bool(active_review_failed) and not _ci_grace,
         )
 
     # B上限チェック: コミット追加PR数の上限に達しているか
@@ -3301,7 +3317,7 @@ def _process_single_pr(
                     f"commits may not be pushed to origin/{branch_name}. "
                     f"details: {unpushed_info}"
                 )
-        if _update_done_label_if_completed(
+        _done_updated, _ci_grace = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=False,
@@ -3321,12 +3337,14 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
-        ):
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         _cacheable = (
             not dry_run
             and not bool(active_rate_limit)
             and not bool(active_review_failed)
+            and not _ci_grace
         )
         if commits_by_phase:
             return (
@@ -3377,7 +3395,7 @@ def _process_single_pr(
             f"Skipping review-fix for PR #{pr_number} because {skip_review_fix_reason}; "
             "CI repair and merge-base handling already ran."
         )
-        if _update_done_label_if_completed(
+        _done_updated, _ = _update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=has_review_targets,
@@ -3397,7 +3415,8 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
-        ):
+        )
+        if _done_updated:
             modified_prs.add((repo, pr_number))
         if commits_by_phase:
             return False, True, (repo, pr_number, "\n".join(commits_by_phase)), False
@@ -3701,7 +3720,7 @@ def _process_single_pr(
                     enabled_pr_label_keys=enabled_pr_label_keys,
                 )
 
-    if _update_done_label_if_completed(
+    _done_updated, _ci_grace = _update_done_label_if_completed(
         repo=repo,
         pr_number=pr_number,
         has_review_targets=has_review_targets,
@@ -3721,7 +3740,8 @@ def _process_single_pr(
         enabled_pr_label_keys=enabled_pr_label_keys,
         ci_empty_as_success=ci_empty_as_success,
         ci_empty_grace_minutes=ci_empty_grace_minutes,
-    ):
+    )
+    if _done_updated:
         modified_prs.add((repo, pr_number))
     _cacheable = (
         not dry_run
@@ -3729,6 +3749,7 @@ def _process_single_pr(
         and not review_fix_failed
         and not bool(active_rate_limit)
         and not bool(active_review_failed)
+        and not _ci_grace
     )
     if commits_by_phase:
         return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
