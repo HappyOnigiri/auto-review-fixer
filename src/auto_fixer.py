@@ -1914,7 +1914,12 @@ def _backfill_merged_labels(
 
 def _trigger_pr_auto_merge(
     repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
-) -> bool:
+) -> tuple[bool, bool]:
+    """Returns (merge_state_reached, modified).
+
+    merge_state_reached: True if the GH merge command succeeded or the PR is already merged.
+    modified: True if a label was actually added/changed.
+    """
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     cmd = ["gh", "pr", "merge", str(pr_number), "--repo", repo, "--auto", "--merge"]
     result = subprocess.run(
@@ -1927,13 +1932,14 @@ def _trigger_pr_auto_merge(
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        return _edit_pr_label(
+        modified = _edit_pr_label(
             repo,
             pr_number,
             add=True,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled_pr_label_keys,
         )
+        return True, modified
 
     stderr_text = (result.stderr or "").strip()
     stdout_text = (result.stdout or "").strip()
@@ -1941,21 +1947,21 @@ def _trigger_pr_auto_merge(
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        _edit_pr_label(
+        modified = _edit_pr_label(
             repo,
             pr_number,
             add=True,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled_pr_label_keys,
         )
-        return True
+        return True, modified
 
     details = stderr_text or stdout_text or "unknown error"
     print(
         f"Warning: failed to auto-merge PR #{pr_number}: {details}",
         file=sys.stderr,
     )
-    return False
+    return False, False
 
 
 def _are_all_ci_checks_successful(repo: str, pr_number: int) -> bool:
@@ -2474,15 +2480,14 @@ def _update_done_label_if_completed(
         merge_triggered = False
         if auto_merge_enabled:
             if enabled_pr_label_keys is None:
-                merge_requested = _trigger_pr_auto_merge(repo, pr_number)
+                merge_state_reached, label_modified = _trigger_pr_auto_merge(repo, pr_number)
             else:
-                merge_requested = _trigger_pr_auto_merge(
+                merge_state_reached, label_modified = _trigger_pr_auto_merge(
                     repo,
                     pr_number,
                     enabled_pr_label_keys=enabled_pr_label_keys,
                 )
-            if merge_requested:
-                merge_triggered = True
+            if merge_state_reached:
                 if enabled_pr_label_keys is None:
                     _mark_pr_merged_label_if_needed(repo, pr_number)
                 else:
@@ -2491,6 +2496,7 @@ def _update_done_label_if_completed(
                         pr_number,
                         enabled_pr_label_keys=enabled_pr_label_keys,
                     )
+            merge_triggered = label_modified
         return done_changed or merge_triggered
 
     print(
