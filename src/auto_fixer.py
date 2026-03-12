@@ -1564,7 +1564,7 @@ def _edit_pr_label(
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     label_key = PR_LABEL_NAME_TO_KEY.get(label)
     if label_key is not None and label_key not in enabled:
-        return True
+        return False
 
     label_arg = "--add-label" if add else "--remove-label"
     cmd = [
