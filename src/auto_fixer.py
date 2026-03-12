@@ -2040,7 +2040,7 @@ def _are_all_ci_checks_successful(
         head_sha := (head_result.stdout or "").strip()
     ):
         print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
-        return False
+        return None
 
     # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
     result = subprocess.run(
@@ -2096,7 +2096,7 @@ def _are_all_ci_checks_successful(
             print(
                 f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling."
             )
-            return False
+            return None
         try:
             # jq outputs JSON string; parse to get raw date string
             if date_str.startswith('"') and date_str.endswith('"'):
