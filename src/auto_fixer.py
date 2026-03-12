@@ -28,6 +28,11 @@ DEFAULT_REFIX_CLAUDE_SETTINGS: dict[str, Any] = {
     "attribution": {"commit": "", "pr": ""},
     "includeCoAuthoredBy": False,
 }
+PHASE_REPORT_TITLES = {
+    "ci-fix": "CI 修正",
+    "merge-conflict-resolution": "コンフリクト解消",
+    "review-fix": "レビュー修正",
+}
 
 # --list-commands は他依存なしで表示するため、先に処理して exit
 if "--list-commands" in sys.argv or "--list-commands-en" in sys.argv:
@@ -130,6 +135,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "fix": "sonnet",
     },
     "ci_log_max_lines": 120,
+    "execution_report": False,
     "auto_merge": False,
     "coderabbit_auto_resume": False,
     "coderabbit_auto_resume_max_per_run": 1,
@@ -143,6 +149,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "models",
     "ci_log_max_lines",
+    "execution_report",
     "auto_merge",
     "coderabbit_auto_resume",
     "coderabbit_auto_resume_max_per_run",
@@ -228,6 +235,7 @@ def load_config(filepath: str) -> dict[str, Any]:
     config: dict[str, Any] = {
         "models": dict(DEFAULT_CONFIG["models"]),
         "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
+        "execution_report": DEFAULT_CONFIG["execution_report"],
         "auto_merge": DEFAULT_CONFIG["auto_merge"],
         "coderabbit_auto_resume": DEFAULT_CONFIG["coderabbit_auto_resume"],
         "coderabbit_auto_resume_max_per_run": DEFAULT_CONFIG[
@@ -272,6 +280,13 @@ def load_config(filepath: str) -> dict[str, Any]:
         except (TypeError, ValueError):
             print("Error: ci_log_max_lines must be an integer.", file=sys.stderr)
             sys.exit(1)
+
+    execution_report = parsed.get("execution_report")
+    if execution_report is not None:
+        if not isinstance(execution_report, bool):
+            print("Error: execution_report must be a boolean.", file=sys.stderr)
+            sys.exit(1)
+        config["execution_report"] = execution_report
 
     auto_merge = parsed.get("auto_merge")
     if auto_merge is not None:
@@ -523,30 +538,101 @@ def _build_phase_report_path(
     return str((reports_dir / f"pr_{pr_number}_{phase_label}.md").resolve())
 
 
-def _emit_runtime_pain_report(
-    *, report_path: str, phase_label: str, silent: bool, claude_failed: bool = False
-) -> None:
-    """Print runtime pain report content when --silent is not set, or when Claude failed."""
-    if silent and not claude_failed:
-        return
+def _read_runtime_report_content(report_path: str | None) -> str:
+    """Read a runtime report file and return normalized content."""
+    if not report_path:
+        return ""
     report_file = Path(report_path)
-    print(f"[report {phase_label}] {report_file}", file=sys.stderr)
     if not report_file.exists():
-        print("  report file not found.", file=sys.stderr)
+        return ""
+    return report_file.read_text(encoding="utf-8").strip()
+
+
+def _format_report_for_state_comment(phase_label: str, report_content: str) -> str:
+    """Format one phase report block for the PR state comment."""
+    normalized_content = report_content.strip()
+    if not normalized_content:
+        return ""
+    phase_title = PHASE_REPORT_TITLES.get(phase_label, phase_label)
+    return f"#### {phase_title}\n\n{normalized_content}"
+
+
+def _capture_state_comment_report(
+    report_blocks: list[str], phase_label: str, report_path: str | None
+) -> None:
+    """Capture a phase report for later embedding in the PR state comment."""
+    if not report_path:
         return
     try:
-        content = report_file.read_text(encoding="utf-8").strip()
-    except Exception as e:
-        print(f"  failed to read report file: {e}", file=sys.stderr)
+        report_content = _read_runtime_report_content(report_path)
+    except OSError as exc:
+        print(
+            f"Warning: failed to read report for state comment ({phase_label}): {exc}",
+            file=sys.stderr,
+        )
         return
+    block = _format_report_for_state_comment(phase_label, report_content)
+    if block:
+        report_blocks.append(block)
 
-    if not content:
-        print("  report file is empty.", file=sys.stderr)
+
+def _merge_state_comment_report_body(
+    existing_report_body: str, new_report_blocks: list[str]
+) -> str:
+    """Merge new execution reports ahead of any existing report body."""
+    parts = [block.strip() for block in new_report_blocks if block.strip()]
+    existing = (existing_report_body or "").strip()
+    if existing:
+        parts.append(existing)
+    return "\n\n".join(parts)
+
+
+def _persist_state_comment_report_if_changed(
+    repo: str,
+    pr_number: int,
+    state_comment: StateComment,
+    report_body: str,
+) -> bool:
+    """Persist a report-only state comment update when the content changed."""
+    normalized_report_body = (report_body or "").strip()
+    if normalized_report_body == state_comment.report_body.strip():
+        return False
+    upsert_state_comment(repo, pr_number, [], report_body=normalized_report_body)
+    return True
+
+
+def _emit_runtime_pain_report(
+    *,
+    report_path: str | None,
+    phase_label: str,
+    silent: bool,
+    claude_failed: bool = False,
+) -> None:
+    """Print runtime pain report content when --silent is not set, or when Claude failed."""
+    if not report_path or (silent and not claude_failed):
         return
+    report_file = Path(report_path)
+    _log_group(f"Runtime report ({phase_label})")
+    try:
+        print(f"[report {phase_label}] {report_file}", file=sys.stderr)
+        if not report_file.exists():
+            print("  no report was recorded.", file=sys.stderr)
+            return
+        try:
+            content = report_file.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            print(f"  failed to read report file: {e}", file=sys.stderr)
+            return
 
-    print("  --- begin report ---", file=sys.stderr)
-    print(content, file=sys.stderr)
-    print("  --- end report ---", file=sys.stderr)
+        if not content:
+            print("  no report was recorded.", file=sys.stderr)
+            return
+
+        print("  --- begin report ---", file=sys.stderr)
+        print(content, file=sys.stderr)
+        print("  --- end report ---", file=sys.stderr)
+    finally:
+        _log_endgroup()
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -968,25 +1054,39 @@ def _run_claude_prompt(
     *,
     works_dir: Path,
     prompt: str,
-    report_path: str,
+    report_path: str | None,
+    report_enabled: bool,
     model: str,
     silent: bool,
     phase_label: str,
 ) -> str:
-    runtime_pain_report_instruction = f"""<runtime_pain_report>
+    prompt_with_report_instruction = prompt.rstrip() + "\n"
+    if report_enabled:
+        if not report_path:
+            raise ValueError("report_path is required when execution_report is enabled")
+        Path(report_path).unlink(missing_ok=True)
+        runtime_pain_report_instruction = f"""<runtime_pain_report>
 以下は実行時の課題レポート作成指示です。必ず守ってください。
 - 出力先ファイル: {_xml_escape(report_path)}
 - 出力タイミング: 作業ステップごと、または問題発生時に随時追記すること（作業の最後にまとめて書くのは禁止）
 - 追記方法: Bash ツール等で append すること（例: echo "..." >> {shlex.quote(report_path)}）
+- 各追記エントリは次の形式を必ず守ること:
+  ### YYYY-MM-DD hh:mm:ss UTC {{file_path}} {{title}}
+
+  {{details}}
+- `YYYY-MM-DD hh:mm:ss UTC` は UTC で記録すること
+- `{{file_path}}` には関連するファイルパスを記載すること。該当しない場合は `-` を使うこと
+- `{{title}}` には短い件名を記載すること
+- `{{details}}` には Markdown で具体的な状況を記載すること
 - 報告項目:
   1. ツールのセットアップやコマンド実行時の失敗・試行錯誤
   2. 実装にあたって不足していたコンテキストやファイル
   3. レビューコメントの曖昧さ、解釈に迷った点
   4. 妥協した点や、人間の再確認が必要と思われる不確実な修正
 </runtime_pain_report>"""
-    prompt_with_report_instruction = (
-        f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
-    )
+        prompt_with_report_instruction = (
+            f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
+        )
 
     prompt_file = works_dir / "_review_prompt.md"
     prompt_file.write_text(prompt_with_report_instruction, encoding="utf-8")
@@ -1004,7 +1104,8 @@ def _run_claude_prompt(
     print(f"  cwd: {works_dir}")
     print(f"  command: {shlex.join(claude_cmd)}")
     print(f"  prompt file: {prompt_file}")
-    print(f"  runtime pain report file: {report_path}")
+    if report_enabled and report_path:
+        print(f"  runtime pain report file: {report_path}")
     if not silent:
         print("-" * SEPARATOR_LEN)
         print(prompt_with_report_instruction)
@@ -2122,6 +2223,7 @@ def _process_single_pr(
     fix_model: str,
     summarize_model: str,
     ci_log_max_lines: int,
+    execution_report_enabled: bool,
     auto_merge_enabled: bool,
     coderabbit_auto_resume_enabled: bool,
     auto_resume_run_state: dict[str, int],
@@ -2381,6 +2483,7 @@ def _process_single_pr(
         )
 
     commits_by_phase: list[str] = []
+    report_blocks: list[str] = []
     review_fix_started = False
     review_fix_added_commits = False
     review_fix_failed = False
@@ -2479,7 +2582,9 @@ def _process_single_pr(
     try:
         _log_group("Git repository setup")
         works_dir = prepare_repository(repo, branch_name, user_name, user_email)
-        reports_dir = _prepare_reports_dir(repo, works_dir)
+        reports_dir = (
+            _prepare_reports_dir(repo, works_dir) if execution_report_enabled else None
+        )
         _log_endgroup()
     except Exception as e:
         _log_endgroup()
@@ -2520,17 +2625,21 @@ def _process_single_pr(
         else:
             print(f"[ci-fix] PR #{pr_number}: running CI-only Claude fix phase")
             try:
-                ci_report_path = _build_phase_report_path(
-                    reports_dir, pr_number, "ci-fix"
+                ci_report_path = (
+                    _build_phase_report_path(reports_dir, pr_number, "ci-fix")
+                    if reports_dir is not None
+                    else None
                 )
                 ci_commits = _run_claude_prompt(
                     works_dir=works_dir,
                     prompt=ci_fix_prompt,
                     report_path=ci_report_path,
+                    report_enabled=execution_report_enabled,
                     model=fix_model,
                     silent=True,
                     phase_label="ci-fix",
                 )
+                _capture_state_comment_report(report_blocks, "ci-fix", ci_report_path)
             except Exception as e:
                 print(
                     f"[ci-fix:error] PR #{pr_number}: Claude CI-fix phase failed",
@@ -2609,16 +2718,26 @@ def _process_single_pr(
                     pr_number, pr_data.get("title", ""), base_branch
                 )
                 try:
-                    conflict_report_path = _build_phase_report_path(
-                        reports_dir, pr_number, "merge-conflict-resolution"
+                    conflict_report_path = (
+                        _build_phase_report_path(
+                            reports_dir, pr_number, "merge-conflict-resolution"
+                        )
+                        if reports_dir is not None
+                        else None
                     )
                     conflict_commits = _run_claude_prompt(
                         works_dir=works_dir,
                         prompt=conflict_prompt,
                         report_path=conflict_report_path,
+                        report_enabled=execution_report_enabled,
                         model=fix_model,
                         silent=silent,
                         phase_label="merge-conflict-resolution",
+                    )
+                    _capture_state_comment_report(
+                        report_blocks,
+                        "merge-conflict-resolution",
+                        conflict_report_path,
                     )
                 except Exception as e:
                     print(
@@ -2656,6 +2775,20 @@ def _process_single_pr(
         )
 
     if not has_review_targets:
+        if execution_report_enabled:
+            merged_report_body = _merge_state_comment_report_body(
+                state_comment.report_body, report_blocks
+            )
+            try:
+                if _persist_state_comment_report_if_changed(
+                    repo, pr_number, state_comment, merged_report_body
+                ):
+                    state_saved = True
+            except Exception as e:
+                print(
+                    f"Warning: failed to update report section for PR #{pr_number}: {e}",
+                    file=sys.stderr,
+                )
         if ci_commits and not is_behind:
             unpushed_check = subprocess.run(
                 ["git", "log", "--oneline", f"origin/{branch_name}..HEAD"],
@@ -2713,6 +2846,20 @@ def _process_single_pr(
         )
 
     if skip_review_fix:
+        if execution_report_enabled:
+            merged_report_body = _merge_state_comment_report_body(
+                state_comment.report_body, report_blocks
+            )
+            try:
+                if _persist_state_comment_report_if_changed(
+                    repo, pr_number, state_comment, merged_report_body
+                ):
+                    state_saved = True
+            except Exception as e:
+                print(
+                    f"Warning: failed to update report section for PR #{pr_number}: {e}",
+                    file=sys.stderr,
+                )
         print(
             f"Skipping review-fix for PR #{pr_number} because {skip_review_fix_reason}; "
             "CI repair and merge-base handling already ran."
@@ -2815,16 +2962,22 @@ def _process_single_pr(
             _set_pr_running_label(repo, pr_number, pr_data=pr_data)
             _remove_running_on_exit = True
             review_fix_started = True
-            review_report_path = _build_phase_report_path(
-                reports_dir, pr_number, "review-fix"
+            review_report_path = (
+                _build_phase_report_path(reports_dir, pr_number, "review-fix")
+                if reports_dir is not None
+                else None
             )
             review_commits = _run_claude_prompt(
                 works_dir=works_dir,
                 prompt=prompt,
                 report_path=review_report_path,
+                report_enabled=execution_report_enabled,
                 model=fix_model,
                 silent=silent,
                 phase_label="review-fix",
+            )
+            _capture_state_comment_report(
+                report_blocks, "review-fix", review_report_path
             )
             if review_commits:
                 review_fix_added_commits = True
@@ -2941,9 +3094,24 @@ def _process_single_pr(
                     print(
                         f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)"
                     )
-                if state_entries:
+                report_body_to_save = (
+                    _merge_state_comment_report_body(
+                        state_comment.report_body, report_blocks
+                    )
+                    if execution_report_enabled
+                    else ""
+                )
+                should_write_state_comment = bool(state_entries) or (
+                    report_body_to_save != state_comment.report_body.strip()
+                )
+                if should_write_state_comment:
                     try:
-                        upsert_state_comment(repo, pr_number, state_entries)
+                        upsert_state_comment(
+                            repo,
+                            pr_number,
+                            state_entries,
+                            report_body=report_body_to_save,
+                        )
                         state_saved = True
                     except Exception as e:
                         print(
@@ -3020,6 +3188,9 @@ def process_repo(
     fix_model = str(model_config.get("fix", DEFAULT_CONFIG["models"]["fix"])).strip()
     ci_log_max_lines = int(
         runtime_config.get("ci_log_max_lines", DEFAULT_CONFIG["ci_log_max_lines"])
+    )
+    execution_report_enabled = bool(
+        runtime_config.get("execution_report", DEFAULT_CONFIG["execution_report"])
     )
     auto_merge_enabled = bool(
         runtime_config.get("auto_merge", DEFAULT_CONFIG["auto_merge"])
@@ -3133,6 +3304,7 @@ def process_repo(
                     fix_model=fix_model,
                     summarize_model=summarize_model,
                     ci_log_max_lines=ci_log_max_lines,
+                    execution_report_enabled=execution_report_enabled,
                     auto_merge_enabled=auto_merge_enabled,
                     coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
                     auto_resume_run_state=auto_resume_run_state,
