@@ -1804,6 +1804,7 @@ class TestRefixLabeling:
         mock_edit.assert_has_calls(
             [
                 call("owner/repo", 12, add=False, label="refix:running"),
+                call("owner/repo", 12, add=False, label="refix:auto-merge-requested"),
                 call("owner/repo", 12, add=True, label="refix:merged"),
             ]
         )
@@ -1816,7 +1817,7 @@ class TestRefixLabeling:
             ok = auto_fixer._trigger_pr_auto_merge("owner/repo", 7)
 
         assert ok is True
-        mock_run.assert_called_once_with(
+        mock_run.assert_any_call(
             ["gh", "pr", "merge", "7", "--repo", "owner/repo", "--auto", "--merge"],
             capture_output=True,
             text=True,
@@ -1838,8 +1839,7 @@ class TestRefixLabeling:
     def test_mark_pr_merged_label_if_needed_adds_label_for_done_merged_pr(self):
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
-            "labels": [{"name": "refix:done"}],
-            "autoMergeRequest": {"enabledBy": {"login": "bot"}},
+            "labels": [{"name": "refix:done"}, {"name": "refix:auto-merge-requested"}],
         }
         with (
             patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr="")),
@@ -1852,13 +1852,26 @@ class TestRefixLabeling:
     def test_mark_pr_merged_label_if_needed_skips_when_not_merged(self):
         pr_view = {
             "mergedAt": None,
-            "labels": [{"name": "refix:done"}],
+            "labels": [{"name": "refix:done"}, {"name": "refix:auto-merge-requested"}],
         }
         with (
             patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr="")),
             patch("auto_fixer._set_pr_merged_label") as mock_set_merged,
         ):
             ok = auto_fixer._mark_pr_merged_label_if_needed("owner/repo", 22)
+        assert ok is False
+        mock_set_merged.assert_not_called()
+
+    def test_mark_pr_merged_label_if_needed_skips_when_auto_merge_not_requested(self):
+        pr_view = {
+            "mergedAt": "2026-03-11T00:00:00Z",
+            "labels": [{"name": "refix:done"}],
+        }
+        with (
+            patch("auto_fixer.subprocess.run", return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr="")),
+            patch("auto_fixer._set_pr_merged_label") as mock_set_merged,
+        ):
+            ok = auto_fixer._mark_pr_merged_label_if_needed("owner/repo", 23)
         assert ok is False
         mock_set_merged.assert_not_called()
 
