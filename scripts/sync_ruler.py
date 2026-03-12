@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+
 def main():
     agents_md = "AGENTS.md"
 
@@ -59,6 +60,7 @@ def main():
     except Exception as e:
         print(f"Failed to clean up {agents_md}: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

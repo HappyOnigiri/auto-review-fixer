@@ -1,0 +1,13 @@
+{
+  "include": ["src", "tests", "scripts"],
+  "exclude": ["works", ".venv", "tmp"],
+  "pythonVersion": "3.12",
+  "pythonPlatform": "All",
+  "typeCheckingMode": "basic",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": ["src"]
+    }
+  ]
+}

@@ -64,9 +64,7 @@ def summarize_reviews(
     if not items:
         return {}
 
-    items_text = "\n\n".join(
-        f"=== ID: {it['id']} ===\n{it['body']}" for it in items
-    )
+    items_text = "\n\n".join(f"=== ID: {it['id']} ===\n{it['body']}" for it in items)
     prompt = f"""以下のコードレビューコメントを、AIエージェントがコードを改修するために必要な情報を保ちながら日本語で要約してください。
 
 要約のルール:
@@ -83,6 +81,9 @@ def summarize_reviews(
 コメント一覧:
 {items_text}"""
 
+    model = (model or os.environ.get("REFIX_MODEL_SUMMARIZE", "")).strip() or "haiku"
+    _timeout = int(os.environ.get("REFIX_SUMMARIZER_TIMEOUT_SEC", "300"))
+
     # Write prompt to a temp file to avoid Windows command-line length limits
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".md", encoding="utf-8", delete=False
@@ -92,13 +93,13 @@ def summarize_reviews(
 
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
-
-    model = (model or os.environ.get("REFIX_MODEL_SUMMARIZE", "")).strip() or "haiku"
     summarizer_cmd = [
         "claude",
-        "--model", model,
+        "--model",
+        model,
         "--dangerously-skip-permissions",
-        "-p", f"Read the file {prompt_path} and follow the instructions in it.",
+        "-p",
+        f"Read the file {prompt_path} and follow the instructions in it.",
     ]
 
     try:
@@ -120,7 +121,15 @@ def summarize_reviews(
                 encoding="utf-8",
                 errors="replace",
                 env=env,
+                timeout=_timeout,
             )
+        except subprocess.TimeoutExpired as e:
+            raise ClaudeCommandFailedError(
+                phase="summarization",
+                returncode=1,
+                stdout="",
+                stderr=f"Timed out after {_timeout}s",
+            ) from e
         except Exception as e:
             if is_claude_usage_limit_error(str(e)):
                 raise ClaudeUsageLimitError(
@@ -139,7 +148,9 @@ def summarize_reviews(
         Path(prompt_path).unlink(missing_ok=True)
 
     if not silent:
-        _print_raw_summarizer_output(result.stdout, result.stderr, returncode=result.returncode)
+        _print_raw_summarizer_output(
+            result.stdout, result.stderr, returncode=result.returncode
+        )
 
     if result.returncode != 0:
         if is_claude_usage_limit_error(result.stdout, result.stderr):

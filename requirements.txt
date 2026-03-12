@@ -1,3 +1,6 @@
 python-dotenv
 pytest
 PyYAML
+mypy
+ruff
+types-PyYAML

@@ -94,12 +94,23 @@ def test_render_state_comment_trims_oldest_rows_to_fit_limit(monkeypatch):
 
     # Total body (including archived-ids footer) must fit within the limit
     assert len(body) <= 1000
-    visible_part = body.split("<!-- archived-ids:")[0] if "<!-- archived-ids:" in body else body
+    visible_part = (
+        body.split("<!-- archived-ids:")[0] if "<!-- archived-ids:" in body else body
+    )
     assert "discussion_r19" in visible_part
     assert "discussion_r0" not in visible_part
     # Trimmed IDs are preserved in the hidden archived-ids section
     assert "<!-- archived-ids:" in body
     assert "discussion_r0" in body
+
+
+def test_render_state_comment_raises_on_archived_id_overflow(monkeypatch):
+    monkeypatch.setattr(state_manager, "STATE_COMMENT_MAX_LENGTH", 500)
+    # Fill the comment body to near the limit using many archived IDs
+    # so that not all of them can fit in the footer.
+    archived = {f"discussion_r{i}" for i in range(50)}
+    with pytest.raises(RuntimeError, match="archived IDs"):
+        state_manager.render_state_comment([], archived_ids=archived)
 
 
 def test_render_state_comment_hides_description_in_html_comment():
@@ -137,7 +148,14 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
     )
     result = Mock(
         returncode=0,
-        stdout=json.dumps([[{"id": 1, "body": "hello"}, {"id": 2, "body": state_body, "user": {"login": "test-bot"}}]]),
+        stdout=json.dumps(
+            [
+                [
+                    {"id": 1, "body": "hello"},
+                    {"id": 2, "body": state_body, "user": {"login": "test-bot"}},
+                ]
+            ]
+        ),
         stderr="",
     )
 
@@ -170,7 +188,10 @@ def test_upsert_state_comment_creates_when_missing():
                 archived_ids=set(),
             ),
         ),
-        patch("state_manager.subprocess.run", return_value=Mock(returncode=0, stdout="", stderr="")) as mock_run,
+        patch(
+            "state_manager.subprocess.run",
+            return_value=Mock(returncode=0, stdout="", stderr=""),
+        ) as mock_run,
     ):
         state_manager.upsert_state_comment(
             "owner/repo",
@@ -206,7 +227,10 @@ def test_upsert_state_comment_updates_when_existing():
 
     with (
         patch("state_manager.load_state_comment", return_value=existing),
-        patch("state_manager.subprocess.run", return_value=Mock(returncode=0, stdout="", stderr="")) as mock_run,
+        patch(
+            "state_manager.subprocess.run",
+            return_value=Mock(returncode=0, stdout="", stderr=""),
+        ) as mock_run,
     ):
         state_manager.upsert_state_comment(
             "owner/repo",

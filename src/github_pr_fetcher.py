@@ -35,7 +35,9 @@ def fetch_open_prs(repo: str, limit: int = 1000) -> list[dict[str, Any]]:
         str(limit),
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
+    )
 
     if result.returncode != 0:
         raise RuntimeError(f"Error fetching PRs for '{repo}': {result.stderr.strip()}")

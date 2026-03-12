@@ -20,7 +20,9 @@ class TestSummarizeReviews:
 
     def test_valid_json_array_success(self):
         """Pure JSON array parses correctly."""
-        fake_stdout = '[{"id": "r1", "summary": "s1"}, {"id": "discussion_r2", "summary": "s2"}]'
+        fake_stdout = (
+            '[{"id": "r1", "summary": "s1"}, {"id": "discussion_r2", "summary": "s2"}]'
+        )
         with patch("summarizer.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -126,7 +128,10 @@ Hope this helps!"""
         idx_stderr = out.index(stderr_marker)
         assert out[idx_stdout:idx_stderr] == fake_stdout
         idx_stderr_content = idx_stderr + len(stderr_marker)
-        assert out[idx_stderr_content : idx_stderr_content + len(fake_stderr)] == fake_stderr
+        assert (
+            out[idx_stderr_content : idx_stderr_content + len(fake_stderr)]
+            == fake_stderr
+        )
 
     def test_success_silent_does_not_log_raw_output(self):
         """Silent mode suppresses raw output logs even on success."""
