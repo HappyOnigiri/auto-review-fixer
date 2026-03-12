@@ -200,7 +200,11 @@ def summarize_reviews(
         if parsed is None:
             first_bracket = text.find("[")
             last_bracket = text.rfind("]")
-            if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+            if (
+                first_bracket != -1
+                and last_bracket != -1
+                and last_bracket > first_bracket
+            ):
                 candidate = text[first_bracket : last_bracket + 1]
                 try:
                     obj = json.loads(candidate)

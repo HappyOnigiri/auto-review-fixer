@@ -105,12 +105,14 @@ REFIX_AUTO_MERGE_REQUESTED_LABEL = "refix:auto-merge-requested"
 CODERABBIT_PROCESSING_MARKER = "Currently processing new changes in this PR."
 CODERABBIT_RATE_LIMIT_MARKER = "Rate limit exceeded"
 CODERABBIT_REVIEW_FAILED_MARKER = "## Review failed"
-CODERABBIT_REVIEW_FAILED_HEAD_CHANGED_MARKER = "The head commit changed during the review"
+CODERABBIT_REVIEW_FAILED_HEAD_CHANGED_MARKER = (
+    "The head commit changed during the review"
+)
 CODERABBIT_RESUME_COMMENT = "@coderabbitai resume"
 SUCCESSFUL_CI_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 REFIX_RUNNING_LABEL_COLOR = "FBCA04"
 REFIX_DONE_LABEL_COLOR = "0E8A16"
-REFIX_MERGED_LABEL_COLOR = "1D76DB"
+REFIX_MERGED_LABEL_COLOR = "6F42C1"  # GitHub merge icon purple
 REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR = "C2E0C6"
 FAILED_CI_CONCLUSIONS = {
     "FAILURE",
@@ -514,7 +516,9 @@ def _prepare_reports_dir(repo: str, works_dir: Path) -> Path:
     return reports_dir
 
 
-def _build_phase_report_path(reports_dir: Path, pr_number: int, phase_label: str) -> str:
+def _build_phase_report_path(
+    reports_dir: Path, pr_number: int, phase_label: str
+) -> str:
     """Build an absolute report file path for a PR phase."""
     return str((reports_dir / f"pr_{pr_number}_{phase_label}.md").resolve())
 
@@ -980,7 +984,9 @@ def _run_claude_prompt(
   3. レビューコメントの曖昧さ、解釈に迷った点
   4. 妥協した点や、人間の再確認が必要と思われる不確実な修正
 </runtime_pain_report>"""
-    prompt_with_report_instruction = f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
+    prompt_with_report_instruction = (
+        f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
+    )
 
     prompt_file = works_dir / "_review_prompt.md"
     prompt_file.write_text(prompt_with_report_instruction, encoding="utf-8")
@@ -1016,8 +1022,10 @@ def _run_claude_prompt(
             )
             if head_result.returncode != 0:
                 raise subprocess.CalledProcessError(
-                    head_result.returncode, ["git", "rev-parse", "HEAD"],
-                    output=head_result.stdout, stderr=head_result.stderr,
+                    head_result.returncode,
+                    ["git", "rev-parse", "HEAD"],
+                    output=head_result.stdout,
+                    stderr=head_result.stderr,
                 )
             head_before = head_result.stdout.strip()
 
@@ -1068,7 +1076,13 @@ def _run_claude_prompt(
             if new_commits_result.returncode != 0:
                 raise subprocess.CalledProcessError(
                     new_commits_result.returncode,
-                    ["git", "log", "--oneline", "--first-parent", f"{head_before}..HEAD"],
+                    [
+                        "git",
+                        "log",
+                        "--oneline",
+                        "--first-parent",
+                        f"{head_before}..HEAD",
+                    ],
                     output=new_commits_result.stdout,
                     stderr=new_commits_result.stderr,
                 )
@@ -1423,7 +1437,16 @@ def _pr_has_label(pr_data: dict[str, Any], label_name: str) -> bool:
 
 def _mark_pr_merged_label_if_needed(repo: str, pr_number: int) -> bool:
     """Add refix:merged label when PR is merged and eligible."""
-    cmd = ["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "mergedAt,labels"]
+    cmd = [
+        "gh",
+        "pr",
+        "view",
+        str(pr_number),
+        "--repo",
+        repo,
+        "--json",
+        "mergedAt,labels",
+    ]
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -1530,7 +1553,9 @@ def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
     )
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
-        _edit_pr_label(repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
+        _edit_pr_label(
+            repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
+        )
         return True
 
     stderr_text = (result.stderr or "").strip()
@@ -1538,7 +1563,9 @@ def _trigger_pr_auto_merge(repo: str, pr_number: int) -> bool:
     combined_lower = f"{stdout_text}\n{stderr_text}".lower()
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
-        _edit_pr_label(repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL)
+        _edit_pr_label(
+            repo, pr_number, add=True, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
+        )
         return True
 
     details = stderr_text or stdout_text or "unknown error"
@@ -1700,7 +1727,9 @@ def _extract_coderabbit_rate_limit_status(
     }
 
 
-def _extract_coderabbit_review_failed_status(comment: dict[str, Any]) -> dict[str, Any] | None:
+def _extract_coderabbit_review_failed_status(
+    comment: dict[str, Any],
+) -> dict[str, Any] | None:
     body = str(comment.get("body") or "")
     body_lower = body.lower()
     if CODERABBIT_REVIEW_FAILED_MARKER.lower() not in body_lower:
@@ -1800,19 +1829,29 @@ def _get_active_coderabbit_review_failed(
         review_failed_status = _extract_coderabbit_review_failed_status(comment)
         if review_failed_status is None:
             continue
-        if latest_review_failed is None or review_failed_status["updated_at"] > latest_review_failed["updated_at"]:
+        if (
+            latest_review_failed is None
+            or review_failed_status["updated_at"] > latest_review_failed["updated_at"]
+        ):
             latest_review_failed = review_failed_status
 
     if latest_review_failed is None:
         return None
 
-    latest_activity = _latest_coderabbit_activity_at(pr_data, review_comments, issue_comments)
-    if latest_activity is not None and latest_activity > latest_review_failed["updated_at"]:
+    latest_activity = _latest_coderabbit_activity_at(
+        pr_data, review_comments, issue_comments
+    )
+    if (
+        latest_activity is not None
+        and latest_activity > latest_review_failed["updated_at"]
+    ):
         return None
     return latest_review_failed
 
 
-def _has_resume_comment_after(issue_comments: list[dict[str, Any]], threshold: datetime) -> bool:
+def _has_resume_comment_after(
+    issue_comments: list[dict[str, Any]], threshold: datetime
+) -> bool:
     normalized_target = CODERABBIT_RESUME_COMMENT.strip().lower()
     for comment in issue_comments:
         body = str(comment.get("body") or "").strip().lower()
@@ -1934,7 +1973,9 @@ def _maybe_auto_resume_coderabbit_review_failed(
     if review_failed_status is None:
         return False
     if not auto_resume_enabled:
-        print(f"CodeRabbit review failure detected for PR #{pr_number}; auto resume is disabled.")
+        print(
+            f"CodeRabbit review failure detected for PR #{pr_number}; auto resume is disabled."
+        )
         return False
     if remaining_resume_posts <= 0:
         print(
@@ -1945,14 +1986,20 @@ def _maybe_auto_resume_coderabbit_review_failed(
 
     threshold = review_failed_status["updated_at"]
     if _has_resume_comment_after(issue_comments, threshold):
-        print(f"Resume comment already exists after the latest CodeRabbit review-failed notice on PR #{pr_number}.")
+        print(
+            f"Resume comment already exists after the latest CodeRabbit review-failed notice on PR #{pr_number}."
+        )
         return False
 
     if dry_run:
-        print(f"[DRY RUN] Would post CodeRabbit resume comment to PR #{pr_number}: {CODERABBIT_RESUME_COMMENT}")
+        print(
+            f"[DRY RUN] Would post CodeRabbit resume comment to PR #{pr_number}: {CODERABBIT_RESUME_COMMENT}"
+        )
         return False
     if summarize_only:
-        print(f"Summarize-only mode: skip posting CodeRabbit resume comment to PR #{pr_number}.")
+        print(
+            f"Summarize-only mode: skip posting CodeRabbit resume comment to PR #{pr_number}."
+        )
         return False
 
     return _post_issue_comment(repo, pr_number, CODERABBIT_RESUME_COMMENT)
@@ -2005,7 +2052,9 @@ def _update_done_label_if_completed(
         is_completed = False
 
     if is_completed and coderabbit_review_failed_active:
-        print(f"CodeRabbit review failed status is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}.")
+        print(
+            f"CodeRabbit review failed status is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}."
+        )
         is_completed = False
 
     if is_completed and not _are_all_ci_checks_successful(repo, pr_number):
@@ -2073,7 +2122,10 @@ def _process_single_pr(
         return False, False, None
 
     # A上限チェック: 変更PR数の上限に達した場合、PR全体をスキップ
-    if max_modified_prs > 0 and len(modified_prs) + backfilled_count >= max_modified_prs:
+    if (
+        max_modified_prs > 0
+        and len(modified_prs) + backfilled_count >= max_modified_prs
+    ):
         print(
             f"\nSkipping PR #{pr_number}: max_modified_prs_per_run limit reached ({max_modified_prs})"
         )
@@ -2222,7 +2274,9 @@ def _process_single_pr(
             _set_pr_running_label(repo, pr_number)
             modified_prs.add((repo, pr_number))
         can_attempt_resume = True
-        if active_rate_limit and active_rate_limit["resume_after"] > datetime.now(timezone.utc):
+        if active_rate_limit and active_rate_limit["resume_after"] > datetime.now(
+            timezone.utc
+        ):
             can_attempt_resume = False
         if can_attempt_resume and not resume_comment_posted_for_pr:
             posted_review_failed_comment = _maybe_auto_resume_coderabbit_review_failed(
@@ -2240,7 +2294,9 @@ def _process_single_pr(
                 summarize_only=summarize_only,
             )
             if posted_review_failed_comment:
-                auto_resume_run_state["posted"] = int(auto_resume_run_state["posted"]) + 1
+                auto_resume_run_state["posted"] = (
+                    int(auto_resume_run_state["posted"]) + 1
+                )
                 coderabbit_resumed_prs.add((repo, pr_number))
 
     has_review_targets = bool(unresolved_reviews or unresolved_comments)
@@ -2428,7 +2484,9 @@ def _process_single_pr(
         else:
             print(f"[ci-fix] PR #{pr_number}: running CI-only Claude fix phase")
             try:
-                ci_report_path = _build_phase_report_path(reports_dir, pr_number, "ci-fix")
+                ci_report_path = _build_phase_report_path(
+                    reports_dir, pr_number, "ci-fix"
+                )
                 ci_commits = _run_claude_prompt(
                     works_dir=works_dir,
                     prompt=ci_fix_prompt,
@@ -2988,7 +3046,9 @@ def process_repo(
         global_claude_prs if global_claude_prs is not None else set()
     )
     coderabbit_resumed_prs: set[tuple[str, int]] = (
-        global_coderabbit_resumed_prs if global_coderabbit_resumed_prs is not None else set()
+        global_coderabbit_resumed_prs
+        if global_coderabbit_resumed_prs is not None
+        else set()
     )
     fetch_failed = False
     pr_fetch_failed = False
@@ -3014,30 +3074,32 @@ def process_repo(
     # NOTE: Do not skip based on refix:done label because base merge/conflict handling may still be required.
     for pr in prs:
         try:
-            this_pr_fetch_failed, count_as_processed, commits_entry = _process_single_pr(
-                pr=pr,
-                repo=repo,
-                dry_run=dry_run,
-                silent=silent,
-                summarize_only=summarize_only,
-                fix_model=fix_model,
-                summarize_model=summarize_model,
-                ci_log_max_lines=ci_log_max_lines,
-                auto_merge_enabled=auto_merge_enabled,
-                coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
-                auto_resume_run_state=auto_resume_run_state,
-                process_draft_prs=process_draft_prs,
-                state_comment_timezone=state_comment_timezone,
-                max_modified_prs=max_modified_prs,
-                max_committed_prs=max_committed_prs,
-                max_claude_prs=max_claude_prs,
-                modified_prs=modified_prs,
-                committed_prs=committed_prs,
-                claude_prs=claude_prs,
-                coderabbit_resumed_prs=coderabbit_resumed_prs,
-                user_name=user_name,
-                user_email=user_email,
-                backfilled_count=backfilled_count,
+            this_pr_fetch_failed, count_as_processed, commits_entry = (
+                _process_single_pr(
+                    pr=pr,
+                    repo=repo,
+                    dry_run=dry_run,
+                    silent=silent,
+                    summarize_only=summarize_only,
+                    fix_model=fix_model,
+                    summarize_model=summarize_model,
+                    ci_log_max_lines=ci_log_max_lines,
+                    auto_merge_enabled=auto_merge_enabled,
+                    coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
+                    auto_resume_run_state=auto_resume_run_state,
+                    process_draft_prs=process_draft_prs,
+                    state_comment_timezone=state_comment_timezone,
+                    max_modified_prs=max_modified_prs,
+                    max_committed_prs=max_committed_prs,
+                    max_claude_prs=max_claude_prs,
+                    modified_prs=modified_prs,
+                    committed_prs=committed_prs,
+                    claude_prs=claude_prs,
+                    coderabbit_resumed_prs=coderabbit_resumed_prs,
+                    user_name=user_name,
+                    user_email=user_email,
+                    backfilled_count=backfilled_count,
+                )
             )
             if this_pr_fetch_failed:
                 pr_fetch_failed = True
@@ -3048,7 +3110,10 @@ def process_repo(
         except ClaudeCommandFailedError:
             raise
         except Exception as e:
-            print(f"Error processing PR #{pr.get('number', '?')} (id={pr.get('id', '?')}): {e}", file=sys.stderr)
+            print(
+                f"Error processing PR #{pr.get('number', '?')} (id={pr.get('id', '?')}): {e}",
+                file=sys.stderr,
+            )
             pr_fetch_failed = True
             continue
 
