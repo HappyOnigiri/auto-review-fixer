@@ -507,8 +507,6 @@ class TestMain:
             patch.object(sys, "argv", ["auto_fixer.py", "--config", "custom.yaml"]),
             patch("auto_fixer.load_dotenv"),
             patch("auto_fixer.load_config", return_value=config) as mock_load_config,
-            patch("auto_fixer.load_cache", return_value={}),
-            patch("auto_fixer.save_cache"),
             patch("auto_fixer.process_repo", return_value=[]) as mock_process_repo,
         ):
             auto_fixer.main()
@@ -526,7 +524,6 @@ class TestMain:
             global_coderabbit_resumed_prs=set(),
             auto_resume_run_state=ANY,
             global_backfilled_count=[0],
-            updated_at_cache={},
         )
         assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
             "posted": 0,
@@ -553,8 +550,6 @@ class TestMain:
             patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
             patch("auto_fixer.load_config", return_value=config),
-            patch("auto_fixer.load_cache", return_value={}),
-            patch("auto_fixer.save_cache"),
             patch("auto_fixer.process_repo", side_effect=_process_repo_side_effect),
         ):
             auto_fixer.main()
@@ -579,8 +574,6 @@ class TestMain:
             patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
             patch("auto_fixer.load_config", return_value=config),
-            patch("auto_fixer.load_cache", return_value={}),
-            patch("auto_fixer.save_cache"),
             patch("auto_fixer.process_repo", return_value=[]),
         ):
             auto_fixer.main()
@@ -600,8 +593,6 @@ class TestMain:
             patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
             patch("auto_fixer.load_config", return_value=config),
-            patch("auto_fixer.load_cache", return_value={}),
-            patch("auto_fixer.save_cache"),
             patch(
                 "auto_fixer.process_repo",
                 side_effect=ClaudeUsageLimitError(
@@ -631,8 +622,6 @@ class TestMain:
             patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
             patch("auto_fixer.load_dotenv"),
             patch("auto_fixer.load_config", return_value=config),
-            patch("auto_fixer.load_cache", return_value={}),
-            patch("auto_fixer.save_cache"),
             patch(
                 "auto_fixer.process_repo",
                 side_effect=ClaudeCommandFailedError(
@@ -1206,92 +1195,6 @@ class TestProcessRepo:
 
         mock_fetch_pr_details.assert_not_called()
 
-    def test_early_skip_when_cached_updated_at_matches(self, capsys):
-        prs = [
-            {
-                "number": 1,
-                "title": "Test PR",
-                "isDraft": False,
-                "updatedAt": "2026-03-12T10:00:00Z",
-            }
-        ]
-        cache: auto_fixer.CacheData = {"owner/repo": {"1": "2026-03-12T10:00:00Z"}}
-        with (
-            patch("auto_fixer.fetch_open_prs", return_value=prs),
-            patch("auto_fixer.fetch_pr_details") as mock_fetch_pr_details,
-            patch("auto_fixer.subprocess.Popen") as mock_popen,
-        ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, updated_at_cache=cache)
-
-        out = capsys.readouterr().out
-        assert "Skipping PR #1 (No updates since last run)" in out
-        mock_fetch_pr_details.assert_not_called()
-        mock_popen.assert_not_called()
-
-    def test_cached_updated_at_mismatch_fetches_pr_details(self):
-        prs = [
-            {
-                "number": 1,
-                "title": "Test PR",
-                "isDraft": False,
-                "updatedAt": "2026-03-12T10:00:00Z",
-            }
-        ]
-        cache: auto_fixer.CacheData = {"owner/repo": {"1": "2026-03-11T10:00:00Z"}}
-        pr_data = {
-            "headRefName": "feature",
-            "baseRefName": "main",
-            "title": "Test PR",
-            "reviews": [],
-            "comments": [],
-        }
-        with (
-            patch("auto_fixer.fetch_open_prs", return_value=prs),
-            patch(
-                "auto_fixer.fetch_pr_details", return_value=pr_data
-            ) as mock_fetch_pr_details,
-            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
-            patch("auto_fixer.fetch_review_threads", return_value={}),
-            patch("auto_fixer.fetch_issue_comments", return_value=[]),
-            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
-            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
-        ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, updated_at_cache=cache)
-
-        mock_fetch_pr_details.assert_called_once_with("owner/repo", 1)
-
-    def test_processed_pr_updates_updated_at_cache(self):
-        prs = [
-            {
-                "number": 1,
-                "title": "Test PR",
-                "isDraft": False,
-                "updatedAt": "2026-03-12T10:00:00Z",
-            }
-        ]
-        pr_data = {
-            "headRefName": "feature",
-            "baseRefName": "main",
-            "title": "Test PR",
-            "reviews": [],
-            "comments": [],
-        }
-        cache: auto_fixer.CacheData = {}
-        with (
-            patch("auto_fixer.fetch_open_prs", return_value=prs),
-            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
-            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
-            patch("auto_fixer.fetch_review_threads", return_value={}),
-            patch("auto_fixer.fetch_issue_comments", return_value=[]),
-            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
-            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
-        ):
-            auto_fixer.process_repo({"repo": "owner/repo"}, updated_at_cache=cache)
-
-        assert cache == {"owner/repo": {"1": "2026-03-12T10:00:00Z"}}
-
     def test_draft_pr_is_processed_when_enabled(self):
         prs = [{"number": 1, "title": "Draft PR", "isDraft": True}]
         pr_data = {
@@ -1319,7 +1222,10 @@ class TestProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
         ):
             auto_fixer.process_repo(
                 {"repo": "owner/repo"},
@@ -1626,7 +1532,10 @@ class TestProcessRepo:
                 return_value=Mock(returncode=0, stdout="", stderr=""),
             ),
             patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, config=config)
 
@@ -1690,7 +1599,10 @@ class TestProcessRepo:
             patch("auto_fixer._merge_base_branch", side_effect=merge_side_effect),
             patch("auto_fixer._run_claude_prompt", side_effect=run_claude_side_effect),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)) as mock_update_done,
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ) as mock_update_done,
             patch("auto_fixer.summarize_reviews") as mock_summarize,
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
@@ -1759,7 +1671,10 @@ class TestProcessRepo:
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
             patch(
                 "auto_fixer._post_issue_comment", return_value=True
             ) as mock_post_issue_comment,
@@ -1922,7 +1837,10 @@ class TestProcessRepo:
                 "auto_fixer.prepare_repository", return_value=tmp_path
             ) as mock_prepare,
             patch("auto_fixer._merge_base_branch", return_value=(False, False)),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"})
 
@@ -1951,7 +1869,10 @@ class TestProcessRepo:
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
             patch("auto_fixer._run_claude_prompt", return_value=""),
             patch("auto_fixer._set_pr_running_label") as mock_set_running,
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
             patch("auto_fixer.upsert_state_comment"),
             patch(
                 "auto_fixer.subprocess.run",
@@ -2020,7 +1941,10 @@ class TestProcessRepo:
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
             patch("auto_fixer._run_claude_prompt", return_value=""),
             patch("auto_fixer._set_pr_running_label"),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
             patch("auto_fixer.upsert_state_comment"),
             patch("auto_fixer.subprocess.run", side_effect=_run_side_effect),
             patch(
@@ -3063,7 +2987,9 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer.fetch_issue_comments", return_value=[]),
             patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(True, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed", return_value=(True, False)
+            ),
         ):
             auto_fixer.process_repo(
                 {"repo": "owner/repo"},
@@ -3156,7 +3082,10 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer._set_pr_running_label"),
             patch("auto_fixer._edit_pr_label"),
             patch("auto_fixer.upsert_state_comment"),
-            patch("auto_fixer._update_done_label_if_completed", return_value=(False, False)),
+            patch(
+                "auto_fixer._update_done_label_if_completed",
+                return_value=(False, False),
+            ),
             patch("auto_fixer.subprocess.run", side_effect=mock_run_side_effect),
             patch("auto_fixer.subprocess.Popen", return_value=mock_popen),
         ):

@@ -17,9 +17,3 @@ def test_import_summarizer():
     import summarizer  # noqa: F401
 
     assert hasattr(summarizer, "summarize_reviews")
-
-
-def test_import_cache_manager():
-    import cache_manager  # noqa: F401
-
-    assert hasattr(cache_manager, "load_cache")

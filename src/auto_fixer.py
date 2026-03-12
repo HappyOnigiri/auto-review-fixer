@@ -94,13 +94,6 @@ from pr_reviewer import (
 from ci_log import _log_endgroup, _log_group
 from summarizer import summarize_reviews
 from constants import SEPARATOR_LEN
-from cache_manager import (
-    CacheData,
-    get_cached_updated_at,
-    load_cache,
-    save_cache,
-    set_cached_updated_at,
-)
 from state_manager import (
     StateComment,
     create_state_entry,
@@ -483,7 +476,9 @@ def load_config(filepath: str) -> dict[str, Any]:
 
     ci_empty_grace_minutes = parsed.get("ci_empty_grace_minutes")
     if ci_empty_grace_minutes is not None:
-        if isinstance(ci_empty_grace_minutes, bool) or isinstance(ci_empty_grace_minutes, float):
+        if isinstance(ci_empty_grace_minutes, bool) or isinstance(
+            ci_empty_grace_minutes, float
+        ):
             print(
                 "Error: ci_empty_grace_minutes must be a non-negative integer.",
                 file=sys.stderr,
@@ -491,7 +486,9 @@ def load_config(filepath: str) -> dict[str, Any]:
             sys.exit(1)
         if isinstance(ci_empty_grace_minutes, int):
             grace_int = ci_empty_grace_minutes
-        elif isinstance(ci_empty_grace_minutes, str) and ci_empty_grace_minutes.isdigit():
+        elif (
+            isinstance(ci_empty_grace_minutes, str) and ci_empty_grace_minutes.isdigit()
+        ):
             grace_int = int(ci_empty_grace_minutes)
         else:
             print(
@@ -2046,7 +2043,13 @@ def _are_all_ci_checks_successful(
 
     # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
     result = subprocess.run(
-        ["gh", "api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate", "--slurp"],
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/commits/{head_sha}/check-runs",
+            "--paginate",
+            "--slurp",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -2065,9 +2068,11 @@ def _are_all_ci_checks_successful(
         return None
 
     runs: list[dict[str, Any]] = []
-    for page in (data if isinstance(data, list) else [data]):
+    for page in data if isinstance(data, list) else [data]:
         if isinstance(page, dict):
-            runs.extend(r for r in (page.get("check_runs") or []) if isinstance(r, dict))
+            runs.extend(
+                r for r in (page.get("check_runs") or []) if isinstance(r, dict)
+            )
 
     # Also fetch classic statuses (Jenkins, Travis, etc.)
     classic = _fetch_classic_statuses_via_rest(repo, head_sha)
@@ -2958,7 +2963,9 @@ def _process_single_pr(
             False,
             count_pr,
             None,
-            not bool(active_rate_limit) and not bool(active_review_failed) and not _ci_grace,
+            not bool(active_rate_limit)
+            and not bool(active_review_failed)
+            and not _ci_grace,
         )
 
     # B上限チェック: コミット追加PR数の上限に達しているか
@@ -3798,7 +3805,6 @@ def process_repo(
     global_coderabbit_resumed_prs: set[tuple[str, int]] | None = None,
     auto_resume_run_state: dict[str, int] | None = None,
     global_backfilled_count: list[int] | None = None,
-    updated_at_cache: CacheData | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
 
@@ -3933,25 +3939,8 @@ def process_repo(
     # Process all open PRs.
     # NOTE: Do not skip based on refix:done label because base merge/conflict handling may still be required.
     for pr in prs:
-        pr_number_raw = pr.get("number")
-        if isinstance(pr_number_raw, int):
-            current_updated_at = str(pr.get("updatedAt") or "")
-            cached_updated_at = (
-                get_cached_updated_at(updated_at_cache, repo, pr_number_raw)
-                if updated_at_cache is not None
-                else None
-            )
-            if (
-                updated_at_cache is not None
-                and current_updated_at
-                and current_updated_at == cached_updated_at
-            ):
-                print(f"Skipping PR #{pr_number_raw} (No updates since last run)")
-                continue
-        else:
-            current_updated_at = ""
         try:
-            this_pr_fetch_failed, count_as_processed, commits_entry, cacheable = (
+            this_pr_fetch_failed, count_as_processed, commits_entry, _cacheable = (
                 _process_single_pr(
                     pr=pr,
                     repo=repo,
@@ -3988,15 +3977,6 @@ def process_repo(
                 processed_count += 1
             if commits_entry:
                 commits_added_to.append(commits_entry)
-            if (
-                updated_at_cache is not None
-                and isinstance(pr_number_raw, int)
-                and current_updated_at
-                and cacheable
-            ):
-                set_cached_updated_at(
-                    updated_at_cache, repo, pr_number_raw, current_updated_at
-                )
         except ClaudeCommandFailedError:
             raise
         except Exception as e:
@@ -4127,7 +4107,6 @@ def main():
     load_dotenv()
     config = load_config(args.config)
     repos = expand_repositories(config["repositories"])
-    updated_at_cache: CacheData = load_cache()
 
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
@@ -4142,44 +4121,36 @@ def main():
     global_coderabbit_resumed_prs: set[tuple[str, int]] = set()
     global_backfilled_count: list[int] = [0]
     auto_resume_run_state = _normalize_auto_resume_state(config, DEFAULT_CONFIG)
-    try:
-        for repo_info in repos:
-            try:
-                results = process_repo(
-                    repo_info,
-                    dry_run=args.dry_run,
-                    silent=args.silent,
-                    summarize_only=args.summarize_only,
-                    config=config,
-                    global_modified_prs=global_modified_prs,
-                    global_committed_prs=global_committed_prs,
-                    global_claude_prs=global_claude_prs,
-                    global_coderabbit_resumed_prs=global_coderabbit_resumed_prs,
-                    auto_resume_run_state=auto_resume_run_state,
-                    global_backfilled_count=global_backfilled_count,
-                    updated_at_cache=updated_at_cache,
-                )
-                if results:
-                    commits_added_to.extend(results)
-            except KeyboardInterrupt:
-                print("\nInterrupted by user")
-                sys.exit(0)
-            except ClaudeCommandFailedError as e:
-                print(f"Error: {e}. Failing CI immediately.", file=sys.stderr)
-                if e.stdout.strip():
-                    print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
-                if e.stderr.strip():
-                    print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
-                sys.exit(1)
-            except Exception as e:
-                print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
-                continue
-    finally:
-        if not args.dry_run and not args.summarize_only:
-            try:
-                save_cache(updated_at_cache)
-            except Exception as e:
-                print(f"Warning: failed to save cache: {e}", file=sys.stderr)
+    for repo_info in repos:
+        try:
+            results = process_repo(
+                repo_info,
+                dry_run=args.dry_run,
+                silent=args.silent,
+                summarize_only=args.summarize_only,
+                config=config,
+                global_modified_prs=global_modified_prs,
+                global_committed_prs=global_committed_prs,
+                global_claude_prs=global_claude_prs,
+                global_coderabbit_resumed_prs=global_coderabbit_resumed_prs,
+                auto_resume_run_state=auto_resume_run_state,
+                global_backfilled_count=global_backfilled_count,
+            )
+            if results:
+                commits_added_to.extend(results)
+        except KeyboardInterrupt:
+            print("\nInterrupted by user")
+            sys.exit(0)
+        except ClaudeCommandFailedError as e:
+            print(f"Error: {e}. Failing CI immediately.", file=sys.stderr)
+            if e.stdout.strip():
+                print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
+            if e.stderr.strip():
+                print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
+            continue
 
     if global_coderabbit_resumed_prs:
         print("\n" + "=" * SEPARATOR_LEN)
