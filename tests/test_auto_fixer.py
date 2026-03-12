@@ -2515,7 +2515,7 @@ class TestRunClaudePrompt:
             )
         err = capsys.readouterr().err
         assert "[report review-fix]" in err
-        assert "no report was recorded." in err
+        assert "レポート出力なし" in err
 
     def test_success_does_not_show_report_when_silent(self, tmp_path, capsys):
         """When silent=True and success, report is not shown."""
