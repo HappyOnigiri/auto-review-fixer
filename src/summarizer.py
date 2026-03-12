@@ -81,6 +81,9 @@ def summarize_reviews(
 コメント一覧:
 {items_text}"""
 
+    model = (model or os.environ.get("REFIX_MODEL_SUMMARIZE", "")).strip() or "haiku"
+    _timeout = int(os.environ.get("REFIX_SUMMARIZER_TIMEOUT_SEC", "300"))
+
     # Write prompt to a temp file to avoid Windows command-line length limits
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".md", encoding="utf-8", delete=False
@@ -90,9 +93,6 @@ def summarize_reviews(
 
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
-
-    model = (model or os.environ.get("REFIX_MODEL_SUMMARIZE", "")).strip() or "haiku"
-    _timeout = int(os.environ.get("REFIX_SUMMARIZER_TIMEOUT_SEC", "300"))
     summarizer_cmd = [
         "claude",
         "--model",
