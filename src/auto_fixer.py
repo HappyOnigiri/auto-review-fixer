@@ -2478,13 +2478,14 @@ def _update_done_label_if_completed(
         print(
             f"PR #{pr_number} meets completion conditions; switching label to {REFIX_DONE_LABEL}."
         )
+        current_pr_data = None if review_fix_started else pr_data
         if enabled_pr_label_keys is None:
-            done_changed = _set_pr_done_label(repo, pr_number, pr_data=pr_data)
+            done_changed = _set_pr_done_label(repo, pr_number, pr_data=current_pr_data)
         else:
             done_changed = _set_pr_done_label(
                 repo,
                 pr_number,
-                pr_data=pr_data,
+                pr_data=current_pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
             )
         merge_triggered = False
