@@ -1879,7 +1879,7 @@ class TestRunClaudePrompt:
                     phase_label="review-fix",
                 )
         err = capsys.readouterr().err
-        assert "runtime-pain-report" in err
+        assert "[report review-fix]" in err
         assert "setup failed once" in err
 
     def test_nonzero_exit_raises_command_failed(self, tmp_path, capsys):
@@ -1908,7 +1908,7 @@ class TestRunClaudePrompt:
                     phase_label="review-fix",
                 )
         err = capsys.readouterr().err
-        assert "runtime-pain-report" in err
+        assert "[report review-fix]" in err
         assert "missing context file" in err
 
     def test_success_output_with_limit_phrase_does_not_raise(self, tmp_path):
@@ -1950,6 +1950,93 @@ class TestRunClaudePrompt:
             assert result == ""
             assert "<runtime_pain_report>" in captured_prompt
             assert report_path in captured_prompt
+
+    def test_success_shows_report_when_not_silent_with_content(self, tmp_path, capsys):
+        """When silent=False and report has content, report is shown in stderr."""
+        process = Mock()
+        process.communicate.return_value = ("", "")
+        process.returncode = 0
+        report_path = tmp_path / "pr_1_review-fix.md"
+        report_path.write_text("- ambiguous review comment\n- missing file", encoding="utf-8")
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                report_path=str(report_path.resolve()),
+                model="sonnet",
+                silent=False,
+                phase_label="review-fix",
+            )
+        err = capsys.readouterr().err
+        assert "[report review-fix]" in err
+        assert "ambiguous review comment" in err
+        assert "missing file" in err
+
+    def test_success_shows_empty_when_not_silent_with_empty_report(self, tmp_path, capsys):
+        """When silent=False and report is empty, 'report file is empty.' is shown."""
+        process = Mock()
+        process.communicate.return_value = ("", "")
+        process.returncode = 0
+        report_path = tmp_path / "pr_1_review-fix.md"
+        report_path.write_text("", encoding="utf-8")
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                report_path=str(report_path.resolve()),
+                model="sonnet",
+                silent=False,
+                phase_label="review-fix",
+            )
+        err = capsys.readouterr().err
+        assert "[report review-fix]" in err
+        assert "report file is empty." in err
+
+    def test_success_does_not_show_report_when_silent(self, tmp_path, capsys):
+        """When silent=True and success, report is not shown."""
+        process = Mock()
+        process.communicate.return_value = ("", "")
+        process.returncode = 0
+        report_path = tmp_path / "pr_1_review-fix.md"
+        report_path.write_text("- some content", encoding="utf-8")
+
+        with (
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="", stderr=""),
+            ),
+            patch("auto_fixer.subprocess.Popen", return_value=process),
+            patch("auto_fixer._log_group"),
+            patch("auto_fixer._log_endgroup"),
+        ):
+            auto_fixer._run_claude_prompt(
+                works_dir=tmp_path,
+                prompt="<instructions>fix</instructions>",
+                report_path=str(report_path.resolve()),
+                model="sonnet",
+                silent=True,
+                phase_label="review-fix",
+            )
+        err = capsys.readouterr().err
+        assert "[report]" not in err
 
 class TestExpandRepositories:
     def test_no_wildcard_returns_original(self):
