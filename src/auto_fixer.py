@@ -356,7 +356,9 @@ def _run_ci_fix_phase(
         if ctx.write_result_to_comment:
             if isinstance(e, ClaudeCommandFailedError) and e.stdout:
                 result_blocks.append(
-                    build_phase_result_entry("ci-fix", e.stdout, ctx.state_comment_timezone)
+                    build_phase_result_entry(
+                        "ci-fix", e.stdout, ctx.state_comment_timezone
+                    )
                 )
             if result_blocks:
                 try:
@@ -475,7 +477,9 @@ def _run_merge_phase(
                 if isinstance(e, ClaudeCommandFailedError) and e.stdout:
                     result_blocks.append(
                         build_phase_result_entry(
-                            "merge-conflict-resolution", e.stdout, ctx.state_comment_timezone
+                            "merge-conflict-resolution",
+                            e.stdout,
+                            ctx.state_comment_timezone,
                         )
                     )
                 if result_blocks:
@@ -483,9 +487,13 @@ def _run_merge_phase(
                         _fresh = load_state_comment(repo, pr_number)
                     except Exception:
                         _fresh = state_comment
-                    _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
+                    _merged = merge_result_log_body(
+                        _fresh.result_log_body, result_blocks
+                    )
                     try:
-                        upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
+                        upsert_state_comment(
+                            repo, pr_number, [], result_log_body=_merged
+                        )
                     except Exception as _save_err:
                         print(
                             f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
