@@ -189,16 +189,6 @@ def test_merge_base_branch_raises_when_merge_fails_without_conflicts():
 # ---------------------------------------------------------------------------
 
 
-def _patch_prepare_repository(works_dir: Path):
-    """prepare_repository の外部依存をまとめてパッチするコンテキストマネージャを返す。"""
-    return (
-        patch.object(git_ops, "run_git", return_value=_make_result()),
-        patch.object(git_ops, "setup_claude_settings"),
-        patch.object(git_ops, "run_project_setup"),
-        patch("git_ops.Path.exists", return_value=True),
-        patch("git_ops.Path.mkdir"),
-    )
-
 
 def test_prepare_repository_calls_run_project_setup_with_is_first_clone_false(tmp_path):
     with (
