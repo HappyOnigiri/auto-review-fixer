@@ -1138,6 +1138,7 @@ def _process_single_pr(
 
     if not has_review_targets:
         if ctx.write_result_to_comment and result_blocks:
+            state_saved = False
             try:
                 _latest = load_state_comment(repo, pr_number)
             except Exception:
@@ -1155,6 +1156,8 @@ def _process_single_pr(
                     f"Warning: failed to update result log section for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
+        else:
+            state_saved = True
         if ci_commits and not is_behind:
             unpushed_check = _run_git(
                 "log",
@@ -1180,7 +1183,7 @@ def _process_single_pr(
             review_fix_started=review_fix_started,
             review_fix_added_commits=review_fix_added_commits,
             review_fix_failed=review_fix_failed,
-            state_saved=True,
+            state_saved=state_saved,
             commits_by_phase=commits_by_phase,
             pr_data=pr_data,
             review_comments=review_comments,
