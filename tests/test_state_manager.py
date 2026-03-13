@@ -179,7 +179,7 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
     )
 
     with (
-        patch("state_manager.subprocess.run", return_value=result),
+        patch("state_manager.run_command", return_value=result),
         patch("state_manager._get_authenticated_github_user", return_value="test-bot"),
     ):
         comment = state_manager.load_state_comment("owner/repo", 1)
@@ -218,7 +218,7 @@ def test_upsert_state_comment_creates_when_missing():
             ),
         ),
         patch(
-            "state_manager.subprocess.run",
+            "state_manager.run_command",
             return_value=Mock(returncode=0, stdout="", stderr=""),
         ) as mock_run,
     ):
@@ -257,7 +257,7 @@ def test_upsert_state_comment_updates_when_existing():
     with (
         patch("state_manager.load_state_comment", return_value=existing),
         patch(
-            "state_manager.subprocess.run",
+            "state_manager.run_command",
             return_value=Mock(returncode=0, stdout="", stderr=""),
         ) as mock_run,
     ):
@@ -293,7 +293,7 @@ def test_upsert_state_comment_writes_report_body_without_new_entries():
             ),
         ),
         patch(
-            "state_manager.subprocess.run",
+            "state_manager.run_command",
             return_value=Mock(returncode=0, stdout="", stderr=""),
         ) as mock_run,
     ):

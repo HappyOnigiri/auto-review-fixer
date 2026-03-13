@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from subprocess_helpers import run_command
 
 LEGACY_STATE_COMMENT_MARKER = "<!-- auto-review-fixer-state-comment -->"
 STATE_COMMENT_MARKER = "<!-- refix-state-comment -->"
@@ -320,12 +321,9 @@ def create_state_entry(
 
 def _get_authenticated_github_user() -> str | None:
     """Return the login of the currently authenticated GitHub user, or None on failure."""
-    result = subprocess.run(
+    result = run_command(
         ["gh", "api", "user", "--jq", ".login"],
-        capture_output=True,
-        text=True,
         check=False,
-        encoding="utf-8",
     )
     if result.returncode == 0 and result.stdout.strip():
         username = result.stdout.strip()
@@ -343,13 +341,7 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
         "--paginate",
         "--slurp",
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    result = run_command(cmd, check=False)
     if result.returncode != 0:
         raise RuntimeError(
             f"Failed to fetch PR comments for {repo}#{pr_number}: {(result.stderr or '').strip()}"
@@ -468,13 +460,7 @@ def upsert_state_comment(
             f"body={body}",
         ]
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    result = run_command(cmd, check=False)
     if result.returncode != 0:
         raise RuntimeError(
             f"Failed to upsert state comment for {repo}#{pr_number}: {(result.stderr or '').strip()}"

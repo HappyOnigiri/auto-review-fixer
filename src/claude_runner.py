@@ -7,14 +7,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ci_log import _log_endgroup, _log_group
+from ci_log import log_endgroup, log_group
 from claude_limit import (
     ClaudeCommandFailedError,
     ClaudeUsageLimitError,
     is_claude_usage_limit_error,
 )
 from constants import SEPARATOR_LEN
-from report import _emit_runtime_pain_report
+from report import emit_runtime_pain_report
 
 # --- デフォルト設定 ---
 DEFAULT_REFIX_CLAUDE_SETTINGS: dict[str, Any] = {
@@ -82,7 +82,7 @@ def setup_claude_settings(works_dir: Path) -> None:
         exclude_file.write_text(f"{exclude_entry}\n", encoding="utf-8")
 
 
-def _run_claude_prompt(
+def run_claude_prompt(
     *,
     works_dir: Path,
     prompt: str,
@@ -133,7 +133,7 @@ def _run_claude_prompt(
     ]
 
     print(f"\nExecuting Claude ({phase_label})...")
-    _log_group("Claude command details")
+    log_group("Claude command details")
     print(f"  cwd: {works_dir}")
     print(f"  command: {shlex.join(claude_cmd)}")
     print(f"  prompt file: {prompt_file}")
@@ -143,7 +143,7 @@ def _run_claude_prompt(
         print("-" * SEPARATOR_LEN)
         print(prompt_with_report_instruction)
         print("-" * SEPARATOR_LEN)
-    _log_endgroup()
+    log_endgroup()
     claude_failed = False
     try:
         try:
@@ -186,14 +186,14 @@ def _run_claude_prompt(
                     stderr=f"Timed out after {_timeout}s. {stderr or ''}",
                 )
             if not silent:
-                _log_group(f"Claude execution output ({phase_label})")
+                log_group(f"Claude execution output ({phase_label})")
                 if stdout:
                     print("[stdout]")
                     print(stdout.strip())
                 if stderr:
                     print("[stderr]")
                     print(stderr.strip())
-                _log_endgroup()
+                log_endgroup()
             if process.returncode != 0:
                 claude_failed = True
                 if is_claude_usage_limit_error(stdout, stderr):
@@ -240,7 +240,7 @@ def _run_claude_prompt(
             raise
     finally:
         prompt_file.unlink(missing_ok=True)
-        _emit_runtime_pain_report(
+        emit_runtime_pain_report(
             report_path=report_path,
             phase_label=phase_label,
             silent=silent,

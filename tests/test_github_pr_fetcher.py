@@ -10,7 +10,7 @@ import github_pr_fetcher
 def test_fetch_open_prs_uses_large_limit_by_default():
     result = Mock(returncode=0, stdout='[{"number": 1, "title": "Test"}]', stderr="")
 
-    with patch("github_pr_fetcher.subprocess.run", return_value=result) as mock_run:
+    with patch("github_pr_fetcher.run_command", return_value=result) as mock_run:
         prs = github_pr_fetcher.fetch_open_prs("owner/repo")
 
     assert prs == [{"number": 1, "title": "Test"}]
@@ -21,6 +21,6 @@ def test_fetch_open_prs_uses_large_limit_by_default():
 def test_fetch_open_prs_raises_on_invalid_json():
     result = Mock(returncode=0, stdout="{not-json", stderr="")
 
-    with patch("github_pr_fetcher.subprocess.run", return_value=result):
+    with patch("github_pr_fetcher.run_command", return_value=result):
         with pytest.raises(RuntimeError, match="Failed to parse PR list"):
             github_pr_fetcher.fetch_open_prs("owner/repo")

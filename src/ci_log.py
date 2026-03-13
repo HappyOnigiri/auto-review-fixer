@@ -5,11 +5,11 @@ import os
 _IS_CI = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
-def _log_group(title: str) -> None:
+def log_group(title: str) -> None:
     if _IS_CI:
         print(f"::group::{title}")
 
 
-def _log_endgroup() -> None:
+def log_endgroup() -> None:
     if _IS_CI:
         print("::endgroup::")

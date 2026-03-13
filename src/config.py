@@ -1,13 +1,15 @@
 """設定ファイル（.refix.yaml）の読み込みと検証を行うモジュール。"""
 
-import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from errors import ConfigError
 from state_manager import ensure_valid_state_timezone
+from subprocess_helpers import SubprocessError, run_command
 
 # --- デフォルト設定 ---
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -56,6 +58,56 @@ ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 PR_LABEL_KEYS = ("running", "done", "merged", "auto_merge_requested")
 
 
+@dataclass
+class FieldSpec:
+    """スカラー設定フィールドの検証仕様。"""
+
+    type_: type  # bool または int
+    min_value: int | None = None
+    clamp: bool = False  # True の場合、下限未満を拒否せず min_value にクランプ
+    reject_bool: bool = False  # int フィールドで bool 値を拒否する
+
+
+_SCALAR_FIELDS: dict[str, FieldSpec] = {
+    "execution_report": FieldSpec(bool),
+    "auto_merge": FieldSpec(bool),
+    "coderabbit_auto_resume": FieldSpec(bool),
+    "process_draft_prs": FieldSpec(bool),
+    "ci_empty_as_success": FieldSpec(bool),
+    "ci_log_max_lines": FieldSpec(int, min_value=20, clamp=True),
+    "coderabbit_auto_resume_max_per_run": FieldSpec(int, min_value=1, reject_bool=True),
+    "max_modified_prs_per_run": FieldSpec(int, min_value=0, reject_bool=True),
+    "max_committed_prs_per_run": FieldSpec(int, min_value=0, reject_bool=True),
+    "max_claude_prs_per_run": FieldSpec(int, min_value=0, reject_bool=True),
+}
+
+
+def _validate_scalar_field(key: str, value: Any, spec: FieldSpec) -> Any:
+    """スカラーフィールドを FieldSpec に従って検証・変換する。"""
+    if spec.type_ is bool:
+        if not isinstance(value, bool):
+            raise ConfigError(f"{key} must be a boolean.")
+        return value
+    # int field
+    if isinstance(value, float):
+        raise ConfigError(f"{key} must be an integer.")
+    if isinstance(value, bool):
+        min_str = f">= {spec.min_value}" if spec.min_value is not None else ""
+        raise ConfigError(
+            f"{key} must be a non-negative integer{(' ' + min_str) if min_str else ''}."
+        )
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{key} must be an integer.") from exc
+    if spec.min_value is not None:
+        if spec.clamp:
+            int_value = max(spec.min_value, int_value)
+        elif int_value < spec.min_value:
+            raise ConfigError(f"{key} must be an integer >= {spec.min_value}.")
+    return int_value
+
+
 def _warn_unknown_config_keys(
     config_section: dict[str, Any], allowed_keys: set[str]
 ) -> None:
@@ -64,7 +116,7 @@ def _warn_unknown_config_keys(
         print(f"Warning: Unknown key '{key}' found in config.", file=sys.stderr)
 
 
-def _normalize_auto_resume_state(
+def normalize_auto_resume_state(
     runtime_config: dict[str, Any],
     default_config: dict[str, Any],
     auto_resume_run_state: dict[str, int] | None = None,
@@ -123,21 +175,20 @@ def load_config(filepath: str) -> dict[str, Any]:
     """YAML 設定ファイルを読み込み、検証する。"""
     try:
         config_text = Path(filepath).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        print(f"Error: config file not found: {filepath}", file=sys.stderr)
-        sys.exit(1)
+    except FileNotFoundError as exc:
+        raise ConfigError(f"config file not found: {filepath}") from exc
+    except OSError as exc:
+        raise ConfigError(f"failed to read config file '{filepath}': {exc}") from exc
 
     try:
         parsed = yaml.safe_load(config_text)
     except yaml.YAMLError as e:
-        print(f"Error: failed to parse YAML config '{filepath}': {e}", file=sys.stderr)
-        sys.exit(1)
+        raise ConfigError(f"failed to parse YAML config '{filepath}': {e}") from e
 
     if parsed is None:
         parsed = {}
     if not isinstance(parsed, dict):
-        print("Error: config root must be a mapping/object.", file=sys.stderr)
-        sys.exit(1)
+        raise ConfigError("config root must be a mapping/object.")
 
     _warn_unknown_config_keys(parsed, ALLOWED_CONFIG_TOP_LEVEL_KEYS)
 
@@ -164,71 +215,43 @@ def load_config(filepath: str) -> dict[str, Any]:
     models = parsed.get("models")
     if models is not None:
         if not isinstance(models, dict):
-            print("Error: models must be a mapping/object.", file=sys.stderr)
-            sys.exit(1)
+            raise ConfigError("models must be a mapping/object.")
         _warn_unknown_config_keys(models, ALLOWED_MODEL_KEYS)
 
         summarize_model = models.get("summarize")
         if summarize_model is not None:
             if not isinstance(summarize_model, str) or not summarize_model.strip():
-                print(
-                    "Error: models.summarize must be a non-empty string.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+                raise ConfigError("models.summarize must be a non-empty string.")
             config["models"]["summarize"] = summarize_model.strip()
 
         fix_model = models.get("fix")
         if fix_model is not None:
             if not isinstance(fix_model, str) or not fix_model.strip():
-                print("Error: models.fix must be a non-empty string.", file=sys.stderr)
-                sys.exit(1)
+                raise ConfigError("models.fix must be a non-empty string.")
             config["models"]["fix"] = fix_model.strip()
 
-    ci_log_max_lines = parsed.get("ci_log_max_lines")
-    if ci_log_max_lines is not None:
-        try:
-            config["ci_log_max_lines"] = max(20, int(ci_log_max_lines))
-        except (TypeError, ValueError):
-            print("Error: ci_log_max_lines must be an integer.", file=sys.stderr)
-            sys.exit(1)
-
-    execution_report = parsed.get("execution_report")
-    if execution_report is not None:
-        if not isinstance(execution_report, bool):
-            print("Error: execution_report must be a boolean.", file=sys.stderr)
-            sys.exit(1)
-        config["execution_report"] = execution_report
-
-    auto_merge = parsed.get("auto_merge")
-    if auto_merge is not None:
-        if not isinstance(auto_merge, bool):
-            print("Error: auto_merge must be a boolean.", file=sys.stderr)
-            sys.exit(1)
-        config["auto_merge"] = auto_merge
+    for _key, _spec in _SCALAR_FIELDS.items():
+        _raw = parsed.get(_key)
+        if _raw is not None:
+            config[_key] = _validate_scalar_field(_key, _raw, _spec)
 
     enabled_pr_labels = parsed.get("enabled_pr_labels")
     if enabled_pr_labels is not None:
         if not isinstance(enabled_pr_labels, list):
-            print("Error: enabled_pr_labels must be a list.", file=sys.stderr)
-            sys.exit(1)
+            raise ConfigError("enabled_pr_labels must be a list.")
         normalized_enabled_labels: list[str] = []
         seen_enabled_labels: set[str] = set()
         allowed_label_keys = ", ".join(sorted(PR_LABEL_KEYS))
         for index, label_key in enumerate(enabled_pr_labels):
             if not isinstance(label_key, str) or not label_key.strip():
-                print(
-                    f"Error: enabled_pr_labels[{index}] must be a non-empty string.",
-                    file=sys.stderr,
+                raise ConfigError(
+                    f"enabled_pr_labels[{index}] must be a non-empty string."
                 )
-                sys.exit(1)
             normalized_label_key = label_key.strip()
             if normalized_label_key not in PR_LABEL_KEYS:
-                print(
-                    f"Error: enabled_pr_labels[{index}] must be one of: {allowed_label_keys}.",
-                    file=sys.stderr,
+                raise ConfigError(
+                    f"enabled_pr_labels[{index}] must be one of: {allowed_label_keys}."
                 )
-                sys.exit(1)
             if normalized_label_key in seen_enabled_labels:
                 continue
             seen_enabled_labels.add(normalized_label_key)
@@ -239,45 +262,11 @@ def load_config(filepath: str) -> dict[str, Any]:
             allowed_merge_sub_keys = ", ".join(
                 sorted({"running", "done", "auto_merge_requested"})
             )
-            print(
-                f'Error: enabled_pr_labels includes "merged" but none of: {allowed_merge_sub_keys}. '
-                f'At least one of these must be included alongside "merged".',
-                file=sys.stderr,
+            raise ConfigError(
+                f'enabled_pr_labels includes "merged" but none of: {allowed_merge_sub_keys}. '
+                f'At least one of these must be included alongside "merged".'
             )
-            sys.exit(1)
         config["enabled_pr_labels"] = normalized_enabled_labels
-
-    coderabbit_auto_resume = parsed.get("coderabbit_auto_resume")
-    if coderabbit_auto_resume is not None:
-        if not isinstance(coderabbit_auto_resume, bool):
-            print("Error: coderabbit_auto_resume must be a boolean.", file=sys.stderr)
-            sys.exit(1)
-        config["coderabbit_auto_resume"] = coderabbit_auto_resume
-
-    coderabbit_auto_resume_max_per_run = parsed.get(
-        "coderabbit_auto_resume_max_per_run"
-    )
-    if coderabbit_auto_resume_max_per_run is not None:
-        if (
-            not isinstance(coderabbit_auto_resume_max_per_run, int)
-            or isinstance(coderabbit_auto_resume_max_per_run, bool)
-            or coderabbit_auto_resume_max_per_run < 1
-        ):
-            print(
-                "Error: coderabbit_auto_resume_max_per_run must be an integer >= 1.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        config["coderabbit_auto_resume_max_per_run"] = (
-            coderabbit_auto_resume_max_per_run
-        )
-
-    process_draft_prs = parsed.get("process_draft_prs")
-    if process_draft_prs is not None:
-        if not isinstance(process_draft_prs, bool):
-            print("Error: process_draft_prs must be a boolean.", file=sys.stderr)
-            sys.exit(1)
-        config["process_draft_prs"] = process_draft_prs
 
     state_comment_timezone = parsed.get("state_comment_timezone")
     if state_comment_timezone is not None:
@@ -285,68 +274,22 @@ def load_config(filepath: str) -> dict[str, Any]:
             not isinstance(state_comment_timezone, str)
             or not state_comment_timezone.strip()
         ):
-            print(
-                "Error: state_comment_timezone must be a non-empty string.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError("state_comment_timezone must be a non-empty string.")
         timezone_name = state_comment_timezone.strip()
         try:
             ensure_valid_state_timezone(timezone_name)
-        except ValueError:
-            print(
-                "Error: state_comment_timezone must be a valid IANA timezone (e.g. Asia/Tokyo) or JST.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        except ValueError as exc:
+            raise ConfigError(
+                "state_comment_timezone must be a valid IANA timezone (e.g. Asia/Tokyo) or JST."
+            ) from exc
         config["state_comment_timezone"] = timezone_name
-
-    for limit_key in (
-        "max_modified_prs_per_run",
-        "max_committed_prs_per_run",
-        "max_claude_prs_per_run",
-    ):
-        raw_value = parsed.get(limit_key)
-        if raw_value is not None:
-            if isinstance(raw_value, bool):
-                print(
-                    f"Error: {limit_key} must be a non-negative integer.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            try:
-                int_value = int(raw_value)
-            except (TypeError, ValueError):
-                print(
-                    f"Error: {limit_key} must be a non-negative integer.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            if int_value < 0:
-                print(
-                    f"Error: {limit_key} must be a non-negative integer.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            config[limit_key] = int_value
-
-    ci_empty_as_success = parsed.get("ci_empty_as_success")
-    if ci_empty_as_success is not None:
-        if not isinstance(ci_empty_as_success, bool):
-            print("Error: ci_empty_as_success must be a boolean.", file=sys.stderr)
-            sys.exit(1)
-        config["ci_empty_as_success"] = ci_empty_as_success
 
     ci_empty_grace_minutes = parsed.get("ci_empty_grace_minutes")
     if ci_empty_grace_minutes is not None:
         if isinstance(ci_empty_grace_minutes, bool) or isinstance(
             ci_empty_grace_minutes, float
         ):
-            print(
-                "Error: ci_empty_grace_minutes must be a non-negative integer.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError("ci_empty_grace_minutes must be a non-negative integer.")
         if isinstance(ci_empty_grace_minutes, int):
             grace_int = ci_empty_grace_minutes
         elif (
@@ -354,44 +297,26 @@ def load_config(filepath: str) -> dict[str, Any]:
         ):
             grace_int = int(ci_empty_grace_minutes)
         else:
-            print(
-                "Error: ci_empty_grace_minutes must be a non-negative integer.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError("ci_empty_grace_minutes must be a non-negative integer.")
         if grace_int < 0:
-            print(
-                "Error: ci_empty_grace_minutes must be a non-negative integer.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError("ci_empty_grace_minutes must be a non-negative integer.")
         config["ci_empty_grace_minutes"] = grace_int
 
     repositories = parsed.get("repositories")
     if not isinstance(repositories, list) or not repositories:
-        print(
-            "Error: repositories is required and must be a non-empty list.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise ConfigError("repositories is required and must be a non-empty list.")
 
     normalized_repositories: list[dict[str, str | None]] = []
     for index, item in enumerate(repositories):
         if not isinstance(item, dict):
-            print(
-                f"Error: repositories[{index}] must be a mapping/object.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            raise ConfigError(f"repositories[{index}] must be a mapping/object.")
         _warn_unknown_config_keys(item, ALLOWED_REPOSITORY_KEYS)
 
         repo_name = item.get("repo")
         if not isinstance(repo_name, str) or not repo_name.strip():
-            print(
-                f"Error: repositories[{index}].repo is required and must be a non-empty string.",
-                file=sys.stderr,
+            raise ConfigError(
+                f"repositories[{index}].repo is required and must be a non-empty string."
             )
-            sys.exit(1)
         repo_slug = repo_name.strip()
         if (
             "/" not in repo_slug
@@ -399,27 +324,21 @@ def load_config(filepath: str) -> dict[str, Any]:
             or repo_slug.startswith("/")
             or repo_slug.endswith("/")
         ):
-            print(
-                f"Error: repositories[{index}].repo must be in 'owner/repo' format.",
-                file=sys.stderr,
+            raise ConfigError(
+                f"repositories[{index}].repo must be in 'owner/repo' format."
             )
-            sys.exit(1)
 
         user_name = item.get("user_name")
         if user_name is not None and not isinstance(user_name, str):
-            print(
-                f"Error: repositories[{index}].user_name must be a string when specified.",
-                file=sys.stderr,
+            raise ConfigError(
+                f"repositories[{index}].user_name must be a string when specified."
             )
-            sys.exit(1)
 
         user_email = item.get("user_email")
         if user_email is not None and not isinstance(user_email, str):
-            print(
-                f"Error: repositories[{index}].user_email must be a string when specified.",
-                file=sys.stderr,
+            raise ConfigError(
+                f"repositories[{index}].user_email must be a string when specified."
             )
-            sys.exit(1)
 
         normalized_repositories.append(
             {
@@ -457,24 +376,18 @@ def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "--limit",
                 "1000",
             ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                encoding="utf-8",
-            )
+            try:
+                result = run_command(cmd, check=False)
+            except SubprocessError as exc:
+                raise ConfigError(f"failed to expand {repo_name}: {exc}") from exc
             if result.returncode != 0:
-                print(
-                    f"Error: failed to expand {repo_name}: {(result.stderr or '').strip()}",
-                    file=sys.stderr,
+                raise ConfigError(
+                    f"failed to expand {repo_name}: {(result.stderr or '').strip()}"
                 )
-                sys.exit(1)
 
             lines = result.stdout.strip().splitlines()
             if not lines:
-                print(f"Error: no repositories found for {repo_name}", file=sys.stderr)
-                sys.exit(1)
+                raise ConfigError(f"no repositories found for {repo_name}")
 
             for line in lines:
                 resolved_name = line.strip()

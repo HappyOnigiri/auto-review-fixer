@@ -16,13 +16,13 @@ from claude_limit import (
     ClaudeUsageLimitError,
     is_claude_usage_limit_error,
 )
-from ci_log import _log_endgroup, _log_group
+from ci_log import log_endgroup, log_group
 from constants import SEPARATOR_LEN
 
 
 def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -> None:
     """Print raw summarizer output in a foldable log group."""
-    _log_group(f"Summarizer raw output (exit {returncode})")
+    log_group(f"Summarizer raw output (exit {returncode})")
     token = uuid.uuid4().hex
     sys.stdout.write(f"::stop-commands::{token}\n")
     sys.stdout.write("  --- stdout ---\n")
@@ -36,7 +36,7 @@ def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -
     if not err.endswith("\n"):
         sys.stdout.write("\n")
     sys.stdout.write(f"::{token}::\n")
-    _log_endgroup()
+    log_endgroup()
 
 
 def summarize_reviews(
@@ -105,14 +105,14 @@ def summarize_reviews(
     try:
         print("Summarizing reviews...")
         print()
-        _log_group("Summarizer command details")
+        log_group("Summarizer command details")
         print(f"  command: {shlex.join(summarizer_cmd)}")
         print(f"  prompt file: {prompt_path}")
         if not silent:
             print("-" * SEPARATOR_LEN)
             print(Path(prompt_path).read_text(encoding="utf-8"))
             print("-" * SEPARATOR_LEN)
-        _log_endgroup()
+        log_endgroup()
         try:
             result = subprocess.run(
                 summarizer_cmd,

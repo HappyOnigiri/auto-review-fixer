@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from ci_log import _log_endgroup, _log_group
+from ci_log import log_endgroup, log_group
 from state_manager import StateComment, upsert_state_comment
 
 # --- フェーズレポートのタイトル定義 ---
@@ -14,7 +14,7 @@ PHASE_REPORT_TITLES = {
 }
 
 
-def _prepare_reports_dir(repo: str, works_dir: Path) -> Path:
+def prepare_reports_dir(repo: str, works_dir: Path) -> Path:
     """リポジトリのレポートディレクトリを作成して返す。"""
     owner, repo_name = repo.split("/", 1)
     reports_root = works_dir.parent.parent / "reports"
@@ -23,9 +23,7 @@ def _prepare_reports_dir(repo: str, works_dir: Path) -> Path:
     return reports_dir
 
 
-def _build_phase_report_path(
-    reports_dir: Path, pr_number: int, phase_label: str
-) -> str:
+def build_phase_report_path(reports_dir: Path, pr_number: int, phase_label: str) -> str:
     """PR フェーズのレポートファイルの絶対パスを構築する。"""
     return str((reports_dir / f"pr_{pr_number}_{phase_label}.md").resolve())
 
@@ -49,7 +47,7 @@ def _format_report_for_state_comment(phase_label: str, report_content: str) -> s
     return f"#### {phase_title}\n\n{normalized_content}"
 
 
-def _capture_state_comment_report(
+def capture_state_comment_report(
     report_blocks: list[str], phase_label: str, report_path: str | None
 ) -> None:
     """フェーズレポートを PR state comment に埋め込むためにキャプチャする。"""
@@ -68,7 +66,7 @@ def _capture_state_comment_report(
         report_blocks.append(block)
 
 
-def _merge_state_comment_report_body(
+def merge_state_comment_report_body(
     existing_report_body: str, new_report_blocks: list[str]
 ) -> str:
     """新しい実行レポートを既存のレポート本文の前にマージする。"""
@@ -79,7 +77,7 @@ def _merge_state_comment_report_body(
     return "\n\n".join(parts)
 
 
-def _persist_state_comment_report_if_changed(
+def persist_state_comment_report_if_changed(
     repo: str,
     pr_number: int,
     state_comment: StateComment,
@@ -93,7 +91,7 @@ def _persist_state_comment_report_if_changed(
     return True
 
 
-def _emit_runtime_pain_report(
+def emit_runtime_pain_report(
     *,
     report_path: str | None,
     phase_label: str,
@@ -104,7 +102,7 @@ def _emit_runtime_pain_report(
     if not report_path or (silent and not claude_failed):
         return
     report_file = Path(report_path)
-    _log_group(f"Runtime report ({phase_label})")
+    log_group(f"Runtime report ({phase_label})")
     try:
         print(f"[report {phase_label}] {report_file}", file=sys.stderr)
         if not report_file.exists():
@@ -124,4 +122,4 @@ def _emit_runtime_pain_report(
         print(content, file=sys.stderr)
         print("  --- end report ---", file=sys.stderr)
     finally:
-        _log_endgroup()
+        log_endgroup()

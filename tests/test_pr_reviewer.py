@@ -12,7 +12,7 @@ def test_fetch_pr_reviews_normalizes_ids_and_urls():
         stderr="",
     )
 
-    with patch("pr_reviewer.subprocess.run", return_value=result):
+    with patch("pr_reviewer.run_command", return_value=result):
         reviews = pr_reviewer.fetch_pr_reviews("owner/repo", 1)
 
     assert reviews == [
@@ -35,7 +35,7 @@ def test_fetch_pr_review_comments_flattens_paginated_response():
         stderr="",
     )
 
-    with patch("pr_reviewer.subprocess.run", return_value=result):
+    with patch("pr_reviewer.run_command", return_value=result):
         comments = pr_reviewer.fetch_pr_review_comments("owner/repo", 1)
 
     assert comments == [{"id": 10, "body": "a"}, {"id": 11, "body": "b"}]
@@ -48,7 +48,7 @@ def test_fetch_issue_comments_flattens_paginated_response():
         stderr="",
     )
 
-    with patch("pr_reviewer.subprocess.run", return_value=result):
+    with patch("pr_reviewer.run_command", return_value=result):
         comments = pr_reviewer.fetch_issue_comments("owner/repo", 1)
 
     assert comments == [{"id": 21, "body": "a"}, {"id": 22, "body": "b"}]

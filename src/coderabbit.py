@@ -4,10 +4,11 @@
 """
 
 import re
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from subprocess_helpers import SubprocessError, run_command
 
 # --- 定数 ---
 # REST API は "coderabbitai[bot]"、GraphQL は "coderabbitai" を返す
@@ -21,7 +22,7 @@ CODERABBIT_REVIEW_FAILED_HEAD_CHANGED_MARKER = (
 CODERABBIT_RESUME_COMMENT = "@coderabbitai resume"
 
 
-def _is_coderabbit_login(login: str) -> bool:
+def is_coderabbit_login(login: str) -> bool:
     """ログイン名が CodeRabbit ボットかどうか判定する。"""
     return login in (CODERABBIT_BOT_LOGIN, f"{CODERABBIT_BOT_LOGIN}[bot]")
 
@@ -160,7 +161,7 @@ def _latest_coderabbit_activity_at(
 
     for review in pr_data.get("reviews", []):
         login = str(review.get("author", {}).get("login", ""))
-        if _is_coderabbit_login(login):
+        if is_coderabbit_login(login):
             _update(
                 _parse_github_timestamp(str(review.get("submittedAt") or ""))
                 or _parse_github_timestamp(str(review.get("updatedAt") or ""))
@@ -168,12 +169,12 @@ def _latest_coderabbit_activity_at(
 
     for comment in review_comments:
         login = str(comment.get("user", {}).get("login", ""))
-        if _is_coderabbit_login(login):
+        if is_coderabbit_login(login):
             _update(_comment_last_updated_at(comment))
 
     for comment in issue_comments:
         login = str(comment.get("user", {}).get("login", ""))
-        if _is_coderabbit_login(login):
+        if is_coderabbit_login(login):
             _update(_comment_last_updated_at(comment))
 
     return latest
@@ -188,7 +189,7 @@ def _latest_coderabbit_review_submitted_at(pr_data: dict[str, Any]) -> datetime 
     latest: datetime | None = None
     for review in pr_data.get("reviews", []):
         login = str(review.get("author", {}).get("login", ""))
-        if not _is_coderabbit_login(login):
+        if not is_coderabbit_login(login):
             continue
         ts = _parse_github_timestamp(
             str(review.get("submittedAt") or "")
@@ -198,7 +199,7 @@ def _latest_coderabbit_review_submitted_at(pr_data: dict[str, Any]) -> datetime 
     return latest
 
 
-def _get_active_coderabbit_rate_limit(
+def get_active_coderabbit_rate_limit(
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
     issue_comments: list[dict[str, Any]],
@@ -207,7 +208,7 @@ def _get_active_coderabbit_rate_limit(
     latest_rate_limit: dict[str, Any] | None = None
     for comment in issue_comments:
         login = str(comment.get("user", {}).get("login", ""))
-        if not _is_coderabbit_login(login):
+        if not is_coderabbit_login(login):
             continue
         rate_limit_status = _extract_coderabbit_rate_limit_status(comment)
         if rate_limit_status is None:
@@ -228,7 +229,7 @@ def _get_active_coderabbit_rate_limit(
     return latest_rate_limit
 
 
-def _get_active_coderabbit_review_failed(
+def get_active_coderabbit_review_failed(
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
     issue_comments: list[dict[str, Any]],
@@ -237,7 +238,7 @@ def _get_active_coderabbit_review_failed(
     latest_review_failed: dict[str, Any] | None = None
     for comment in issue_comments:
         login = str(comment.get("user", {}).get("login", ""))
-        if not _is_coderabbit_login(login):
+        if not is_coderabbit_login(login):
             continue
         review_failed_status = _extract_coderabbit_review_failed_status(comment)
         if review_failed_status is None:
@@ -274,21 +275,25 @@ def _has_resume_comment_after(
 
 def _post_issue_comment(repo: str, pr_number: int, body: str) -> bool:
     """PR にイシューコメントを投稿する。"""
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/issues/{pr_number}/comments",
-            "-X",
-            "POST",
-            "-f",
-            f"body={body}",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/issues/{pr_number}/comments",
+                "-X",
+                "POST",
+                "-f",
+                f"body={body}",
+            ],
+            check=False,
+        )
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to post comment to PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode == 0:
         print(f"Posted comment to PR #{pr_number}: {body}")
         return True
@@ -300,7 +305,7 @@ def _post_issue_comment(repo: str, pr_number: int, body: str) -> bool:
     return False
 
 
-def _maybe_auto_resume_coderabbit_review(
+def maybe_auto_resume_coderabbit_review(
     *,
     repo: str,
     pr_number: int,
@@ -356,7 +361,7 @@ def _maybe_auto_resume_coderabbit_review(
     return _post_issue_comment(repo, pr_number, CODERABBIT_RESUME_COMMENT)
 
 
-def _maybe_auto_resume_coderabbit_review_failed(
+def maybe_auto_resume_coderabbit_review_failed(
     *,
     repo: str,
     pr_number: int,
@@ -403,7 +408,7 @@ def _maybe_auto_resume_coderabbit_review_failed(
     return _post_issue_comment(repo, pr_number, CODERABBIT_RESUME_COMMENT)
 
 
-def _contains_coderabbit_processing_marker(
+def contains_coderabbit_processing_marker(
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
     issue_comments: list[dict[str, Any]] | None = None,
@@ -412,25 +417,25 @@ def _contains_coderabbit_processing_marker(
     for review in pr_data.get("reviews", []):
         login = review.get("author", {}).get("login", "")
         body = review.get("body", "") or ""
-        if _is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
+        if is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
             return True
 
     for comment in pr_data.get("comments", []):
         login = comment.get("author", {}).get("login", "")
         body = comment.get("body", "") or ""
-        if _is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
+        if is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
             return True
 
     for comment in review_comments:
         login = comment.get("user", {}).get("login", "")
         body = comment.get("body", "") or ""
-        if _is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
+        if is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
             return True
 
     for comment in issue_comments or []:
         login = comment.get("user", {}).get("login", "")
         body = comment.get("body", "") or ""
-        if _is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
+        if is_coderabbit_login(login) and CODERABBIT_PROCESSING_MARKER in body:
             return True
 
     return False

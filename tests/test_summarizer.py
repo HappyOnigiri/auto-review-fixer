@@ -79,8 +79,8 @@ Hope this helps!"""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'
         with (
             patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer._log_group") as mock_group,
-            patch("summarizer._log_endgroup") as mock_endgroup,
+            patch("summarizer.log_group") as mock_group,
+            patch("summarizer.log_endgroup") as mock_endgroup,
         ):
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -108,8 +108,8 @@ Hope this helps!"""
         fake_stderr = "\nerr\n"
         with (
             patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer._log_group"),
-            patch("summarizer._log_endgroup"),
+            patch("summarizer.log_group"),
+            patch("summarizer.log_endgroup"),
         ):
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -138,8 +138,8 @@ Hope this helps!"""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'
         with (
             patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer._log_group") as mock_group,
-            patch("summarizer._log_endgroup") as mock_endgroup,
+            patch("summarizer.log_group") as mock_group,
+            patch("summarizer.log_endgroup") as mock_endgroup,
         ):
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -208,8 +208,8 @@ Hope this helps!"""
         fake_stderr = "raw-stderr-error"
         with (
             patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer._log_group") as mock_group,
-            patch("summarizer._log_endgroup") as mock_endgroup,
+            patch("summarizer.log_group") as mock_group,
+            patch("summarizer.log_endgroup") as mock_endgroup,
         ):
             mock_run.return_value = MagicMock(
                 returncode=1,

@@ -1,13 +1,14 @@
 """PR ラベルの作成・設定・管理を行うモジュール。"""
 
 import json
-import subprocess
 import sys
 from typing import Any
 from urllib.parse import quote
 
-from ci_check import _are_all_ci_checks_successful
-from coderabbit import _contains_coderabbit_processing_marker
+from subprocess_helpers import SubprocessError, run_command
+
+from ci_check import are_all_ci_checks_successful
+from coderabbit import contains_coderabbit_processing_marker
 
 # --- ラベル定数 ---
 REFIX_RUNNING_LABEL = "refix:running"
@@ -52,13 +53,14 @@ def _ensure_repo_label_exists(
     """リポジトリにラベルが存在しなければ作成する。"""
     encoded_label = quote(label, safe="")
     get_cmd = ["gh", "api", f"repos/{repo}/labels/{encoded_label}"]
-    get_result = subprocess.run(
-        get_cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        get_result = run_command(get_cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to check label '{label}' on {repo}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if get_result.returncode == 0:
         return True
 
@@ -84,13 +86,14 @@ def _ensure_repo_label_exists(
         "-f",
         f"description={description}",
     ]
-    create_result = subprocess.run(
-        create_cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        create_result = run_command(create_cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to create label '{label}' in {repo}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if create_result.returncode == 0:
         print(f"Created missing label '{label}' in {repo}")
         return True
@@ -141,7 +144,7 @@ def _ensure_refix_labels(
         )
 
 
-def _edit_pr_label(
+def edit_pr_label(
     repo: str,
     pr_number: int,
     *,
@@ -166,13 +169,15 @@ def _edit_pr_label(
         label_arg,
         label,
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        action = "add" if add else "remove"
+        print(
+            f"Warning: failed to {action} label '{label}' on PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode == 0:
         return True
 
@@ -203,7 +208,7 @@ def _pr_has_label(pr_data: dict[str, Any], label_name: str) -> bool:
     return False
 
 
-def _set_pr_running_label(
+def set_pr_running_label(
     repo: str,
     pr_number: int,
     *,
@@ -229,10 +234,10 @@ def _set_pr_running_label(
     changed = False
     if done_enabled and (pr_data is None or _pr_has_label(pr_data, REFIX_DONE_LABEL)):
         if enabled_pr_label_keys is None:
-            if _edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL):
+            if edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL):
                 changed = True
         else:
-            if _edit_pr_label(
+            if edit_pr_label(
                 repo,
                 pr_number,
                 add=False,
@@ -244,10 +249,10 @@ def _set_pr_running_label(
         pr_data is None or not _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if _edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL):
+            if edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL):
                 changed = True
         else:
-            if _edit_pr_label(
+            if edit_pr_label(
                 repo,
                 pr_number,
                 add=True,
@@ -286,10 +291,10 @@ def _set_pr_done_label(
         pr_data is None or _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
+            if edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
                 changed = True
         else:
-            if _edit_pr_label(
+            if edit_pr_label(
                 repo,
                 pr_number,
                 add=False,
@@ -301,10 +306,10 @@ def _set_pr_done_label(
         pr_data is None or not _pr_has_label(pr_data, REFIX_DONE_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if _edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL):
+            if edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL):
                 changed = True
         else:
-            if _edit_pr_label(
+            if edit_pr_label(
                 repo,
                 pr_number,
                 add=True,
@@ -327,17 +332,17 @@ def _set_pr_merged_label(
     changed = False
     if enabled_pr_label_keys is None:
         _ensure_refix_labels(repo)
-        if _edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
+        if edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
             changed = True
-        if _edit_pr_label(
+        if edit_pr_label(
             repo, pr_number, add=False, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
         ):
             changed = True
-        if _edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL):
+        if edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL):
             changed = True
     else:
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        if _edit_pr_label(
+        if edit_pr_label(
             repo,
             pr_number,
             add=False,
@@ -345,7 +350,7 @@ def _set_pr_merged_label(
             enabled_pr_label_keys=enabled,
         ):
             changed = True
-        if _edit_pr_label(
+        if edit_pr_label(
             repo,
             pr_number,
             add=False,
@@ -353,7 +358,7 @@ def _set_pr_merged_label(
             enabled_pr_label_keys=enabled,
         ):
             changed = True
-        if _edit_pr_label(
+        if edit_pr_label(
             repo,
             pr_number,
             add=True,
@@ -381,13 +386,14 @@ def _mark_pr_merged_label_if_needed(
         "--json",
         "mergedAt,labels",
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to inspect merge state for PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode != 0:
         print(
             f"Warning: failed to inspect merge state for PR #{pr_number}: {(result.stderr or '').strip()}",
@@ -423,7 +429,7 @@ def _mark_pr_merged_label_if_needed(
     return _set_pr_merged_label(repo, pr_number, enabled_pr_label_keys=enabled)
 
 
-def _backfill_merged_labels(
+def backfill_merged_labels(
     repo: str,
     *,
     limit: int = 100,
@@ -463,13 +469,14 @@ def _backfill_merged_labels(
         "--limit",
         str(limit),
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to list merged PRs for {repo}: {exc}",
+            file=sys.stderr,
+        )
+        return 0
     if result.returncode != 0:
         print(
             f"Warning: failed to list merged PRs for {repo}: {(result.stderr or '').strip()}",
@@ -513,17 +520,18 @@ def _trigger_pr_auto_merge(
     """auto-merge を要求する。(merge_state_reached, modified) を返す。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     cmd = ["gh", "pr", "merge", str(pr_number), "--repo", repo, "--auto", "--merge"]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to auto-merge PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False, False
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        modified = _edit_pr_label(
+        modified = edit_pr_label(
             repo,
             pr_number,
             add=True,
@@ -538,7 +546,7 @@ def _trigger_pr_auto_merge(
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
-        modified = _edit_pr_label(
+        modified = edit_pr_label(
             repo,
             pr_number,
             add=True,
@@ -555,7 +563,7 @@ def _trigger_pr_auto_merge(
     return False, False
 
 
-def _update_done_label_if_completed(
+def update_done_label_if_completed(
     *,
     repo: str,
     pr_number: int,
@@ -595,7 +603,7 @@ def _update_done_label_if_completed(
     if has_review_targets and (not review_fix_started or review_fix_added_commits):
         is_completed = False
 
-    if is_completed and _contains_coderabbit_processing_marker(
+    if is_completed and contains_coderabbit_processing_marker(
         pr_data, review_comments, issue_comments
     ):
         print(
@@ -617,7 +625,7 @@ def _update_done_label_if_completed(
 
     ci_grace_pending = False
     if is_completed:
-        ci_check_result = _are_all_ci_checks_successful(
+        ci_check_result = are_all_ci_checks_successful(
             repo,
             pr_number,
             ci_empty_as_success=ci_empty_as_success,
@@ -671,9 +679,9 @@ def _update_done_label_if_completed(
         f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
     )
     if enabled_pr_label_keys is None:
-        return _set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
+        return set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
     return (
-        _set_pr_running_label(
+        set_pr_running_label(
             repo,
             pr_number,
             pr_data=pr_data,

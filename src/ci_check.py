@@ -2,13 +2,13 @@
 
 import json
 import re
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pr_reviewer import _fetch_classic_statuses_via_rest
 from prompt_builder import _xml_escape, _xml_escape_attr
+from subprocess_helpers import SubprocessError, run_command
 
 # --- 定数 ---
 SUCCESSFUL_CI_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
@@ -24,7 +24,7 @@ FAILED_CI_STATES = {"ERROR", "FAILURE"}
 GITHUB_ACTIONS_RUN_URL_PATTERN = re.compile(r"/actions/runs/(\d+)")
 
 
-def _extract_failing_ci_contexts(pr_data: dict[str, Any]) -> list[dict[str, str]]:
+def extract_failing_ci_contexts(pr_data: dict[str, Any]) -> list[dict[str, str]]:
     """pr_data['check_runs']（REST check-runs 形式）から失敗した CI コンテキストを抽出する。
 
     NOTE: statusCheckRollup (GraphQL) は Fine-grained PAT ではアクセス不可のため使用禁止。
@@ -123,7 +123,7 @@ def _select_ci_failure_log_excerpt(
     return excerpt, truncated
 
 
-def _collect_ci_failure_materials(
+def collect_ci_failure_materials(
     repo: str,
     failing_contexts: list[dict[str, str]],
     *,
@@ -140,17 +140,14 @@ def _collect_ci_failure_materials(
             continue
         seen_run_ids.add(run_id)
         try:
-            run_view_result = subprocess.run(
+            run_view_result = run_command(
                 ["gh", "run", "view", run_id, "--repo", repo, "--log-failed"],
-                capture_output=True,
-                text=True,
                 check=False,
-                encoding="utf-8",
                 timeout=60,
             )
-        except subprocess.TimeoutExpired:
+        except SubprocessError:
             print(
-                f"Warning: timed out fetching CI logs for run {run_id}; skipping",
+                f"Warning: failed to fetch CI logs for run {run_id}; skipping",
                 file=sys.stderr,
             )
             continue
@@ -178,7 +175,7 @@ def _collect_ci_failure_materials(
     return materials
 
 
-def _build_ci_fix_prompt(
+def build_ci_fix_prompt(
     pr_number: int,
     title: str,
     failing_contexts: list[dict[str, str]],
@@ -288,7 +285,7 @@ def _build_ci_fix_prompt(
 """
 
 
-def _are_all_ci_checks_successful(
+def are_all_ci_checks_successful(
     repo: str,
     pr_number: int,
     *,
@@ -301,15 +298,12 @@ def _are_all_ci_checks_successful(
     """
     # head commit SHA を取得
     try:
-        head_result = subprocess.run(
+        head_result = run_command(
             ["gh", "api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
-            capture_output=True,
-            text=True,
             check=False,
-            encoding="utf-8",
             timeout=60,
         )
-    except subprocess.TimeoutExpired:
+    except Exception:
         print(
             f"Warning: timed out fetching head SHA for PR #{pr_number}; "
             "skip refix:done labeling.",
@@ -324,7 +318,7 @@ def _are_all_ci_checks_successful(
 
     # REST 経由で check runs を取得
     try:
-        result = subprocess.run(
+        result = run_command(
             [
                 "gh",
                 "api",
@@ -332,13 +326,10 @@ def _are_all_ci_checks_successful(
                 "--paginate",
                 "--slurp",
             ],
-            capture_output=True,
-            text=True,
             check=False,
-            encoding="utf-8",
             timeout=60,
         )
-    except subprocess.TimeoutExpired:
+    except Exception:
         print(
             f"Warning: timed out fetching check runs for PR #{pr_number}; "
             "skip refix:done labeling.",
@@ -375,7 +366,7 @@ def _are_all_ci_checks_successful(
             return False
         # checks が空: 最新コミットが猶予期間より古ければ CI なしとみなす
         try:
-            commit_result = subprocess.run(
+            commit_result = run_command(
                 [
                     "gh",
                     "api",
@@ -383,13 +374,10 @@ def _are_all_ci_checks_successful(
                     "--jq",
                     ".commit.committer.date",
                 ],
-                capture_output=True,
-                text=True,
                 check=False,
-                encoding="utf-8",
                 timeout=60,
             )
-        except subprocess.TimeoutExpired:
+        except Exception:
             print(
                 f"Warning: timed out fetching commit date for PR #{pr_number}; "
                 "skip refix:done labeling.",

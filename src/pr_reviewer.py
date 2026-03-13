@@ -5,33 +5,17 @@ Displays review comments that are newer than the latest commit.
 """
 
 import json
-import subprocess
 import sys
 from datetime import datetime
 from typing import Any
+
+from subprocess_helpers import SubprocessError, run_command
 
 # Set UTF-8 encoding for output
 if sys.stdout.encoding != "utf-8" and hasattr(sys.stdout, "buffer"):
     import io
 
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
-
-def run_gh_command(cmd: list[str]) -> Any:
-    """Run gh command and return JSON output."""
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
-
-    if result.returncode != 0:
-        print(f"Error: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        return json.loads(result.stdout) if result.stdout else {}
-    except json.JSONDecodeError:
-        print("Warning: failed to parse command output", file=sys.stderr)
-        return {}
 
 
 def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:
@@ -59,13 +43,10 @@ def _fetch_check_runs_via_rest(repo: str, ref: str) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError:
+        return []
     if result.returncode != 0:
         return []
     try:
@@ -97,9 +78,10 @@ def _fetch_classic_statuses_via_rest(repo: str, sha: str) -> list[dict[str, Any]
     """Fetch classic commit statuses (Jenkins, Travis, etc.) via REST API.
     Returns normalized entries in the same format as _fetch_check_runs_via_rest."""
     cmd = ["gh", "api", f"repos/{repo}/commits/{sha}/status"]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError:
+        return []
     if result.returncode != 0:
         return []
     try:
@@ -143,16 +125,13 @@ def fetch_pr_details(repo: str, pr_number: int) -> dict[str, Any]:
         "--json",
         base_json,
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    result = run_command(cmd, check=False)
     if result.returncode != 0:
-        print(f"Error: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
+        raise SubprocessError(
+            f"Failed to fetch PR details for {repo}#{pr_number}: {result.stderr.strip()}",
+            returncode=result.returncode,
+            stderr=result.stderr or "",
+        )
     try:
         pr_data = json.loads(result.stdout) if result.stdout else {}
     except json.JSONDecodeError:
@@ -192,9 +171,11 @@ def fetch_pr_reviews(repo: str, pr_number: int) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch PR reviews: {exc}", file=sys.stderr)
+        return []
     if result.returncode != 0:
         print(f"Warning: failed to fetch PR reviews: {result.stderr}", file=sys.stderr)
         return []
@@ -233,9 +214,11 @@ def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch review comments: {exc}", file=sys.stderr)
+        return []
     if result.returncode != 0:
         print(
             f"Warning: failed to fetch review comments: {result.stderr}",
@@ -259,9 +242,7 @@ def fetch_issue_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    result = run_command(cmd, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"failed to fetch issue comments: {result.stderr}")
     try:
@@ -306,9 +287,11 @@ query($owner: String!, $name: String!, $number: Int!) {
         "-F",
         f"number={pr_number}",
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch review threads: {exc}", file=sys.stderr)
+        return {}
     if result.returncode != 0:
         print(
             f"Warning: failed to fetch review threads: {result.stderr}", file=sys.stderr
@@ -354,9 +337,14 @@ mutation($threadId: ID!) {
         "-F",
         f"threadId={thread_node_id}",
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, encoding="utf-8"
-    )
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to resolve thread {thread_node_id}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode != 0:
         print(
             f"Warning: failed to resolve thread {thread_node_id}: {result.stderr}",
