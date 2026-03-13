@@ -90,7 +90,7 @@ def summarization_target_ids(
         if review_id:
             target_ids.append(review_id)
     for comment in comments:
-        if comment.get("id"):
+        if comment.get("_state_comment_id") or comment.get("id"):
             target_ids.append(inline_comment_state_id(comment))
     return target_ids
 
