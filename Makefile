@@ -55,7 +55,7 @@ setup:
 		echo ".env already exists, skipping."; \
 	fi
 	@if [ ! -f .refix.yaml ]; then \
-		cp .refix.yaml.sample .refix.yaml && echo ".refix.yaml created from sample"; \
+		cp .refix.sample.yaml .refix.yaml && echo ".refix.yaml created from sample"; \
 	else \
 		echo ".refix.yaml already exists, skipping."; \
 	fi

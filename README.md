@@ -64,7 +64,7 @@ Processed review items are recorded back to the pull request, which prevents the
 
    `make setup`
 
-2. Edit `.refix.yaml` based on `.refix.yaml.sample`.
+2. Edit `.refix.yaml` based on `.refix.sample.yaml`.
 
 3. Authenticate the required CLIs:
 
