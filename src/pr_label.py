@@ -594,34 +594,46 @@ def update_done_label_if_completed(
         return False, False
 
     is_completed = True
+    block_reasons: list[str] = []
+
     if review_fix_failed:
         is_completed = False
+        block_reasons.append("review fix failed")
     if not state_saved:
         is_completed = False
+        block_reasons.append("state not saved")
     if commits_by_phase:
         is_completed = False
+        block_reasons.append(
+            f"commits pushed this run: {len(commits_by_phase)} phase(s)"
+        )
     if has_review_targets and (not review_fix_started or review_fix_added_commits):
         is_completed = False
+        block_reasons.append("review fix pending or added commits")
 
-    if is_completed and contains_coderabbit_processing_marker(
-        pr_data, review_comments, issue_comments
-    ):
-        print(
-            f"CodeRabbit is still processing PR #{pr_number}; mark as {REFIX_RUNNING_LABEL}."
-        )
-        is_completed = False
+    if is_completed:
+        if contains_coderabbit_processing_marker(
+            pr_data, review_comments, issue_comments
+        ):
+            print(
+                f"CodeRabbit is still processing PR #{pr_number}; mark as {REFIX_RUNNING_LABEL}."
+            )
+            is_completed = False
+            block_reasons.append("CodeRabbit still processing")
 
-    if is_completed and coderabbit_rate_limit_active:
-        print(
-            f"CodeRabbit rate limit is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}."
-        )
-        is_completed = False
+        if coderabbit_rate_limit_active:
+            print(
+                f"CodeRabbit rate limit is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}."
+            )
+            is_completed = False
+            block_reasons.append("CodeRabbit rate limited")
 
-    if is_completed and coderabbit_review_failed_active:
-        print(
-            f"CodeRabbit review failed status is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}."
-        )
-        is_completed = False
+        if coderabbit_review_failed_active:
+            print(
+                f"CodeRabbit review failed status is active on PR #{pr_number}; keep {REFIX_RUNNING_LABEL}."
+            )
+            is_completed = False
+            block_reasons.append("CodeRabbit review failed")
 
     ci_grace_pending = False
     if is_completed:
@@ -634,8 +646,10 @@ def update_done_label_if_completed(
         if ci_check_result is None:
             ci_grace_pending = True
             is_completed = False
+            block_reasons.append("CI checks unavailable")
         elif not ci_check_result:
             is_completed = False
+            block_reasons.append("CI checks not all successful")
 
     if is_completed:
         print(
@@ -675,9 +689,15 @@ def update_done_label_if_completed(
             merge_triggered = label_modified
         return done_changed or merge_triggered, ci_grace_pending
 
-    print(
-        f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
-    )
+    if block_reasons:
+        print(
+            f"PR #{pr_number} is not completed yet ({', '.join(block_reasons)}); "
+            f"switching label to {REFIX_RUNNING_LABEL}."
+        )
+    else:
+        print(
+            f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
+        )
     if enabled_pr_label_keys is None:
         return set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
     return (
