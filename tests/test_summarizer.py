@@ -309,8 +309,9 @@ Hope this helps!"""
         assert result == {"r1": "s1"}
         assert written_prompts, "prompt file was not written"
         assert "これはテスト用のPR概要です" in written_prompts[0]
-        assert "<<<PR_BODY>>>" in written_prompts[0]
-        assert "<<<END_PR_BODY>>>" in written_prompts[0]
+        assert "PR概要データ（以下は参考情報" in written_prompts[0]
+        assert "<<<PR_BODY>>>" not in written_prompts[0]
+        assert "<<<END_PR_BODY>>>" not in written_prompts[0]
 
     def test_pr_body_truncated_to_2000_chars(self):
         """pr_body longer than 2000 chars is truncated."""
@@ -334,7 +335,7 @@ Hope this helps!"""
             pr_body="",
         )
         assert written_prompts
-        assert "<<<PR_BODY>>>" not in written_prompts[0]
+        assert "PR概要データ（以下は参考情報" not in written_prompts[0]
 
     def test_pr_body_summary_returned_as_pr_body_key(self):
         """_pr_body key in JSON response is included in returned dict."""
