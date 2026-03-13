@@ -340,7 +340,10 @@ mutation($threadId: ID!) {
     try:
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
-        print(f"Warning: failed to resolve thread {thread_node_id}: {exc}", file=sys.stderr)
+        print(
+            f"Warning: failed to resolve thread {thread_node_id}: {exc}",
+            file=sys.stderr,
+        )
         return False
     if result.returncode != 0:
         print(

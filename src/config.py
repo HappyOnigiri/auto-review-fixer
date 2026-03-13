@@ -377,9 +377,7 @@ def expand_repositories(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
             try:
                 result = run_command(cmd, check=False)
             except SubprocessError as exc:
-                raise ConfigError(
-                    f"failed to expand {repo_name}: {exc}"
-                ) from exc
+                raise ConfigError(f"failed to expand {repo_name}: {exc}") from exc
             if result.returncode != 0:
                 raise ConfigError(
                     f"failed to expand {repo_name}: {(result.stderr or '').strip()}"
