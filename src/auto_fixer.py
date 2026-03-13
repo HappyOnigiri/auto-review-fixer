@@ -1757,6 +1757,7 @@ def main():
     global_coderabbit_resumed_prs: set[tuple[str, int]] = set()
     global_backfilled_count: list[int] = [0]
     auto_resume_run_state = normalize_auto_resume_state(config, DEFAULT_CONFIG)
+    had_errors = False
     for repo_info in repos:
         try:
             results = process_repo(
@@ -1786,6 +1787,7 @@ def main():
             sys.exit(1)
         except Exception as e:
             print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
+            had_errors = True
             continue
 
     if global_coderabbit_resumed_prs:
@@ -1804,6 +1806,8 @@ def main():
                 print(f"      {line}")
         print("=" * SEPARATOR_LEN)
     print("\nDone!")
+    if had_errors:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

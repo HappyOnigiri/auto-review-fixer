@@ -1,6 +1,7 @@
 """Git リポジトリ操作（クローン、チェックアウト、ブランチ比較、マージ）を行うモジュール。"""
 
 import json
+import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -63,6 +64,31 @@ def prepare_repository(
 
     setup_claude_settings(works_dir)
     run_project_setup(works_dir, is_first_clone=is_first_clone)
+
+    # setup コマンドが tracked ファイルを変更していないか確認
+    setup_dirty = run_git(
+        "status",
+        "--porcelain",
+        cwd=works_dir,
+        check=False,
+        timeout=10,
+    )
+    if setup_dirty.stdout.strip():
+        dirty_files = setup_dirty.stdout.strip()
+        diff_output = ""
+        try:
+            diff_result = run_git("diff", cwd=works_dir, check=False, timeout=10)
+            if diff_result.returncode == 0 and diff_result.stdout.strip():
+                diff_output = f"\n{diff_result.stdout.strip()}"
+        except Exception:
+            pass
+        msg = (
+            f"Setup commands left tracked files dirty:\n{dirty_files}"
+            f"{diff_output}\n"
+            "Fix the setup commands in .refix-project.yaml so they do not modify tracked files."
+        )
+        print(f"Error: {msg}", file=sys.stderr)
+        raise RuntimeError(msg)
 
     return works_dir
 
