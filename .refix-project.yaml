@@ -1,0 +1,6 @@
+version: 1
+
+setup:
+  commands:
+    - run: make sync-ruler
+      name: Regenerate AGENTS.md from .ruler/ fragments
