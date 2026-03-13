@@ -18,9 +18,9 @@ For each configured repository, `refix` can:
 - ask Claude to apply code fixes,
 - push commits back to the PR branch,
 - resolve review threads after successful fixes, and
-- persist progress in a PR state comment and with labels such as `refix:running` and `refix:done`.
+- persist progress in a PR state comment and with labels such as `refix: running` and `refix: done`.
 
-When CodeRabbit reports a review-side rate limit, `refix` keeps the PR in `refix:running`, still allows CI repair and base-branch catch-up, and skips review-fix / auto-merge until CodeRabbit can resume.
+When CodeRabbit reports a review-side rate limit, `refix` keeps the PR in `refix: running`, still allows CI repair and base-branch catch-up, and skips review-fix / auto-merge until CodeRabbit can resume.
 
 ## Features
 
@@ -94,8 +94,8 @@ ci_log_max_lines: 120
 # Whether to write Claude's stdout to the PR state comment (optional, default true)
 write_result_to_comment: true
 
-# Automatically merge PR when it reaches refix:done state (optional, default false)
-# When merge completes, the refix:merged label is applied
+# Automatically merge PR when it reaches refix: done state (optional, default false)
+# When merge completes, the refix: merged label is applied
 auto_merge: false
 
 # Enable only selected Refix PR labels (optional, default: all enabled)
@@ -177,7 +177,7 @@ When enabled, each phase's stdout is embedded in the PR state comment under `実
 
 #### `auto_merge`
 
-Automatically merge the fix PR when it reaches the `refix:done` state.
+Automatically merge the fix PR when it reaches the `refix: done` state.
 
 - Type: boolean
 - Required: no
@@ -214,7 +214,7 @@ Whether `refix` should automatically post `@coderabbitai resume` when CodeRabbit
 - Required: no
 - Default: `false`
 
-When a rate-limit notice is active, `refix` keeps the PR in `refix:running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed. It also auto-resumes when CodeRabbit posts a `Review failed` status comment caused by head commit changes during review.
+When a rate-limit notice is active, `refix` keeps the PR in `refix: running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed. It also auto-resumes when CodeRabbit posts a `Review failed` status comment caused by head commit changes during review.
 
 #### `coderabbit_auto_resume_max_per_run`
 
