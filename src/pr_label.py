@@ -646,7 +646,7 @@ def update_done_label_if_completed(
         if ci_check_result is None:
             ci_grace_pending = True
             is_completed = False
-            block_reasons.append("CI grace period (checks not yet available)")
+            block_reasons.append("CI checks unavailable")
         elif not ci_check_result:
             is_completed = False
             block_reasons.append("CI checks not all successful")
