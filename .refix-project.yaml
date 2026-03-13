@@ -2,5 +2,7 @@ version: 1
 
 setup:
   commands:
+    - run: pip install -r requirements.txt
+      name: Install Python dependencies
     - run: make sync-ruler
       name: Regenerate AGENTS.md from .ruler/ fragments
