@@ -854,7 +854,7 @@ class TestProcessRepo:
             assert "behind" in out.lower()
 
     def test_done_label_does_not_skip_processing_when_behind(self, tmp_path):
-        prs = [{"number": 1, "title": "Test", "labels": [{"name": "refix:done"}]}]
+        prs = [{"number": 1, "title": "Test", "labels": [{"name": "refix: done"}]}]
         pr_data = {
             "headRefName": "feature/test",
             "baseRefName": "main",
