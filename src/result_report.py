@@ -17,6 +17,10 @@ def format_phase_result_block(
 ) -> str:
     """1フェーズの実行結果ブロックを生成する。"""
     phase_title = PHASE_TITLES.get(phase_label, phase_label)
+    stripped_stdout = stdout_text.strip()
+    fence = "```"
+    while fence in stripped_stdout:
+        fence += "`"
     lines = [
         f"#### {phase_title}",
         "",
@@ -33,9 +37,9 @@ def format_phase_result_block(
             "<details>",
             "<summary>stdout</summary>",
             "",
-            "```",
-            stdout_text.strip(),
-            "```",
+            fence,
+            stripped_stdout,
+            fence,
             "",
             "</details>",
         ]
