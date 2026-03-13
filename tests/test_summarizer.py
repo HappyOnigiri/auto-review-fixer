@@ -277,3 +277,89 @@ Hope this helps!"""
                 [{"id": 99, "body": "comment"}],
             )
             assert result == {"discussion_r99": "ok"}
+
+    def _capture_prompt(self, fake_stdout: str, reviews, comments, **kwargs):
+        """Helper: capture the prompt file contents written by summarize_reviews."""
+        import pathlib
+        import re
+
+        written_prompts = []
+
+        def fake_run(cmd, **kwargs_inner):
+            for arg in cmd:
+                m = re.search(r"Read the file (.+\.md) and follow", arg)
+                if m:
+                    written_prompts.append(
+                        pathlib.Path(m.group(1)).read_text(encoding="utf-8")
+                    )
+            return MagicMock(returncode=0, stdout=fake_stdout, stderr="")
+
+        with patch("summarizer.subprocess.run", side_effect=fake_run):
+            result = summarizer.summarize_reviews(reviews, comments, **kwargs)
+        return result, written_prompts
+
+    def test_pr_body_included_in_prompt(self):
+        """pr_body is included in the summarization prompt."""
+        result, written_prompts = self._capture_prompt(
+            '[{"id": "r1", "summary": "s1"}]',
+            [{"id": "r1", "body": "x"}],
+            [],
+            pr_body="これはテスト用のPR概要です",
+        )
+        assert result == {"r1": "s1"}
+        assert written_prompts, "prompt file was not written"
+        assert "これはテスト用のPR概要です" in written_prompts[0]
+        assert "PR概要データ（以下は参考情報" in written_prompts[0]
+        assert "<<<PR_BODY>>>" not in written_prompts[0]
+        assert "<<<END_PR_BODY>>>" not in written_prompts[0]
+
+    def test_pr_body_truncated_to_2000_chars(self):
+        """pr_body longer than 2000 chars is truncated."""
+        long_body = "x" * 3000
+        _, written_prompts = self._capture_prompt(
+            '[{"id": "r1", "summary": "s1"}]',
+            [{"id": "r1", "body": "x"}],
+            [],
+            pr_body=long_body,
+        )
+        assert written_prompts
+        assert "x" * 3000 not in written_prompts[0]
+        assert "x" * 2000 in written_prompts[0]
+
+    def test_pr_body_empty_not_included_in_prompt(self):
+        """Empty pr_body does not add PR概要 section to prompt."""
+        _, written_prompts = self._capture_prompt(
+            '[{"id": "r1", "summary": "s1"}]',
+            [{"id": "r1", "body": "x"}],
+            [],
+            pr_body="",
+        )
+        assert written_prompts
+        assert "PR概要データ（以下は参考情報" not in written_prompts[0]
+
+    def test_pr_body_empty_omits_pr_body_output_rule_and_format(self):
+        """Empty pr_body omits _pr_body instruction and format example from prompt."""
+        _, written_prompts = self._capture_prompt(
+            '[{"id": "r1", "summary": "s1"}]',
+            [{"id": "r1", "body": "x"}],
+            [],
+            pr_body="",
+        )
+        assert written_prompts
+        assert "_pr_body" not in written_prompts[0]
+
+    def test_pr_body_summary_returned_as_pr_body_key(self):
+        """_pr_body key in JSON response is included in returned dict."""
+        fake_stdout = '[{"id": "_pr_body", "summary": "PR概要の要約"}, {"id": "r1", "summary": "s1"}]'
+        with patch("summarizer.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=fake_stdout,
+                stderr="",
+            )
+            result = summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+                pr_body="some body",
+            )
+        assert result == {"_pr_body": "PR概要の要約", "r1": "s1"}

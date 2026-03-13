@@ -562,12 +562,16 @@ def _run_review_fix_phase(
     branch_name = ctx.branch_name
 
     # Generate prompt and execute Claude
+    pr_body_summary = (
+        summaries.pop("_pr_body", None) or (pr_data.get("body", "") or "")[:2000]
+    )
     prompt = generate_prompt(
         pr_number,
         pr_data.get("title", ""),
         unresolved_reviews,
         unresolved_comments,
         summaries,
+        body=pr_body_summary,
     )
 
     if ctx.dry_run:
@@ -1145,6 +1149,7 @@ def _process_single_pr(
                 summaries = summarize_reviews(
                     unresolved_reviews,
                     unresolved_comments,
+                    pr_body=pr_data.get("body", ""),
                     silent=silent,
                     model=summarize_model,
                 )
@@ -1394,6 +1399,7 @@ def _process_single_pr(
         summaries = summarize_reviews(
             unresolved_reviews,
             unresolved_comments,
+            pr_body=pr_data.get("body", ""),
             silent=silent,
             model=summarize_model,
         )

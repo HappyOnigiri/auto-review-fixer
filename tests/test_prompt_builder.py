@@ -152,6 +152,43 @@ class TestGeneratePrompt:
         # Instructions block must end before the actual data block (not the reference in text)
         assert "</instructions>\n\n<review_data>" in prompt
 
+    def test_body_adds_pr_description_element(self):
+        """body パラメータが渡された場合 <pr_description> が含まれる。"""
+        prompt = prompt_builder.generate_prompt(
+            pr_number=42,
+            title="Some PR",
+            unresolved_reviews=[],
+            unresolved_comments=[],
+            summaries={},
+            body="認証バグを修正するPRです",
+        )
+        assert "<pr_description>認証バグを修正するPRです</pr_description>" in prompt
+
+    def test_body_empty_omits_pr_description_element(self):
+        """body が空の場合 <pr_description> は含まれない。"""
+        prompt = prompt_builder.generate_prompt(
+            pr_number=1,
+            title="Empty body",
+            unresolved_reviews=[],
+            unresolved_comments=[],
+            summaries={},
+            body="",
+        )
+        assert "<pr_description>" not in prompt
+
+    def test_body_xml_escaped(self):
+        """body 内の XML 特殊文字はエスケープされる。"""
+        prompt = prompt_builder.generate_prompt(
+            pr_number=1,
+            title="Test",
+            unresolved_reviews=[],
+            unresolved_comments=[],
+            summaries={},
+            body="<script>alert('xss')</script>",
+        )
+        assert "<script>" not in prompt
+        assert "&lt;script&gt;" in prompt
+
 
 class TestMergeStrategyHelpers:
     def test_conflict_with_review_targets_uses_two_calls(self):
