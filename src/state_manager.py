@@ -19,9 +19,9 @@ STATE_COMMENT_DESCRIPTION = (
     "手動で編集・削除しないでください。 -->"
 )
 STATE_COMMENT_MAX_LENGTH = 60000
-REPORT_SECTION_START_MARKER = "<!-- refix-execution-report-start -->"
-REPORT_SECTION_END_MARKER = "<!-- refix-execution-report-end -->"
-REPORT_SECTION_SUMMARY = "実行レポート"
+RESULT_LOG_SECTION_START_MARKER = "<!-- refix-result-log-start -->"
+RESULT_LOG_SECTION_END_MARKER = "<!-- refix-result-log-end -->"
+RESULT_LOG_SECTION_SUMMARY = "実行ログ"
 STATE_ID_PATTERN = re.compile(r"\[(r\d+|discussion_r\d+)\](?:\([^)]+\))?")
 STATE_ID_FALLBACK_PATTERN = re.compile(r"\b(r\d+|discussion_r\d+)\b")
 LEGACY_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
@@ -30,12 +30,12 @@ STATE_TABLE_ROW_PATTERN = re.compile(
     re.MULTILINE,
 )
 ARCHIVED_IDS_PATTERN = re.compile(r"<!-- archived-ids: ([^>]+) -->")
-REPORT_SECTION_PATTERN = re.compile(
-    re.escape(REPORT_SECTION_START_MARKER)
+RESULT_LOG_SECTION_PATTERN = re.compile(
+    re.escape(RESULT_LOG_SECTION_START_MARKER)
     + r"\n<details>\n<summary>"
-    + re.escape(REPORT_SECTION_SUMMARY)
+    + re.escape(RESULT_LOG_SECTION_SUMMARY)
     + r"</summary>\n\n(?P<body>.*?)\n</details>\n"
-    + re.escape(REPORT_SECTION_END_MARKER),
+    + re.escape(RESULT_LOG_SECTION_END_MARKER),
     re.DOTALL,
 )
 DEFAULT_STATE_COMMENT_TIMEZONE = "JST"
@@ -58,7 +58,7 @@ class StateComment:
     entries: list[StateEntry]
     processed_ids: set[str]
     archived_ids: set[str]
-    report_body: str = ""
+    result_log_body: str = ""
 
 
 def normalize_state_timezone_name(timezone_name: str) -> str:
@@ -88,11 +88,24 @@ def current_timestamp(timezone_name: str = DEFAULT_STATE_COMMENT_TIMEZONE) -> st
     return datetime.now(ZoneInfo(normalized)).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
+def strip_result_log_section(text: str) -> str:
+    """Remove the rendered result log block from a state comment body."""
+    return RESULT_LOG_SECTION_PATTERN.sub("", text or "")
+
+
+def extract_result_log_body(text: str) -> str:
+    """Extract the markdown body stored in the result log block."""
+    match = RESULT_LOG_SECTION_PATTERN.search(text or "")
+    if not match:
+        return ""
+    return match.group("body").strip()
+
+
 def parse_processed_ids(text: str) -> list[str]:
     """Extract processed IDs from a state comment body without crashing."""
     if not text:
         return []
-    text = strip_report_section(text)
+    text = strip_result_log_section(text)
 
     matches = STATE_ID_PATTERN.findall(text)
     if not matches:
@@ -117,7 +130,7 @@ def _normalize_legacy_processed_at(processed_at: str) -> str:
 
 def parse_state_entries(text: str) -> list[StateEntry]:
     """Parse structured entries from a state comment body."""
-    text = strip_report_section(text)
+    text = strip_result_log_section(text)
     entries: list[StateEntry] = []
     seen: set[str] = set()
 
@@ -147,26 +160,13 @@ def parse_state_entries(text: str) -> list[StateEntry]:
     return entries
 
 
-def strip_report_section(text: str) -> str:
-    """Remove the rendered report block from a state comment body."""
-    return REPORT_SECTION_PATTERN.sub("", text or "")
-
-
-def extract_report_body(text: str) -> str:
-    """Extract the markdown body stored in the execution report block."""
-    match = REPORT_SECTION_PATTERN.search(text or "")
-    if not match:
-        return ""
-    return match.group("body").strip()
-
-
 def format_state_row(comment_id: str, url: str, processed_at: str) -> str:
     """Format a single markdown table row for the state comment."""
     id_cell = f"[{comment_id}]({url})" if url else comment_id
     return f"| {id_cell} | {processed_at} |"
 
 
-def _build_state_comment_body(entries: list[StateEntry], report_body: str) -> str:
+def _build_state_comment_body(entries: list[StateEntry], result_log_body: str) -> str:
     """Build the visible body portion of the state comment."""
     rows = "\n".join(
         format_state_row(
@@ -190,69 +190,64 @@ def _build_state_comment_body(entries: list[StateEntry], report_body: str) -> st
         "",
         "</details>",
     ]
-    normalized_report_body = (report_body or "").strip()
-    if normalized_report_body:
+    normalized_log_body = (result_log_body or "").strip()
+    if normalized_log_body:
         body_lines.extend(
             [
                 "",
-                REPORT_SECTION_START_MARKER,
+                RESULT_LOG_SECTION_START_MARKER,
                 "<details>",
-                f"<summary>{REPORT_SECTION_SUMMARY}</summary>",
+                f"<summary>{RESULT_LOG_SECTION_SUMMARY}</summary>",
                 "",
-                normalized_report_body,
+                normalized_log_body,
                 "",
                 "</details>",
-                REPORT_SECTION_END_MARKER,
+                RESULT_LOG_SECTION_END_MARKER,
             ]
         )
     return "\n".join(body_lines)
 
 
-def _truncate_report_body_to_fit(
-    entries: list[StateEntry], report_body: str, max_length: int
+def _truncate_result_log_body_to_fit(
+    entries: list[StateEntry], result_log_body: str, max_length: int
 ) -> str:
-    """Truncate the report block so the state comment can still fit."""
-    normalized_report_body = (report_body or "").strip()
-    if not normalized_report_body:
+    """Truncate the result log block so the state comment can still fit."""
+    normalized_log_body = (result_log_body or "").strip()
+    if not normalized_log_body:
         return ""
 
-    truncation_notice = "\n\n*古い実行レポートは長さ制限のため省略されています。*"
-    report_scaffold_length = len(_build_state_comment_body(entries, "x")) - 1
-    available_report_length = max_length - report_scaffold_length
-    if available_report_length <= 0:
+    truncation_notice = "\n\n*古い実行ログは長さ制限のため省略されています。*"
+    log_scaffold_length = len(_build_state_comment_body(entries, "x")) - 1
+    available_log_length = max_length - log_scaffold_length
+    if available_log_length <= 0:
         return ""
-    if len(normalized_report_body) <= available_report_length:
-        return normalized_report_body
-    if available_report_length <= len(truncation_notice):
+    if len(normalized_log_body) <= available_log_length:
+        return normalized_log_body
+    if available_log_length <= len(truncation_notice):
         return ""
 
-    kept = normalized_report_body[
-        : available_report_length - len(truncation_notice)
-    ].rstrip()
-    if not kept:
-        return ""
-    return kept + truncation_notice
+    # Split into logical phase sections (each starts with ####) and remove
+    # trailing phases until the body fits, to avoid leaving unclosed tags or fences.
+    phases = re.split(r"\n\n(?=#### )", normalized_log_body)
+    while phases:
+        candidate = "\n\n".join(phases) + truncation_notice
+        if len(candidate) <= available_log_length:
+            return candidate
+        phases.pop()
+    return ""
 
 
 def render_state_comment(
     entries: list[StateEntry],
     archived_ids: set[str] | None = None,
-    report_body: str = "",
+    result_log_body: str = "",
 ) -> str:
     """Render the full state comment, trimming oldest rows if necessary."""
-    # accumulated_archived starts with any IDs previously archived (trimmed in prior renders).
-    # As visible entries are removed to stay within STATE_COMMENT_MAX_LENGTH, their IDs
-    # are added here so they remain queryable even after disappearing from the table.
     accumulated_archived: set[str] = set(archived_ids or set())
     trimmed_entries = list(entries)
-    truncated_report_body = (report_body or "").strip()
-    # Iteratively remove the oldest entry from trimmed_entries until the visible portion
-    # of the comment body fits within STATE_COMMENT_MAX_LENGTH.
-    # format_state_row renders each entry as a markdown table row; rows are joined and
-    # embedded in a <details> block. The oldest rows are dropped first to keep the most
-    # recent processing history visible within GitHub's comment size limit.
+    truncated_log_body = (result_log_body or "").strip()
     while True:
-        body = _build_state_comment_body(trimmed_entries, truncated_report_body)
+        body = _build_state_comment_body(trimmed_entries, truncated_log_body)
         footer = (
             f"\n<!-- archived-ids: {','.join(sorted(accumulated_archived))} -->"
             if accumulated_archived
@@ -264,14 +259,14 @@ def render_state_comment(
             removed = trimmed_entries.pop(0)
             accumulated_archived.add(removed.comment_id)
             continue
-        if truncated_report_body:
-            shortened_report_body = _truncate_report_body_to_fit(
+        if truncated_log_body:
+            shortened_log_body = _truncate_result_log_body_to_fit(
                 trimmed_entries,
-                truncated_report_body,
+                truncated_log_body,
                 STATE_COMMENT_MAX_LENGTH - len(footer),
             )
-            if shortened_report_body != truncated_report_body:
-                truncated_report_body = shortened_report_body
+            if shortened_log_body != truncated_log_body:
+                truncated_log_body = shortened_log_body
                 continue
         if not trimmed_entries:
             # Cannot trim entries further; fit archived IDs into remaining budget
@@ -383,7 +378,7 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
             entries=[],
             processed_ids=set(),
             archived_ids=set(),
-            report_body="",
+            result_log_body="",
         )
 
     merged_entries: list[StateEntry] = []
@@ -409,7 +404,7 @@ def load_state_comment(repo: str, pr_number: int) -> StateComment:
         entries=merged_entries,
         processed_ids={entry.comment_id for entry in merged_entries} | archived_ids,
         archived_ids=archived_ids,
-        report_body=extract_report_body(str(latest_comment.get("body") or "")),
+        result_log_body=extract_result_log_body(str(latest_comment.get("body") or "")),
     )
 
 
@@ -417,7 +412,7 @@ def upsert_state_comment(
     repo: str,
     pr_number: int,
     new_entries: list[StateEntry],
-    report_body: str | None = None,
+    result_log_body: str | None = None,
 ) -> None:
     """Create or update the state comment for a PR."""
     state = load_state_comment(repo, pr_number)
@@ -429,14 +424,16 @@ def upsert_state_comment(
         seen_ids.add(entry.comment_id)
         merged_entries.append(entry)
 
-    next_report_body = state.report_body if report_body is None else report_body.strip()
-    if not merged_entries and not next_report_body:
+    next_result_log_body = (
+        state.result_log_body if result_log_body is None else result_log_body.strip()
+    )
+    if not merged_entries and not next_result_log_body:
         return
 
     body = render_state_comment(
         merged_entries,
         archived_ids=state.archived_ids,
-        report_body=next_report_body,
+        result_log_body=next_result_log_body,
     )
     if state.github_comment_id is None:
         cmd = [

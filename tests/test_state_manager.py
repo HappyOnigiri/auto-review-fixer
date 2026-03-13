@@ -111,14 +111,14 @@ def test_render_state_comment_uses_updated_review_summary_title():
     assert "System Use Only" not in body
 
 
-def test_render_state_comment_includes_execution_report_section():
+def test_render_state_comment_includes_result_log_section():
     body = state_manager.render_state_comment(
         [],
-        report_body="#### レビュー修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Missing context",
+        result_log_body="#### レビュー修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
     )
 
-    assert state_manager.REPORT_SECTION_START_MARKER in body
-    assert "<summary>実行レポート</summary>" in body
+    assert state_manager.RESULT_LOG_SECTION_START_MARKER in body
+    assert "<summary>実行ログ</summary>" in body
     assert "#### レビュー修正" in body
 
 
@@ -163,7 +163,7 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
                 processed_at="2026-03-11 12:00:00",
             )
         ],
-        report_body="#### レビュー修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Missing context",
+        result_log_body="#### レビュー修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
     )
     result = Mock(
         returncode=0,
@@ -193,13 +193,13 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
             processed_at="2026-03-11 12:00:00 UTC",
         )
     ]
-    assert "#### レビュー修正" in comment.report_body
+    assert "#### レビュー修正" in comment.result_log_body
 
 
 def test_parse_processed_ids_ignores_report_section_content():
     text = state_manager.render_state_comment(
         [],
-        report_body="#### レビュー修正\n\n- related id: discussion_r999",
+        result_log_body="#### レビュー修正\n\n- related id: discussion_r999",
     )
 
     assert state_manager.parse_processed_ids(text) == []
@@ -279,7 +279,7 @@ def test_upsert_state_comment_updates_when_existing():
     assert any(arg.startswith("body=") for arg in cmd)
 
 
-def test_upsert_state_comment_writes_report_body_without_new_entries():
+def test_upsert_state_comment_writes_result_log_body_without_new_entries():
     with (
         patch(
             "state_manager.load_state_comment",
@@ -289,7 +289,7 @@ def test_upsert_state_comment_writes_report_body_without_new_entries():
                 entries=[],
                 processed_ids=set(),
                 archived_ids=set(),
-                report_body="",
+                result_log_body="",
             ),
         ),
         patch(
@@ -301,7 +301,7 @@ def test_upsert_state_comment_writes_report_body_without_new_entries():
             "owner/repo",
             7,
             [],
-            report_body="#### CI 修正\n\n### 2026-03-12 10:00:00 UTC src/foo.py Retry",
+            result_log_body="#### CI 修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
         )
 
     cmd = mock_run.call_args.args[0]

@@ -117,18 +117,13 @@ class TestRunClaudePrompt:
             "",
         )
         process.returncode = 1
-        report_path = tmp_path / "pr_1_review-fix.md"
-
-        def popen_side_effect(*args, **kwargs):
-            report_path.write_text("- setup failed once", encoding="utf-8")
-            return process
 
         with (
             patch(
                 "claude_runner.subprocess.run",
                 return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
             ),
-            patch("claude_runner.subprocess.Popen", side_effect=popen_side_effect),
+            patch("claude_runner.subprocess.Popen", return_value=process),
             patch("auto_fixer.log_group"),
             patch("auto_fixer.log_endgroup"),
         ):
@@ -136,32 +131,22 @@ class TestRunClaudePrompt:
                 auto_fixer.run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
-                    report_path=str(report_path.resolve()),
-                    report_enabled=True,
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
                 )
-        err = capsys.readouterr().err
-        assert "[report review-fix]" in err
-        assert "setup failed once" in err
 
     def test_nonzero_exit_raises_command_failed(self, tmp_path, capsys):
         process = Mock()
         process.communicate.return_value = ("API Error: invalid header", "")
         process.returncode = 1
-        report_path = tmp_path / "pr_1_review-fix.md"
-
-        def popen_side_effect(*args, **kwargs):
-            report_path.write_text("- missing context file", encoding="utf-8")
-            return process
 
         with (
             patch(
                 "claude_runner.subprocess.run",
                 return_value=Mock(returncode=0, stdout="abc123\n", stderr=""),
             ),
-            patch("claude_runner.subprocess.Popen", side_effect=popen_side_effect),
+            patch("claude_runner.subprocess.Popen", return_value=process),
             patch("auto_fixer.log_group"),
             patch("auto_fixer.log_endgroup"),
         ):
@@ -169,15 +154,10 @@ class TestRunClaudePrompt:
                 auto_fixer.run_claude_prompt(
                     works_dir=tmp_path,
                     prompt="<instructions>fix</instructions>",
-                    report_path=str(report_path.resolve()),
-                    report_enabled=True,
                     model="sonnet",
                     silent=True,
                     phase_label="review-fix",
                 )
-        err = capsys.readouterr().err
-        assert "[report review-fix]" in err
-        assert "missing context file" in err
 
     def test_success_output_with_limit_phrase_does_not_raise(self, tmp_path):
         process = Mock()
@@ -186,15 +166,7 @@ class TestRunClaudePrompt:
             "",
         )
         process.returncode = 0
-        captured_prompt = ""
 
-        def popen_side_effect(*args, **kwargs):
-            nonlocal captured_prompt
-            prompt_file = tmp_path / "_review_prompt.md"
-            captured_prompt = prompt_file.read_text(encoding="utf-8")
-            return process
-
-        report_path = str((tmp_path / "pr_1_review-fix.md").resolve())
         with (
             patch(
                 "claude_runner.subprocess.run",
@@ -203,154 +175,15 @@ class TestRunClaudePrompt:
                     Mock(returncode=0, stdout="", stderr=""),
                 ],
             ),
-            patch("claude_runner.subprocess.Popen", side_effect=popen_side_effect),
+            patch("claude_runner.subprocess.Popen", return_value=process),
             patch("auto_fixer.log_group"),
             patch("auto_fixer.log_endgroup"),
         ):
             result = auto_fixer.run_claude_prompt(
                 works_dir=tmp_path,
                 prompt="<instructions>fix</instructions>",
-                report_path=report_path,
-                report_enabled=True,
                 model="sonnet",
                 silent=True,
                 phase_label="review-fix",
             )
-            assert result == ""
-            assert "<runtime_pain_report>" in captured_prompt
-            assert report_path in captured_prompt
-            assert "### YYYY-MM-DD hh:mm:ss UTC {file_path} {title}" in captured_prompt
-
-    def test_success_shows_report_when_not_silent_with_content(self, tmp_path, capsys):
-        """When silent=False and report has content, report is shown in stderr."""
-        process = Mock()
-        process.communicate.return_value = ("", "")
-        process.returncode = 0
-        report_path = tmp_path / "pr_1_review-fix.md"
-
-        def popen_side_effect(*args, **kwargs):
-            report_path.write_text(
-                "- ambiguous review comment\n- missing file", encoding="utf-8"
-            )
-            return process
-
-        with (
-            patch(
-                "claude_runner.subprocess.run",
-                return_value=Mock(returncode=0, stdout="", stderr=""),
-            ),
-            patch("claude_runner.subprocess.Popen", side_effect=popen_side_effect),
-            patch("auto_fixer.log_group"),
-            patch("auto_fixer.log_endgroup"),
-        ):
-            auto_fixer.run_claude_prompt(
-                works_dir=tmp_path,
-                prompt="<instructions>fix</instructions>",
-                report_path=str(report_path.resolve()),
-                report_enabled=True,
-                model="sonnet",
-                silent=False,
-                phase_label="review-fix",
-            )
-        err = capsys.readouterr().err
-        assert "[report review-fix]" in err
-        assert "ambiguous review comment" in err
-        assert "missing file" in err
-
-    def test_success_shows_empty_when_not_silent_with_empty_report(
-        self, tmp_path, capsys
-    ):
-        """When silent=False and report is empty, a neutral message is shown."""
-        process = Mock()
-        process.communicate.return_value = ("", "")
-        process.returncode = 0
-        report_path = tmp_path / "pr_1_review-fix.md"
-        report_path.write_text("", encoding="utf-8")
-
-        with (
-            patch(
-                "claude_runner.subprocess.run",
-                return_value=Mock(returncode=0, stdout="", stderr=""),
-            ),
-            patch("claude_runner.subprocess.Popen", return_value=process),
-            patch("auto_fixer.log_group"),
-            patch("auto_fixer.log_endgroup"),
-        ):
-            auto_fixer.run_claude_prompt(
-                works_dir=tmp_path,
-                prompt="<instructions>fix</instructions>",
-                report_path=str(report_path.resolve()),
-                report_enabled=True,
-                model="sonnet",
-                silent=False,
-                phase_label="review-fix",
-            )
-        err = capsys.readouterr().err
-        assert "[report review-fix]" in err
-        assert "レポート出力なし" in err
-
-    def test_success_does_not_show_report_when_silent(self, tmp_path, capsys):
-        """When silent=True and success, report is not shown."""
-        process = Mock()
-        process.communicate.return_value = ("", "")
-        process.returncode = 0
-        report_path = tmp_path / "pr_1_review-fix.md"
-        report_path.write_text("- some content", encoding="utf-8")
-
-        with (
-            patch(
-                "claude_runner.subprocess.run",
-                return_value=Mock(returncode=0, stdout="", stderr=""),
-            ),
-            patch("claude_runner.subprocess.Popen", return_value=process),
-            patch("auto_fixer.log_group"),
-            patch("auto_fixer.log_endgroup"),
-        ):
-            auto_fixer.run_claude_prompt(
-                works_dir=tmp_path,
-                prompt="<instructions>fix</instructions>",
-                report_path=str(report_path.resolve()),
-                report_enabled=True,
-                model="sonnet",
-                silent=True,
-                phase_label="review-fix",
-            )
-        err = capsys.readouterr().err
-        assert "[report]" not in err
-
-    def test_report_instruction_is_omitted_when_disabled(self, tmp_path):
-        process = Mock()
-        process.communicate.return_value = ("", "")
-        process.returncode = 0
-        captured_prompt = ""
-
-        def popen_side_effect(*args, **kwargs):
-            nonlocal captured_prompt
-            captured_prompt = (tmp_path / "_review_prompt.md").read_text(
-                encoding="utf-8"
-            )
-            return process
-
-        with (
-            patch(
-                "claude_runner.subprocess.run",
-                side_effect=[
-                    Mock(returncode=0, stdout="abc123\n", stderr=""),
-                    Mock(returncode=0, stdout="", stderr=""),
-                ],
-            ),
-            patch("claude_runner.subprocess.Popen", side_effect=popen_side_effect),
-            patch("auto_fixer.log_group"),
-            patch("auto_fixer.log_endgroup"),
-        ):
-            auto_fixer.run_claude_prompt(
-                works_dir=tmp_path,
-                prompt="<instructions>fix</instructions>",
-                report_path=None,
-                report_enabled=False,
-                model="sonnet",
-                silent=True,
-                phase_label="review-fix",
-            )
-
-        assert "<runtime_pain_report>" not in captured_prompt
+            assert result[0] == ""

@@ -305,13 +305,12 @@ class TestProcessRepo:
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer.summarize_reviews") as mock_summarize,
             patch("auto_fixer.subprocess.Popen") as mock_popen,
-            patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
+            patch("auto_fixer.upsert_state_comment"),
             patch("auto_fixer.resolve_review_thread"),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, dry_run=True)
             mock_summarize.assert_not_called()
             mock_popen.assert_not_called()
-            mock_upsert_state_comment.assert_not_called()
             out = capsys.readouterr().out
             assert "[DRY RUN]" in out
             assert "follow only the top-level <instructions> section" in out
@@ -436,9 +435,9 @@ class TestProcessRepo:
         def run_claude_side_effect(*, phase_label, **kwargs):
             call_order.append(phase_label)
             if phase_label == "ci-fix":
-                return "aaa111 ci fix"
+                return ("aaa111 ci fix", "ci stdout")
             if phase_label == "review-fix":
-                return "bbb222 review fix"
+                return ("bbb222 review fix", "review stdout")
             raise AssertionError(f"Unexpected phase_label: {phase_label}")
 
         def merge_side_effect(*args, **kwargs):
@@ -502,7 +501,7 @@ class TestProcessRepo:
         def run_claude_side_effect(*, phase_label, **kwargs):
             call_order.append(phase_label)
             if phase_label == "ci-fix":
-                return "aaa111 ci fix"
+                return ("aaa111 ci fix", "ci stdout")
             raise AssertionError(f"Unexpected phase_label: {phase_label}")
 
         with (
@@ -525,9 +524,12 @@ class TestProcessRepo:
             auto_fixer.process_repo({"repo": "owner/repo"})
 
         assert call_order == ["ci-fix"]
-        mock_upsert_state_comment.assert_not_called()
+        # write_result_to_comment defaults to True, so the result log is written to state comment
+        mock_upsert_state_comment.assert_called_once()
 
-    def test_ci_only_path_records_report_in_state_comment_when_enabled(self, tmp_path):
+    def test_ci_only_path_records_result_log_in_state_comment_when_enabled(
+        self, tmp_path
+    ):
         prs = [{"number": 1, "title": "Test"}]
         pr_data = {
             "headRefName": "feature",
@@ -545,18 +547,11 @@ class TestProcessRepo:
         cfg = {
             "models": {"summarize": "haiku", "fix": "sonnet"},
             "ci_log_max_lines": 120,
-            "execution_report": True,
+            "write_result_to_comment": True,
             "repositories": [
                 {"repo": "owner/repo", "user_name": None, "user_email": None}
             ],
         }
-
-        def capture_report(report_blocks, phase_label, report_path):
-            assert phase_label == "ci-fix"
-            assert report_path
-            report_blocks.append(
-                "#### CI 修正\n\n### 2026-03-12 10:00:00 UTC src/test.py Retry"
-            )
 
         with (
             patch("auto_fixer.fetch_open_prs", return_value=prs),
@@ -568,20 +563,15 @@ class TestProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer.collect_ci_failure_materials", return_value=[]),
-            patch("auto_fixer.run_claude_prompt", return_value="aaa111 ci fix"),
             patch(
-                "auto_fixer.capture_state_comment_report",
-                side_effect=capture_report,
+                "auto_fixer.run_claude_prompt",
+                return_value=("aaa111 ci fix", "CI stdout output"),
             ),
             patch(
                 "auto_fixer.subprocess.run",
                 return_value=Mock(returncode=0, stdout="", stderr=""),
             ),
-            patch("auto_fixer.upsert_state_comment"),
-            patch(
-                "auto_fixer.persist_state_comment_report_if_changed",
-                return_value=True,
-            ) as mock_persist_report,
+            patch("auto_fixer.upsert_state_comment") as mock_upsert,
             patch(
                 "auto_fixer.update_done_label_if_completed",
                 return_value=(False, False),
@@ -589,11 +579,11 @@ class TestProcessRepo:
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
 
-        # CI-only パスでは _persist_state_comment_report_if_changed でレポートが保存される
-        mock_persist_report.assert_called_once()
-        call_args = mock_persist_report.call_args
-        report_body = call_args.args[3]  # 4番目の引数が report_body
-        assert "#### CI 修正" in report_body
+        # CI-only パスでは upsert_state_comment で result_log_body が保存される
+        mock_upsert.assert_called_once()
+        call_kwargs = mock_upsert.call_args.kwargs
+        assert "result_log_body" in call_kwargs
+        assert "CI stdout output" in call_kwargs["result_log_body"]
 
     def test_rate_limit_skips_review_fix_but_runs_ci_and_merge_base(self, tmp_path):
         prs = [{"number": 1, "title": "Test"}]
@@ -629,7 +619,7 @@ class TestProcessRepo:
         def run_claude_side_effect(*, phase_label, **kwargs):
             call_order.append(phase_label)
             if phase_label == "ci-fix":
-                return "aaa111 ci fix"
+                return ("aaa111 ci fix", "ci stdout")
             raise AssertionError(f"Unexpected phase_label: {phase_label}")
 
         def merge_side_effect(*args, **kwargs):
@@ -762,11 +752,10 @@ class TestProcessRepo:
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
             patch("auto_fixer.subprocess.Popen") as mock_popen,
-            patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
+            patch("auto_fixer.upsert_state_comment"),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, summarize_only=True)
             mock_popen.assert_not_called()
-            mock_upsert_state_comment.assert_not_called()
             out = capsys.readouterr().out
             assert "Summarize-only mode" in out
 
@@ -790,11 +779,10 @@ class TestProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.summarize_reviews", return_value={}),
             patch("auto_fixer.subprocess.Popen") as mock_popen,
-            patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
+            patch("auto_fixer.upsert_state_comment"),
         ):
             auto_fixer.process_repo({"repo": "owner/repo"}, summarize_only=True)
             mock_popen.assert_not_called()
-            mock_upsert_state_comment.assert_not_called()
             out = capsys.readouterr().out
             assert "falling back to raw review text for all 1 item(s)" in out
 
@@ -850,14 +838,13 @@ class TestProcessRepo:
             patch("auto_fixer.merge_base_branch", return_value=(True, False)),
             patch("auto_fixer.subprocess.run") as mock_run,
             patch("auto_fixer.subprocess.Popen") as mock_popen,
-            patch("auto_fixer.upsert_state_comment") as mock_upsert_state_comment,
+            patch("auto_fixer.upsert_state_comment"),
         ):
             mock_run.return_value = Mock(
                 returncode=0, stdout="abc1234 Merge main\n", stderr=""
             )
             result = auto_fixer.process_repo({"repo": "owner/repo"})
             mock_popen.assert_not_called()
-            mock_upsert_state_comment.assert_not_called()
             push_calls = [
                 c for c in mock_run.call_args_list if c.args and "push" in c.args[0]
             ]
@@ -917,7 +904,7 @@ class TestProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
-            patch("auto_fixer.run_claude_prompt", return_value=""),
+            patch("auto_fixer.run_claude_prompt", return_value=("", "")),
             patch("auto_fixer.set_pr_running_label") as mock_set_running,
             patch(
                 "auto_fixer.update_done_label_if_completed",
@@ -989,7 +976,7 @@ class TestProcessRepo:
             patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
             patch("auto_fixer.prepare_repository", return_value=tmp_path),
             patch("auto_fixer.summarize_reviews", return_value={"r1": "summary"}),
-            patch("auto_fixer.run_claude_prompt", return_value=""),
+            patch("auto_fixer.run_claude_prompt", return_value=("", "")),
             patch("auto_fixer.set_pr_running_label"),
             patch(
                 "auto_fixer.update_done_label_if_completed",
@@ -1137,7 +1124,8 @@ class TestPerRunLimitsProcessRepo:
             patch("auto_fixer.prepare_repository", return_value=works_dir),
             patch("auto_fixer.summarize_reviews", return_value={}),
             patch(
-                "auto_fixer.run_claude_prompt", return_value="abc123 review fix"
+                "auto_fixer.run_claude_prompt",
+                return_value=("abc123 review fix", "review stdout"),
             ) as mock_claude,
             patch("auto_fixer.set_pr_running_label"),
             patch("auto_fixer.edit_pr_label"),

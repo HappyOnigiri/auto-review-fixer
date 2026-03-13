@@ -91,7 +91,7 @@ models:
 
 ci_log_max_lines: 120
 
-execution_report: false
+write_result_to_comment: true
 
 auto_merge: false
 
@@ -149,15 +149,15 @@ Claude ベースの処理で使うモデル設定です。
 
 PR に失敗中の GitHub Actions がある場合、この値でプロンプトへ渡すログ量を調整できます。値を小さくするとプロンプトは軽くなり、大きくすると文脈を多く渡せます。
 
-#### `execution_report`
+#### `write_result_to_comment`
 
-Claude の実行レポート機能を有効にするかどうかを設定します。
+Claude の stdout を PR の状態管理コメントに折りたたみログとして書き込むかどうかを設定します。
 
 - 型: boolean
 - 必須: いいえ
-- デフォルト: `false`
+- デフォルト: `true`
 
-有効にすると、`refix` は各修正フェーズで Claude に構造化された実行レポートの追記を指示し、その内容を CI ログでは折りたたみ表示しつつ、PR の状態管理コメントの `実行レポート` セクションにも記録します。
+有効にすると、各フェーズの stdout が PR の状態管理コメントの `実行ログ` セクションに記録されます。
 
 #### `auto_merge`
 

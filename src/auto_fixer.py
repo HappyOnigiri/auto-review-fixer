@@ -12,7 +12,7 @@ PR の処理フローを制御する。
 - coderabbit: CodeRabbit 連携（レート制限、resume）
 - prompt_builder: Claude へのプロンプト生成
 - claude_runner: Claude CLI の実行
-- report: 実行レポートの管理
+- result_report: 実行結果のフォーマットとマージ
 - git_ops: Git リポジトリの操作
 """
 
@@ -87,13 +87,7 @@ from prompt_builder import (
     summarization_target_ids,
     generate_prompt,
 )
-from report import (
-    build_phase_report_path,
-    capture_state_comment_report,
-    merge_state_comment_report_body,
-    persist_state_comment_report_if_changed,
-    prepare_reports_dir,
-)
+from result_report import build_phase_result_entry, merge_result_log_body
 from state_manager import (
     StateComment,
     create_state_entry,
@@ -117,7 +111,7 @@ class PRContext:
     dry_run: bool
     summarize_only: bool
     silent: bool
-    execution_report_enabled: bool
+    write_result_to_comment: bool
     fix_model: str
     summarize_model: str
     ci_log_max_lines: int
@@ -133,7 +127,6 @@ class PRContext:
     modified_prs: set
     committed_prs: set
     claude_prs: set
-    reports_dir: Any  # Path | None
     ci_empty_as_success: bool | None
     ci_empty_grace_minutes: int
 
@@ -303,12 +296,12 @@ def _run_ci_fix_phase(
     pr_data: dict,
     works_dir: Any,
     state_comment: Any,
-    report_blocks: list[str],
+    result_blocks: list[str],
 ) -> str:
     """Run the CI fix Claude call.
 
     Returns ci_commits (the commit log string, empty if no commits or dry_run).
-    On error the exception is re-raised after saving the execution report.
+    On error the exception is re-raised after saving the execution result.
     Adds to ctx.committed_prs / ctx.claude_prs as side effects.
     """
     repo = ctx.repo
@@ -346,17 +339,10 @@ def _run_ci_fix_phase(
         return ""
 
     print(f"[ci-fix] PR #{pr_number}: running CI-only Claude fix phase")
-    ci_report_path = (
-        build_phase_report_path(ctx.reports_dir, pr_number, "ci-fix")
-        if ctx.reports_dir is not None
-        else None
-    )
     try:
-        ci_commits = run_claude_prompt(
+        (ci_commits, stdout) = run_claude_prompt(
             works_dir=works_dir,
             prompt=ci_fix_prompt,
-            report_path=ci_report_path,
-            report_enabled=ctx.execution_report_enabled,
             model=ctx.fix_model,
             silent=True,
             phase_label="ci-fix",
@@ -367,24 +353,31 @@ def _run_ci_fix_phase(
             file=sys.stderr,
         )
         print(f"  details: {e}", file=sys.stderr)
-        capture_state_comment_report(report_blocks, "ci-fix", ci_report_path)
-        if ctx.execution_report_enabled and report_blocks:
-            try:
-                _fresh = load_state_comment(repo, pr_number)
-            except Exception:
-                _fresh = state_comment
-            _merged = merge_state_comment_report_body(_fresh.report_body, report_blocks)
-            try:
-                persist_state_comment_report_if_changed(
-                    repo, pr_number, _fresh, _merged
+        if ctx.write_result_to_comment:
+            if isinstance(e, ClaudeCommandFailedError) and e.stdout:
+                result_blocks.append(
+                    build_phase_result_entry(
+                        "ci-fix", e.stdout, ctx.state_comment_timezone
+                    )
                 )
-            except Exception as _save_err:
-                print(
-                    f"Warning: failed to save execution report for PR #{pr_number}: {_save_err}",
-                    file=sys.stderr,
-                )
+            if result_blocks:
+                try:
+                    _fresh = load_state_comment(repo, pr_number)
+                except Exception:
+                    _fresh = state_comment
+                _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
+                try:
+                    upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
+                except Exception as _save_err:
+                    print(
+                        f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
+                        file=sys.stderr,
+                    )
         raise
-    capture_state_comment_report(report_blocks, "ci-fix", ci_report_path)
+    if ctx.write_result_to_comment and stdout:
+        result_blocks.append(
+            build_phase_result_entry("ci-fix", stdout, ctx.state_comment_timezone)
+        )
     if ci_commits:
         ctx.committed_prs.add((repo, pr_number))
     ctx.claude_prs.add((repo, pr_number))
@@ -395,7 +388,7 @@ def _run_merge_phase(
     ctx: PRContext,
     works_dir: Any,
     has_review_targets: bool,
-    report_blocks: list[str],
+    result_blocks: list[str],
     state_comment: Any,
     compare_status: str,
     behind_by: int,
@@ -466,19 +459,10 @@ def _run_merge_phase(
         conflict_prompt = build_conflict_resolution_prompt(
             pr_number, ctx.title, base_branch
         )
-        conflict_report_path = (
-            build_phase_report_path(
-                ctx.reports_dir, pr_number, "merge-conflict-resolution"
-            )
-            if ctx.reports_dir is not None
-            else None
-        )
         try:
-            conflict_commits = run_claude_prompt(
+            (conflict_commits, stdout) = run_claude_prompt(
                 works_dir=works_dir,
                 prompt=conflict_prompt,
-                report_path=conflict_report_path,
-                report_enabled=ctx.execution_report_enabled,
                 model=ctx.fix_model,
                 silent=ctx.silent,
                 phase_label="merge-conflict-resolution",
@@ -489,34 +473,39 @@ def _run_merge_phase(
                 file=sys.stderr,
             )
             print(f"  details: {e}", file=sys.stderr)
-            capture_state_comment_report(
-                report_blocks,
-                "merge-conflict-resolution",
-                conflict_report_path,
-            )
-            if ctx.execution_report_enabled and report_blocks:
-                try:
-                    _fresh = load_state_comment(repo, pr_number)
-                except Exception:
-                    _fresh = state_comment
-                _merged = merge_state_comment_report_body(
-                    _fresh.report_body, report_blocks
-                )
-                try:
-                    persist_state_comment_report_if_changed(
-                        repo, pr_number, _fresh, _merged
+            if ctx.write_result_to_comment:
+                if isinstance(e, ClaudeCommandFailedError) and e.stdout:
+                    result_blocks.append(
+                        build_phase_result_entry(
+                            "merge-conflict-resolution",
+                            e.stdout,
+                            ctx.state_comment_timezone,
+                        )
                     )
-                except Exception as _save_err:
-                    print(
-                        f"Warning: failed to save execution report for PR #{pr_number}: {_save_err}",
-                        file=sys.stderr,
+                if result_blocks:
+                    try:
+                        _fresh = load_state_comment(repo, pr_number)
+                    except Exception:
+                        _fresh = state_comment
+                    _merged = merge_result_log_body(
+                        _fresh.result_log_body, result_blocks
                     )
+                    try:
+                        upsert_state_comment(
+                            repo, pr_number, [], result_log_body=_merged
+                        )
+                    except Exception as _save_err:
+                        print(
+                            f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
+                            file=sys.stderr,
+                        )
             raise
-        capture_state_comment_report(
-            report_blocks,
-            "merge-conflict-resolution",
-            conflict_report_path,
-        )
+        if ctx.write_result_to_comment and stdout:
+            result_blocks.append(
+                build_phase_result_entry(
+                    "merge-conflict-resolution", stdout, ctx.state_comment_timezone
+                )
+            )
         if conflict_commits:
             commits_by_phase.append(conflict_commits)
             ctx.committed_prs.add((repo, pr_number))
@@ -550,7 +539,7 @@ def _run_review_fix_phase(
     unresolved_comments: list,
     summaries: dict,
     state_comment: Any,
-    report_blocks: list[str],
+    result_blocks: list[str],
     works_dir: Any,
     thread_map: dict,
     commits_by_phase: list[str],
@@ -601,24 +590,28 @@ def _run_review_fix_phase(
         )
         _remove_running_on_exit = True
         review_fix_started = True
-        review_report_path = (
-            build_phase_report_path(ctx.reports_dir, pr_number, "review-fix")
-            if ctx.reports_dir is not None
-            else None
+        (review_commits, stdout) = run_claude_prompt(
+            works_dir=works_dir,
+            prompt=prompt,
+            model=ctx.fix_model,
+            silent=ctx.silent,
+            phase_label="review-fix",
         )
-        try:
-            review_commits = run_claude_prompt(
-                works_dir=works_dir,
-                prompt=prompt,
-                report_path=review_report_path,
-                report_enabled=ctx.execution_report_enabled,
-                model=ctx.fix_model,
-                silent=ctx.silent,
-                phase_label="review-fix",
-            )
-        finally:
-            capture_state_comment_report(
-                report_blocks, "review-fix", review_report_path
+        if ctx.write_result_to_comment and stdout:
+            comment_urls = [
+                review_state_url(review, repo, pr_number)
+                for review in unresolved_reviews
+            ] + [
+                inline_comment_state_url(comment, repo, pr_number)
+                for comment in unresolved_comments
+            ]
+            result_blocks.append(
+                build_phase_result_entry(
+                    "review-fix",
+                    stdout,
+                    ctx.state_comment_timezone,
+                    comment_urls=comment_urls or None,
+                )
             )
         if review_commits:
             review_fix_added_commits = True
@@ -730,14 +723,14 @@ def _run_review_fix_phase(
                 _latest = load_state_comment(repo, pr_number)
             except Exception:
                 _latest = state_comment
-            report_body_to_save = (
-                merge_state_comment_report_body(_latest.report_body, report_blocks)
-                if ctx.execution_report_enabled
-                else _latest.report_body.strip()
+            result_log_body_to_save = (
+                merge_result_log_body(_latest.result_log_body, result_blocks)
+                if ctx.write_result_to_comment
+                else _latest.result_log_body.strip()
             )
             should_write_state_comment = bool(state_entries) or (
-                ctx.execution_report_enabled
-                and report_body_to_save != _latest.report_body.strip()
+                ctx.write_result_to_comment
+                and result_log_body_to_save != _latest.result_log_body.strip()
             )
             if should_write_state_comment:
                 try:
@@ -745,7 +738,7 @@ def _run_review_fix_phase(
                         repo,
                         pr_number,
                         state_entries,
-                        report_body=report_body_to_save,
+                        result_log_body=result_log_body_to_save,
                     )
                     state_saved = True
                 except Exception as e:
@@ -756,23 +749,28 @@ def _run_review_fix_phase(
             elif not any_comment_failed:
                 state_saved = True  # nothing to save; state is consistent
         _remove_running_on_exit = False
-    except ClaudeCommandFailedError:
+    except ClaudeCommandFailedError as e:
         _remove_running_on_exit = False
-        if ctx.execution_report_enabled and report_blocks:
-            try:
-                _fresh = load_state_comment(repo, pr_number)
-            except Exception:
-                _fresh = state_comment
-            _merged = merge_state_comment_report_body(_fresh.report_body, report_blocks)
-            try:
-                persist_state_comment_report_if_changed(
-                    repo, pr_number, _fresh, _merged
+        if ctx.write_result_to_comment:
+            if e.stdout:
+                result_blocks.append(
+                    build_phase_result_entry(
+                        "review-fix", e.stdout, ctx.state_comment_timezone
+                    )
                 )
-            except Exception as _save_err:
-                print(
-                    f"Warning: failed to save execution report for PR #{pr_number}: {_save_err}",
-                    file=sys.stderr,
-                )
+            if result_blocks:
+                try:
+                    _fresh = load_state_comment(repo, pr_number)
+                except Exception:
+                    _fresh = state_comment
+                _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
+                try:
+                    upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
+                except Exception as _save_err:
+                    print(
+                        f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
+                        file=sys.stderr,
+                    )
         raise
     except subprocess.CalledProcessError as e:
         review_fix_failed = True
@@ -781,19 +779,17 @@ def _run_review_fix_phase(
             print(f"  stdout: {e.output.strip()}", file=sys.stderr)
         if e.stderr:
             print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
-        if ctx.execution_report_enabled and report_blocks:
+        if ctx.write_result_to_comment and result_blocks:
             try:
                 _fresh = load_state_comment(repo, pr_number)
             except Exception:
                 _fresh = state_comment
-            _merged = merge_state_comment_report_body(_fresh.report_body, report_blocks)
+            _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
             try:
-                persist_state_comment_report_if_changed(
-                    repo, pr_number, _fresh, _merged
-                )
+                upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
             except Exception as _save_err:
                 print(
-                    f"Warning: failed to save execution report for PR #{pr_number}: {_save_err}",
+                    f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
                     file=sys.stderr,
                 )
     finally:
@@ -818,7 +814,7 @@ def _process_single_pr(
     fix_model: str,
     summarize_model: str,
     ci_log_max_lines: int,
-    execution_report_enabled: bool,
+    write_result_to_comment: bool,
     auto_merge_enabled: bool,
     coderabbit_auto_resume_enabled: bool,
     auto_resume_run_state: dict[str, int],
@@ -946,7 +942,7 @@ def _process_single_pr(
         dry_run=dry_run,
         summarize_only=summarize_only,
         silent=silent,
-        execution_report_enabled=execution_report_enabled,
+        write_result_to_comment=write_result_to_comment,
         fix_model=fix_model,
         summarize_model=summarize_model,
         ci_log_max_lines=ci_log_max_lines,
@@ -962,7 +958,6 @@ def _process_single_pr(
         modified_prs=modified_prs,
         committed_prs=committed_prs,
         claude_prs=claude_prs,
-        reports_dir=None,
         ci_empty_as_success=ci_empty_as_success,
         ci_empty_grace_minutes=ci_empty_grace_minutes,
     )
@@ -1034,7 +1029,7 @@ def _process_single_pr(
         )
 
     commits_by_phase: list[str] = []
-    report_blocks: list[str] = []
+    result_blocks: list[str] = []
     review_fix_started = False
     review_fix_added_commits = False
     review_fix_failed = False
@@ -1133,9 +1128,6 @@ def _process_single_pr(
     try:
         log_group("Git repository setup")
         works_dir = prepare_repository(repo, branch_name, user_name, user_email)
-        reports_dir = (
-            prepare_reports_dir(repo, works_dir) if execution_report_enabled else None
-        )
         log_endgroup()
     except Exception as e:
         log_endgroup()
@@ -1143,13 +1135,12 @@ def _process_single_pr(
         return False, True, None, False
 
     ctx.works_dir = works_dir
-    ctx.reports_dir = reports_dir
 
     ci_commits = ""
 
     if has_failing_ci and not commit_limit_reached and not claude_limit_reached:
         ci_commits = _run_ci_fix_phase(
-            ctx, pr_data, works_dir, state_comment, report_blocks
+            ctx, pr_data, works_dir, state_comment, result_blocks
         )
         if ci_commits:
             commits_by_phase.append(ci_commits)
@@ -1161,7 +1152,7 @@ def _process_single_pr(
             ctx,
             works_dir,
             has_review_targets,
-            report_blocks,
+            result_blocks,
             state_comment,
             compare_status,
             behind_by,
@@ -1173,24 +1164,27 @@ def _process_single_pr(
         )
 
     if not has_review_targets:
-        if execution_report_enabled:
+        if ctx.write_result_to_comment and result_blocks:
+            state_saved = False
             try:
                 _latest = load_state_comment(repo, pr_number)
             except Exception:
                 _latest = state_comment
-            merged_report_body = merge_state_comment_report_body(
-                _latest.report_body, report_blocks
+            merged_result_log_body = merge_result_log_body(
+                _latest.result_log_body, result_blocks
             )
             try:
-                if persist_state_comment_report_if_changed(
-                    repo, pr_number, _latest, merged_report_body
-                ):
-                    state_saved = True
+                upsert_state_comment(
+                    repo, pr_number, [], result_log_body=merged_result_log_body
+                )
+                state_saved = True
             except Exception as e:
                 print(
-                    f"Warning: failed to update report section for PR #{pr_number}: {e}",
+                    f"Warning: failed to update result log section for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
+        else:
+            state_saved = True
         if ci_commits and not is_behind:
             unpushed_check = _run_git(
                 "log",
@@ -1216,7 +1210,7 @@ def _process_single_pr(
             review_fix_started=review_fix_started,
             review_fix_added_commits=review_fix_added_commits,
             review_fix_failed=review_fix_failed,
-            state_saved=True,
+            state_saved=state_saved,
             commits_by_phase=commits_by_phase,
             pr_data=pr_data,
             review_comments=review_comments,
@@ -1234,6 +1228,7 @@ def _process_single_pr(
             modified_prs.add((repo, pr_number))
         _cacheable = (
             not dry_run
+            and state_saved
             and not bool(active_rate_limit)
             and not bool(active_review_failed)
             and not _ci_grace
@@ -1265,22 +1260,22 @@ def _process_single_pr(
         )
 
     if skip_review_fix:
-        if execution_report_enabled:
+        if ctx.write_result_to_comment and result_blocks:
             try:
                 _latest = load_state_comment(repo, pr_number)
             except Exception:
                 _latest = state_comment
-            merged_report_body = merge_state_comment_report_body(
-                _latest.report_body, report_blocks
+            merged_result_log_body = merge_result_log_body(
+                _latest.result_log_body, result_blocks
             )
             try:
-                if persist_state_comment_report_if_changed(
-                    repo, pr_number, _latest, merged_report_body
-                ):
-                    state_saved = True
+                upsert_state_comment(
+                    repo, pr_number, [], result_log_body=merged_result_log_body
+                )
+                state_saved = True
             except Exception as e:
                 print(
-                    f"Warning: failed to update report section for PR #{pr_number}: {e}",
+                    f"Warning: failed to update result log section for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
         print(
@@ -1372,7 +1367,7 @@ def _process_single_pr(
             unresolved_comments,
             summaries,
             state_comment,
-            report_blocks,
+            result_blocks,
             works_dir,
             thread_map,
             commits_by_phase,
@@ -1444,8 +1439,10 @@ def process_repo(
     ci_log_max_lines = int(
         runtime_config.get("ci_log_max_lines", DEFAULT_CONFIG["ci_log_max_lines"])
     )
-    execution_report_enabled = bool(
-        runtime_config.get("execution_report", DEFAULT_CONFIG["execution_report"])
+    write_result_to_comment = bool(
+        runtime_config.get(
+            "write_result_to_comment", DEFAULT_CONFIG["write_result_to_comment"]
+        )
     )
     auto_merge_enabled = bool(
         runtime_config.get("auto_merge", DEFAULT_CONFIG["auto_merge"])
@@ -1572,7 +1569,7 @@ def process_repo(
                     fix_model=fix_model,
                     summarize_model=summarize_model,
                     ci_log_max_lines=ci_log_max_lines,
-                    execution_report_enabled=execution_report_enabled,
+                    write_result_to_comment=write_result_to_comment,
                     auto_merge_enabled=auto_merge_enabled,
                     coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
                     auto_resume_run_state=auto_resume_run_state,

@@ -18,7 +18,7 @@ models:
   summarize: claude-haiku
   fix: claude-sonnet
 ci_log_max_lines: 250
-execution_report: true
+write_result_to_comment: false
 auto_merge: true
 coderabbit_auto_resume: true
 coderabbit_auto_resume_max_per_run: 3
@@ -38,7 +38,7 @@ repositories:
                 "fix": "claude-sonnet",
             },
             "ci_log_max_lines": 250,
-            "execution_report": True,
+            "write_result_to_comment": False,
             "auto_merge": True,
             "enabled_pr_labels": [
                 "running",
@@ -82,7 +82,7 @@ repositories:
         assert cfg["models"]["summarize"] == "haiku"
         assert cfg["models"]["fix"] == "sonnet"
         assert cfg["ci_log_max_lines"] == 120
-        assert cfg["execution_report"] is False
+        assert cfg["write_result_to_comment"] is True
         assert cfg["auto_merge"] is False
         assert cfg["enabled_pr_labels"] == [
             "running",
@@ -154,11 +154,11 @@ repositories:
         with pytest.raises(ConfigError):
             config.load_config(str(config_file))
 
-    def test_execution_report_requires_boolean(self, tmp_path):
+    def test_write_result_to_comment_requires_boolean(self, tmp_path):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             """
-execution_report: "true"
+write_result_to_comment: "true"
 repositories:
   - repo: owner/repo1
 """.strip()

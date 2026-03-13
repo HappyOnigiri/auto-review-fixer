@@ -18,7 +18,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "fix": "sonnet",
     },
     "ci_log_max_lines": 120,
-    "execution_report": False,
+    "write_result_to_comment": True,
     "auto_merge": False,
     "enabled_pr_labels": ["running", "done", "merged", "auto_merge_requested"],
     "coderabbit_auto_resume": False,
@@ -37,7 +37,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "models",
     "ci_log_max_lines",
-    "execution_report",
+    "write_result_to_comment",
     "auto_merge",
     "enabled_pr_labels",
     "coderabbit_auto_resume",
@@ -69,7 +69,7 @@ class FieldSpec:
 
 
 _SCALAR_FIELDS: dict[str, FieldSpec] = {
-    "execution_report": FieldSpec(bool),
+    "write_result_to_comment": FieldSpec(bool),
     "auto_merge": FieldSpec(bool),
     "coderabbit_auto_resume": FieldSpec(bool),
     "process_draft_prs": FieldSpec(bool),
@@ -195,7 +195,7 @@ def load_config(filepath: str) -> dict[str, Any]:
     config: dict[str, Any] = {
         "models": dict(DEFAULT_CONFIG["models"]),
         "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
-        "execution_report": DEFAULT_CONFIG["execution_report"],
+        "write_result_to_comment": DEFAULT_CONFIG["write_result_to_comment"],
         "auto_merge": DEFAULT_CONFIG["auto_merge"],
         "enabled_pr_labels": list(DEFAULT_CONFIG["enabled_pr_labels"]),
         "coderabbit_auto_resume": DEFAULT_CONFIG["coderabbit_auto_resume"],

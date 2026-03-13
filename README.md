@@ -91,8 +91,8 @@ models:
 
 ci_log_max_lines: 120
 
-# Whether to record Claude execution reports (optional, default false)
-execution_report: false
+# Whether to write Claude's stdout to the PR state comment (optional, default true)
+write_result_to_comment: true
 
 # Automatically merge PR when it reaches refix:done state (optional, default false)
 # When merge completes, the refix:merged label is applied
@@ -165,15 +165,15 @@ Maximum number of failed CI log lines included in the fix prompt.
 
 Use this to control prompt size when a PR has failing GitHub Actions checks. Smaller values reduce prompt volume, while larger values include more context from failed jobs.
 
-#### `execution_report`
+#### `write_result_to_comment`
 
-Whether to enable Claude execution reports.
+Whether to write Claude's stdout to the PR state comment as a collapsible log.
 
 - Type: boolean
 - Required: no
-- Default: `false`
+- Default: `true`
 
-When enabled, `refix` asks Claude to append structured runtime notes to a report file during each fix phase, prints that report in foldable CI log groups, and embeds the collected report into the PR state comment under `実行レポート`.
+When enabled, each phase's stdout is embedded in the PR state comment under `実行ログ`.
 
 #### `auto_merge`
 

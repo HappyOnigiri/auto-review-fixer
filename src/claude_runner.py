@@ -14,7 +14,6 @@ from claude_limit import (
     is_claude_usage_limit_error,
 )
 from constants import SEPARATOR_LEN
-from report import emit_runtime_pain_report
 
 # --- デフォルト設定 ---
 DEFAULT_REFIX_CLAUDE_SETTINGS: dict[str, Any] = {
@@ -86,43 +85,13 @@ def run_claude_prompt(
     *,
     works_dir: Path,
     prompt: str,
-    report_path: str | None,
-    report_enabled: bool,
     model: str,
     silent: bool,
     phase_label: str,
-) -> str:
-    """Claude CLI を実行してプロンプトを処理し、新しいコミットのログを返す。"""
-    prompt_with_report_instruction = prompt.rstrip() + "\n"
-    if report_enabled:
-        if not report_path:
-            raise ValueError("report_path is required when execution_report is enabled")
-        Path(report_path).unlink(missing_ok=True)
-        runtime_pain_report_instruction = f"""<runtime_pain_report>
-以下は実行時の課題レポート作成指示です。必ず守ってください。
-- 出力先ファイル: {shlex.quote(report_path)}
-- 出力タイミング: 作業ステップごと、または問題発生時に随時追記すること（作業の最後にまとめて書くのは禁止）
-- 追記方法: Bash ツール等で append すること（例: echo "..." >> {shlex.quote(report_path)}）
-- 各追記エントリは次の形式を必ず守ること:
-  ### YYYY-MM-DD hh:mm:ss UTC {{file_path}} {{title}}
-
-  {{details}}
-- `YYYY-MM-DD hh:mm:ss UTC` は UTC で記録すること
-- `{{file_path}}` には関連するファイルパスを記載すること。該当しない場合は `-` を使うこと
-- `{{title}}` には短い件名を記載すること
-- `{{details}}` には Markdown で具体的な状況を記載すること
-- 報告項目:
-  1. ツールのセットアップやコマンド実行時の失敗・試行錯誤
-  2. 実装にあたって不足していたコンテキストやファイル
-  3. レビューコメントの曖昧さ、解釈に迷った点
-  4. 妥協した点や、人間の再確認が必要と思われる不確実な修正
-</runtime_pain_report>"""
-        prompt_with_report_instruction = (
-            f"{prompt.rstrip()}\n\n{runtime_pain_report_instruction}\n"
-        )
-
+) -> tuple[str, str]:
+    """Claude CLI を実行してプロンプトを処理し、(新しいコミットのログ, stdout) を返す。"""
     prompt_file = works_dir / "_review_prompt.md"
-    prompt_file.write_text(prompt_with_report_instruction, encoding="utf-8")
+    prompt_file.write_text(prompt.rstrip() + "\n", encoding="utf-8")
     claude_cmd = [
         "claude",
         "--model",
@@ -137,14 +106,11 @@ def run_claude_prompt(
     print(f"  cwd: {works_dir}")
     print(f"  command: {shlex.join(claude_cmd)}")
     print(f"  prompt file: {prompt_file}")
-    if report_enabled and report_path:
-        print(f"  runtime pain report file: {report_path}")
     if not silent:
         print("-" * SEPARATOR_LEN)
-        print(prompt_with_report_instruction)
+        print(prompt.rstrip())
         print("-" * SEPARATOR_LEN)
     log_endgroup()
-    claude_failed = False
     try:
         try:
             head_result = subprocess.run(
@@ -195,7 +161,6 @@ def run_claude_prompt(
                     print(stderr.strip())
                 log_endgroup()
             if process.returncode != 0:
-                claude_failed = True
                 if is_claude_usage_limit_error(stdout, stderr):
                     raise ClaudeUsageLimitError(
                         phase=phase_label,
@@ -234,15 +199,8 @@ def run_claude_prompt(
             new_commits = new_commits_result.stdout.strip()
             if not new_commits:
                 print("No new commits added")
-            return new_commits
+            return new_commits, stdout.strip() if stdout else ""
         except Exception:
-            claude_failed = True
             raise
     finally:
         prompt_file.unlink(missing_ok=True)
-        emit_runtime_pain_report(
-            report_path=report_path,
-            phase_label=phase_label,
-            silent=silent,
-            claude_failed=claude_failed,
-        )
