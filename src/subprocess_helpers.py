@@ -42,6 +42,12 @@ def run_command(
             returncode=-1,
             stderr="",
         ) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise SubprocessError(
+            f"Command not found or failed to start: {cmd[0]}",
+            returncode=-1,
+            stderr=str(exc),
+        ) from exc
     if check and result.returncode != 0:
         raise SubprocessError(
             f"Command failed (exit {result.returncode}): {' '.join(cmd[:3])}",
