@@ -300,13 +300,22 @@ def _are_all_ci_checks_successful(
     NOTE: statusCheckRollup / gh pr checks (GraphQL) は Fine-grained PAT ではアクセス不可のため使用禁止。
     """
     # head commit SHA を取得
-    head_result = subprocess.run(
-        ["gh", "api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        head_result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"Warning: timed out fetching head SHA for PR #{pr_number}; "
+            "skip refix:done labeling.",
+            file=sys.stderr,
+        )
+        return None
     if head_result.returncode != 0 or not (
         head_sha := (head_result.stdout or "").strip()
     ):
@@ -314,19 +323,28 @@ def _are_all_ci_checks_successful(
         return None
 
     # REST 経由で check runs を取得
-    result = subprocess.run(
-        [
-            "gh",
-            "api",
-            f"repos/{repo}/commits/{head_sha}/check-runs",
-            "--paginate",
-            "--slurp",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/commits/{head_sha}/check-runs",
+                "--paginate",
+                "--slurp",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"Warning: timed out fetching check runs for PR #{pr_number}; "
+            "skip refix:done labeling.",
+            file=sys.stderr,
+        )
+        return None
     if result.returncode != 0:
         print(f"CI checks unavailable for PR #{pr_number}; skip refix:done labeling.")
         return None
@@ -356,19 +374,28 @@ def _are_all_ci_checks_successful(
             )
             return False
         # checks が空: 最新コミットが猶予期間より古ければ CI なしとみなす
-        commit_result = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{repo}/commits/{head_sha}",
-                "--jq",
-                ".commit.committer.date",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            encoding="utf-8",
-        )
+        try:
+            commit_result = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{repo}/commits/{head_sha}",
+                    "--jq",
+                    ".commit.committer.date",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                encoding="utf-8",
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"Warning: timed out fetching commit date for PR #{pr_number}; "
+                "skip refix:done labeling.",
+                file=sys.stderr,
+            )
+            return None
         if commit_result.returncode != 0 or not (
             date_str := (commit_result.stdout or "").strip()
         ):

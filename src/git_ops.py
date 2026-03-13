@@ -155,6 +155,14 @@ def _merge_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
         cwd=str(works_dir),
         check=True,
     )
+    # マージ前の HEAD SHA を記録（ロケール非依存の変更検出用）
+    pre_merge_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(works_dir),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     merge_result = subprocess.run(
         ["git", "merge", "--no-edit", f"origin/{base_branch}"],
         cwd=str(works_dir),
@@ -162,10 +170,16 @@ def _merge_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
         text=True,
         check=False,
     )
-    merge_output = f"{merge_result.stdout}\n{merge_result.stderr}".lower()
     if merge_result.returncode == 0:
-        already_up_to_date = "already up to date" in merge_output
-        return (not already_up_to_date, False)
+        post_merge_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(works_dir),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        merged_changes = pre_merge_head != post_merge_head
+        return (merged_changes, False)
     has_conflicts = _has_merge_conflicts(works_dir)
     if has_conflicts:
         return (False, True)
