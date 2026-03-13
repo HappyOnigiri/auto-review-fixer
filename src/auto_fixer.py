@@ -27,6 +27,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from __version__ import __version__
 from errors import ConfigError
 from subprocess_helpers import SubprocessError
 from subprocess_helpers import run_git as _run_git
@@ -1637,6 +1638,11 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Refix - Automatically fix CodeRabbit reviews"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"refix {__version__}",
     )
     parser.add_argument(
         "-n",
