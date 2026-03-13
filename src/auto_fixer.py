@@ -1228,6 +1228,7 @@ def _process_single_pr(
             modified_prs.add((repo, pr_number))
         _cacheable = (
             not dry_run
+            and state_saved
             and not bool(active_rate_limit)
             and not bool(active_review_failed)
             and not _ci_grace
