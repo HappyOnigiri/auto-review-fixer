@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from claude_runner import setup_claude_settings
+from project_config import run_project_setup
 from subprocess_helpers import run_command, run_git
 
 
@@ -23,7 +24,8 @@ def prepare_repository(
     works_dir = _project_root / "works" / f"{owner}__{repo_name}"
     works_dir.parent.mkdir(parents=True, exist_ok=True)
 
-    if not works_dir.exists():
+    is_first_clone = not works_dir.exists()
+    if is_first_clone:
         print(f"Cloning {repo}...")
         run_git(
             "clone",
@@ -60,6 +62,7 @@ def prepare_repository(
     run_git("reset", "--hard", f"origin/{branch_name}", cwd=works_dir, timeout=30)
 
     setup_claude_settings(works_dir)
+    run_project_setup(works_dir, is_first_clone=is_first_clone)
 
     return works_dir
 
