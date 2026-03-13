@@ -1152,3 +1152,126 @@ class TestPerRunLimitsProcessRepo:
         assert "max_committed_prs_per_run limit reached" in out
         # Claude は1回だけ呼ばれる（PR#1のみ）
         assert mock_claude.call_count == 1
+
+
+class TestExcludeFilters:
+    """exclude_authors / exclude_labels によるスキップ動作テスト。"""
+
+    def _make_pr(self, number, author_login="", labels=None):
+        return {
+            "number": number,
+            "title": f"PR #{number}",
+            "isDraft": False,
+            "author": {"login": author_login},
+            "labels": [{"name": lbl} for lbl in (labels or [])],
+        }
+
+    def test_exclude_authors_exact_match_skips_pr(self, capsys):
+        prs = [self._make_pr(1, author_login="renovate-bot")]
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "exclude_authors": ["renovate-bot"],
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_fetch.assert_not_called()
+        assert "exclude_authors" in capsys.readouterr().out
+
+    def test_exclude_authors_wildcard_matches(self, capsys):
+        prs = [self._make_pr(1, author_login="dependabot-app")]
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "exclude_authors": ["dependabot*"],
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_fetch.assert_not_called()
+        assert "exclude_authors" in capsys.readouterr().out
+
+    def test_exclude_labels_exact_match_skips_pr(self, capsys):
+        prs = [self._make_pr(1, labels=["do-not-merge"])]
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "exclude_labels": ["do-not-merge"],
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_fetch.assert_not_called()
+        assert "exclude_labels" in capsys.readouterr().out
+
+    def test_exclude_labels_wildcard_matches(self, capsys):
+        prs = [self._make_pr(1, labels=["autorelease: tagged"])]
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "exclude_labels": ["autorelease: *"],
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_fetch.assert_not_called()
+        assert "exclude_labels" in capsys.readouterr().out
+
+    def test_no_match_processes_normally(self):
+        prs = [self._make_pr(1, author_login="normal-user", labels=["feature"])]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "exclude_authors": ["*[bot]"],
+            "exclude_labels": ["do-not-merge"],
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_fetch.assert_called_once()

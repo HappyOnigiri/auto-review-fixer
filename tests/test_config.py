@@ -55,6 +55,8 @@ repositories:
             "max_claude_prs_per_run": 0,
             "ci_empty_as_success": True,
             "ci_empty_grace_minutes": 5,
+            "exclude_authors": [],
+            "exclude_labels": [],
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -452,5 +454,62 @@ repositories:
   - repo: owner/repo1
 """.strip()
         )
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+
+class TestExcludeFilters:
+    def _base_yaml(self, extra: str = "") -> str:
+        return f"""{extra}
+repositories:
+  - repo: owner/repo1
+""".strip()
+
+    def test_exclude_authors_valid(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            self._base_yaml('exclude_authors: ["*[bot]", "some-user"]')
+        )
+        cfg = config.load_config(str(config_file))
+        assert cfg["exclude_authors"] == ["*[bot]", "some-user"]
+
+    def test_exclude_labels_valid(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            self._base_yaml('exclude_labels: ["autorelease: *", "do-not-merge"]')
+        )
+        cfg = config.load_config(str(config_file))
+        assert cfg["exclude_labels"] == ["autorelease: *", "do-not-merge"]
+
+    def test_exclude_authors_defaults_to_empty(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(self._base_yaml())
+        cfg = config.load_config(str(config_file))
+        assert cfg["exclude_authors"] == []
+
+    def test_exclude_labels_defaults_to_empty(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(self._base_yaml())
+        cfg = config.load_config(str(config_file))
+        assert cfg["exclude_labels"] == []
+
+    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    def test_invalid_type_string_raises(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(self._base_yaml(f'{key}: "not-a-list"'))
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    def test_invalid_type_int_raises(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(self._base_yaml(f"{key}: 123"))
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    def test_invalid_list_of_int_raises(self, tmp_path, key):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(self._base_yaml(f"{key}: [1, 2, 3]"))
         with pytest.raises(ConfigError):
             config.load_config(str(config_file))
