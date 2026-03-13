@@ -275,3 +275,98 @@ class TestAreAllCiChecksSuccessful:
             result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
         assert result is True
         assert mock_run.call_count == 2
+
+    def test_check_runs_403_no_classic_old_commit_returns_true(self):
+        """check-runs 403 + classic なし + 古いコミット → ci_empty_as_success=True で True"""
+        from datetime import datetime, timezone, timedelta
+
+        old_date = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout="{}", stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
+                Mock(returncode=0, stdout=f'"{old_date}"', stderr=""),  # commit date
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=True,
+                ci_empty_grace_minutes=5,
+            )
+        assert result is True
+
+    def test_check_runs_403_no_classic_recent_commit_returns_none(self):
+        """check-runs 403 + classic なし + 新しいコミット → グレースピリオド内で None"""
+        from datetime import datetime, timezone, timedelta
+
+        recent_date = (datetime.now(timezone.utc) - timedelta(minutes=2)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout="{}", stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
+                Mock(returncode=0, stdout=f'"{recent_date}"', stderr=""),  # commit date
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=True,
+                ci_empty_grace_minutes=5,
+            )
+        assert result is None
+
+    def test_check_runs_403_classic_success_returns_true(self):
+        """check-runs 403 + classic SUCCESS → classic で True と判定"""
+        classic_response = '{"state": "success", "statuses": [{"context": "ci/build", "state": "success", "target_url": "https://ci.example.com/build/1"}]}'
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout=classic_response, stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=True,
+            )
+        assert result is True
+
+    def test_check_runs_403_ci_empty_as_success_false_returns_false(self):
+        """check-runs 403 + ci_empty_as_success=False → 空を失敗扱いで False"""
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout="{}", stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo",
+                1,
+                ci_empty_as_success=False,
+            )
+        assert result is False
