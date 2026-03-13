@@ -43,7 +43,10 @@ def _fetch_check_runs_via_rest(repo: str, ref: str) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError:
+        return []
     if result.returncode != 0:
         return []
     try:
@@ -75,7 +78,10 @@ def _fetch_classic_statuses_via_rest(repo: str, sha: str) -> list[dict[str, Any]
     """Fetch classic commit statuses (Jenkins, Travis, etc.) via REST API.
     Returns normalized entries in the same format as _fetch_check_runs_via_rest."""
     cmd = ["gh", "api", f"repos/{repo}/commits/{sha}/status"]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError:
+        return []
     if result.returncode != 0:
         return []
     try:
@@ -165,7 +171,11 @@ def fetch_pr_reviews(repo: str, pr_number: int) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch PR reviews: {exc}", file=sys.stderr)
+        return []
     if result.returncode != 0:
         print(f"Warning: failed to fetch PR reviews: {result.stderr}", file=sys.stderr)
         return []
@@ -204,7 +214,11 @@ def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
         "--paginate",
         "--slurp",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch review comments: {exc}", file=sys.stderr)
+        return []
     if result.returncode != 0:
         print(
             f"Warning: failed to fetch review comments: {result.stderr}",
@@ -273,7 +287,11 @@ query($owner: String!, $name: String!, $number: Int!) {
         "-F",
         f"number={pr_number}",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to fetch review threads: {exc}", file=sys.stderr)
+        return {}
     if result.returncode != 0:
         print(
             f"Warning: failed to fetch review threads: {result.stderr}", file=sys.stderr
@@ -319,7 +337,11 @@ mutation($threadId: ID!) {
         "-F",
         f"threadId={thread_node_id}",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(f"Warning: failed to resolve thread {thread_node_id}: {exc}", file=sys.stderr)
+        return False
     if result.returncode != 0:
         print(
             f"Warning: failed to resolve thread {thread_node_id}: {result.stderr}",
