@@ -365,7 +365,11 @@ def _run_ci_fix_phase(
             if result_blocks:
                 try:
                     _fresh = load_state_comment(repo, pr_number)
-                except Exception:
+                except Exception as e:
+                    print(
+                        f"Warning: failed to reload state comment for PR #{pr_number}: {e}",
+                        file=sys.stderr,
+                    )
                     _fresh = state_comment
                 _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
                 try:
@@ -633,9 +637,11 @@ def _run_review_fix_phase(
         )
         if dirty_check.returncode != 0:
             print(
-                "Warning: git status failed; skipping state update to allow retry.",
+                f"Warning: git status failed (rc={dirty_check.returncode}); skipping state update to allow retry.",
                 file=sys.stderr,
             )
+            if dirty_check.stderr.strip():
+                print(f"  stderr: {dirty_check.stderr.strip()}", file=sys.stderr)
             should_update_state = False
         elif dirty_check.stdout.strip():
             # 未コミットの変更がある = 想定外の状態のため、状態更新はスキップ
@@ -644,6 +650,7 @@ def _run_review_fix_phase(
                 "Cleaning worktree (uncommitted work files; per assumption: correct work is committed). "
                 "State update skipped to allow retry."
             )
+            print(f"  dirty files:\n{dirty_check.stdout.strip()}")
             git_path = shutil.which("git")
             if git_path is None:
                 print(
@@ -670,13 +677,19 @@ def _run_review_fix_phase(
             )
             if unpushed_check.returncode != 0:
                 print(
-                    "Warning: git log failed; skipping state update to allow retry.",
+                    f"Warning: git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
                     file=sys.stderr,
                 )
+                if unpushed_check.stderr.strip():
+                    print(f"  stderr: {unpushed_check.stderr.strip()}", file=sys.stderr)
                 should_update_state = False
             elif unpushed_check.stdout.strip():
                 print(
                     "Warning: local commits not pushed to remote; skipping state update to allow retry.",
+                    file=sys.stderr,
+                )
+                print(
+                    f"  unpushed commits:\n{unpushed_check.stdout.strip()}",
                     file=sys.stderr,
                 )
                 should_update_state = False
@@ -715,6 +728,10 @@ def _run_review_fix_phase(
                             )
                         else:
                             any_comment_failed = True
+                            print(
+                                f"Warning: resolve_review_thread returned False for {rid} (thread_id={thread_id})",
+                                file=sys.stderr,
+                            )
                     except Exception as e:
                         print(
                             f"Warning: state update/resolve_review_thread failed for {rid}: {e}",
@@ -726,7 +743,11 @@ def _run_review_fix_phase(
                 )
             try:
                 _latest = load_state_comment(repo, pr_number)
-            except Exception:
+            except Exception as e:
+                print(
+                    f"Warning: failed to reload state comment for PR #{pr_number}: {e}",
+                    file=sys.stderr,
+                )
                 _latest = state_comment
             result_log_body_to_save = (
                 merge_result_log_body(_latest.result_log_body, result_blocks)
