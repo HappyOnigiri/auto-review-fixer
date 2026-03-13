@@ -307,6 +307,40 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - The `coderabbit_auto_resume` option applies to active CodeRabbit rate-limit comments and active `Review failed` status comments (head commit changed during review). Duplicate `@coderabbitai resume` comments are avoided when one has already been posted after the latest matching status comment.
 - `coderabbit_auto_resume_max_per_run` limits how many auto-resume comments can be posted per execution (default: 1).
 
+## Per-repository project configuration
+
+You can place a `.refix-project.yaml` file in the root of the **target repository** (the one being managed by Refix) to define setup commands that Refix runs after cloning or updating that repository.
+
+### Schema
+
+| Key | Type | Required | Default | Description |
+|-----|------|----------|---------|-------------|
+| `version` | integer | Yes | — | Schema version. Currently only `1` is supported. |
+| `setup.when` | string | No | `"always"` | When to run setup commands. `"always"` runs on every clone and update; `"clone_only"` runs only on the first clone. |
+| `setup.commands[].run` | string | Yes | — | Shell command to execute (via `sh -c`) in the repository root. |
+| `setup.commands[].name` | string | No | — | Human-readable label shown in logs. |
+
+### Example
+
+```yaml
+version: 1
+
+setup:
+  when: always
+  commands:
+    - run: npm install
+      name: Install Node.js dependencies
+    - run: make generate
+```
+
+### Behavior
+
+- Commands are executed with `sh -c` in the repository root.
+- Each command has a **300-second timeout**.
+- If a command fails, subsequent commands are **not** executed.
+
+A template with comments is available at `.refix-project.sample.yaml` in this repository.
+
 ## Running in CI with GitHub Actions
 
 This repository already includes the workflow used to run `refix` in GitHub Actions: `.github/workflows/run-auto-review.yml`.
