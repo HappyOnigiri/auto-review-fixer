@@ -53,7 +53,10 @@ def _ensure_repo_label_exists(
     """リポジトリにラベルが存在しなければ作成する。"""
     encoded_label = quote(label, safe="")
     get_cmd = ["gh", "api", f"repos/{repo}/labels/{encoded_label}"]
-    get_result = run_command(get_cmd, check=False)
+    try:
+        get_result = run_command(get_cmd, check=False)
+    except SubprocessError:
+        return False
     if get_result.returncode == 0:
         return True
 
@@ -79,7 +82,10 @@ def _ensure_repo_label_exists(
         "-f",
         f"description={description}",
     ]
-    create_result = run_command(create_cmd, check=False)
+    try:
+        create_result = run_command(create_cmd, check=False)
+    except SubprocessError:
+        return False
     if create_result.returncode == 0:
         print(f"Created missing label '{label}' in {repo}")
         return True
@@ -372,7 +378,14 @@ def _mark_pr_merged_label_if_needed(
         "--json",
         "mergedAt,labels",
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to inspect merge state for PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode != 0:
         print(
             f"Warning: failed to inspect merge state for PR #{pr_number}: {(result.stderr or '').strip()}",
@@ -448,7 +461,14 @@ def backfill_merged_labels(
         "--limit",
         str(limit),
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to list merged PRs for {repo}: {exc}",
+            file=sys.stderr,
+        )
+        return 0
     if result.returncode != 0:
         print(
             f"Warning: failed to list merged PRs for {repo}: {(result.stderr or '').strip()}",
@@ -492,7 +512,14 @@ def _trigger_pr_auto_merge(
     """auto-merge を要求する。(merge_state_reached, modified) を返す。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     cmd = ["gh", "pr", "merge", str(pr_number), "--repo", repo, "--auto", "--merge"]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to auto-merge PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False, False
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
         _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
