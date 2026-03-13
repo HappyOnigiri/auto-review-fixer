@@ -226,10 +226,15 @@ def _truncate_result_log_body_to_fit(
     if available_log_length <= len(truncation_notice):
         return ""
 
-    kept = normalized_log_body[: available_log_length - len(truncation_notice)].rstrip()
-    if not kept:
-        return ""
-    return kept + truncation_notice
+    # Split into logical phase sections (each starts with ####) and remove
+    # trailing phases until the body fits, to avoid leaving unclosed tags or fences.
+    phases = re.split(r"\n\n(?=#### )", normalized_log_body)
+    while phases:
+        candidate = "\n\n".join(phases) + truncation_notice
+        if len(candidate) <= available_log_length:
+            return candidate
+        phases.pop()
+    return ""
 
 
 def render_state_comment(
