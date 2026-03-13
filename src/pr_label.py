@@ -5,7 +5,7 @@ import sys
 from typing import Any
 from urllib.parse import quote
 
-from subprocess_helpers import run_command
+from subprocess_helpers import SubprocessError, run_command
 
 from ci_check import are_all_ci_checks_successful
 from coderabbit import contains_coderabbit_processing_marker
@@ -155,7 +155,15 @@ def edit_pr_label(
         label_arg,
         label,
     ]
-    result = run_command(cmd, check=False)
+    try:
+        result = run_command(cmd, check=False)
+    except SubprocessError as exc:
+        action = "add" if add else "remove"
+        print(
+            f"Warning: failed to {action} label '{label}' on PR #{pr_number}: {exc}",
+            file=sys.stderr,
+        )
+        return False
     if result.returncode == 0:
         return True
 
