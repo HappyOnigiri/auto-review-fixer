@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 import git_ops
+from errors import ProjectConfigError
 
 
 def _make_result(returncode=0, stdout="", stderr=""):
@@ -181,3 +182,48 @@ def test_merge_base_branch_raises_when_merge_fails_without_conflicts():
             RuntimeError, match="git merge failed without conflict markers"
         ):
             git_ops.merge_base_branch(works_dir, "main")
+
+
+# ---------------------------------------------------------------------------
+# prepare_repository
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_repository_calls_run_project_setup_with_is_first_clone_false(tmp_path):
+    with (
+        patch.object(git_ops, "run_git", return_value=_make_result()),
+        patch.object(git_ops, "setup_claude_settings"),
+        patch.object(git_ops, "run_project_setup") as mock_setup,
+        patch.object(Path, "exists", return_value=True),
+        patch.object(Path, "mkdir"),
+    ):
+        result = git_ops.prepare_repository("owner/repo", "main")
+
+    mock_setup.assert_called_once_with(result, is_first_clone=False)
+
+
+def test_prepare_repository_calls_run_project_setup_with_is_first_clone_true(tmp_path):
+    with (
+        patch.object(git_ops, "run_git", return_value=_make_result()),
+        patch.object(git_ops, "setup_claude_settings"),
+        patch.object(git_ops, "run_project_setup") as mock_setup,
+        patch.object(Path, "exists", return_value=False),
+        patch.object(Path, "mkdir"),
+    ):
+        result = git_ops.prepare_repository("owner/repo", "main")
+
+    mock_setup.assert_called_once_with(result, is_first_clone=True)
+
+
+def test_prepare_repository_propagates_project_config_error(tmp_path):
+    with (
+        patch.object(git_ops, "run_git", return_value=_make_result()),
+        patch.object(git_ops, "setup_claude_settings"),
+        patch.object(
+            git_ops, "run_project_setup", side_effect=ProjectConfigError("bad config")
+        ),
+        patch.object(Path, "exists", return_value=True),
+        patch.object(Path, "mkdir"),
+    ):
+        with pytest.raises(ProjectConfigError, match="bad config"):
+            git_ops.prepare_repository("owner/repo", "main")

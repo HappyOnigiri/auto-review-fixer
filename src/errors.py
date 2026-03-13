@@ -24,3 +24,7 @@ class GitHubAPIError(SubprocessError):
 
 class GitError(SubprocessError):
     """Git 操作のエラー。"""
+
+
+class ProjectConfigError(RefixError):
+    """プロジェクト設定ファイル（.refix-project.yaml）のエラー。"""
