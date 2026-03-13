@@ -55,7 +55,11 @@ def _ensure_repo_label_exists(
     get_cmd = ["gh", "api", f"repos/{repo}/labels/{encoded_label}"]
     try:
         get_result = run_command(get_cmd, check=False)
-    except SubprocessError:
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to check label '{label}' on {repo}: {exc}",
+            file=sys.stderr,
+        )
         return False
     if get_result.returncode == 0:
         return True
@@ -84,7 +88,11 @@ def _ensure_repo_label_exists(
     ]
     try:
         create_result = run_command(create_cmd, check=False)
-    except SubprocessError:
+    except SubprocessError as exc:
+        print(
+            f"Warning: failed to create label '{label}' in {repo}: {exc}",
+            file=sys.stderr,
+        )
         return False
     if create_result.returncode == 0:
         print(f"Created missing label '{label}' in {repo}")
