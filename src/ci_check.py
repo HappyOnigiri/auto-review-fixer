@@ -411,7 +411,9 @@ def are_all_ci_checks_successful(
         if commit_result.returncode != 0 or not (
             date_str := (commit_result.stdout or "").strip()
         ):
-            msg = f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            msg = (
+                f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            )
             print(msg)
             if error_collector:
                 error_collector.add_pr_error(repo, pr_number, msg)
@@ -431,7 +433,9 @@ def are_all_ci_checks_successful(
                 )
                 return None  # 猶予期間: 経過後にリトライ; updatedAt をキャッシュしない
         except (ValueError, TypeError):
-            msg = f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            msg = (
+                f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            )
             print(msg)
             if error_collector:
                 error_collector.add_pr_error(repo, pr_number, msg)
