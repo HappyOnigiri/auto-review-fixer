@@ -842,7 +842,8 @@ class TestProcessRepo:
             "owner/repo", 1, "@coderabbitai review", error_collector=None
         )
         assert (
-            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"] is True
+            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"]
+            is True
         )
 
     def test_review_skipped_draft_detected_does_not_trigger_while_pr_is_draft(self):
@@ -903,7 +904,8 @@ class TestProcessRepo:
 
         mock_post.assert_not_called()
         assert (
-            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"] is True
+            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"]
+            is True
         )
 
     def test_summarize_only_stops_before_fix_and_state_update(self, tmp_path, capsys):
