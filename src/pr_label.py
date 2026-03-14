@@ -192,10 +192,7 @@ def edit_pr_label(
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
         action = "add" if add else "remove"
-        msg = (
-            f"failed to {action} label '{label}' on "
-            f"{_pr_ref(repo, pr_number)}: {exc}"
-        )
+        msg = f"failed to {action} label '{label}' on {_pr_ref(repo, pr_number)}: {exc}"
         print(f"Warning: {msg}", file=sys.stderr)
         if error_collector:
             error_collector.add_pr_error(repo, pr_number, msg)
