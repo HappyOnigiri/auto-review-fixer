@@ -382,9 +382,10 @@ def load_config(filepath: str) -> dict[str, Any]:
         slug = entry["repo"]
         if not slug or slug.endswith("/*"):
             continue
-        if slug in seen_repos:
+        normalized_slug = slug.strip().casefold()
+        if normalized_slug in seen_repos:
             raise ConfigError(f"Duplicate repository '{slug}' in repositories.")
-        seen_repos.add(slug)
+        seen_repos.add(normalized_slug)
 
     config["repositories"] = normalized_repositories
     return config
