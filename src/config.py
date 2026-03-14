@@ -21,6 +21,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "auto_merge": False,
     "enabled_pr_labels": ["running", "done", "merged", "auto_merge_requested"],
     "coderabbit_auto_resume": False,
+    "coderabbit_auto_resume_triggers": {
+        "rate_limit": True,
+        "draft_detected": True,
+    },
     "coderabbit_auto_resume_max_per_run": 1,
     "process_draft_prs": False,
     "include_fork_repositories": True,
@@ -45,6 +49,7 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "auto_merge",
     "enabled_pr_labels",
     "coderabbit_auto_resume",
+    "coderabbit_auto_resume_triggers",
     "coderabbit_auto_resume_max_per_run",
     "process_draft_prs",
     "include_fork_repositories",
@@ -64,6 +69,7 @@ ALLOWED_MERGE_METHODS = ("auto", "merge", "squash", "rebase")
 ALLOWED_BASE_UPDATE_METHODS = ("merge", "rebase")
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
 ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
+ALLOWED_CODERABBIT_AUTO_RESUME_TRIGGER_KEYS = {"rate_limit", "draft_detected"}
 
 # --- PR ラベルキー定義（config 用） ---
 PR_LABEL_KEYS = ("running", "done", "merged", "auto_merge_requested")
@@ -157,6 +163,25 @@ def normalize_auto_resume_state(
     return auto_resume_run_state
 
 
+def get_coderabbit_auto_resume_triggers(
+    runtime_config: dict[str, Any],
+    default_config: dict[str, Any],
+) -> dict[str, bool]:
+    """CodeRabbit 自動再トリガの理由別設定を取得する。"""
+    default_triggers = default_config["coderabbit_auto_resume_triggers"]
+    normalized = {
+        key: bool(default_triggers.get(key, False)) for key in default_triggers
+    }
+    configured = runtime_config.get("coderabbit_auto_resume_triggers")
+    if not isinstance(configured, dict):
+        return normalized
+    for key in normalized:
+        value = configured.get(key)
+        if isinstance(value, bool):
+            normalized[key] = value
+    return normalized
+
+
 def get_process_draft_prs(
     runtime_config: dict[str, Any],
     default_config: dict[str, Any],
@@ -214,6 +239,9 @@ def load_config(filepath: str) -> dict[str, Any]:
         "auto_merge": DEFAULT_CONFIG["auto_merge"],
         "enabled_pr_labels": list(DEFAULT_CONFIG["enabled_pr_labels"]),
         "coderabbit_auto_resume": DEFAULT_CONFIG["coderabbit_auto_resume"],
+        "coderabbit_auto_resume_triggers": dict(
+            DEFAULT_CONFIG["coderabbit_auto_resume_triggers"]
+        ),
         "coderabbit_auto_resume_max_per_run": DEFAULT_CONFIG[
             "coderabbit_auto_resume_max_per_run"
         ],
@@ -254,6 +282,29 @@ def load_config(filepath: str) -> dict[str, Any]:
         _raw = parsed.get(_key)
         if _raw is not None:
             config[_key] = _validate_scalar_field(_key, _raw, _spec)
+
+    coderabbit_auto_resume_triggers = parsed.get("coderabbit_auto_resume_triggers")
+    if coderabbit_auto_resume_triggers is not None:
+        if not isinstance(coderabbit_auto_resume_triggers, dict):
+            raise ConfigError(
+                "coderabbit_auto_resume_triggers must be a mapping/object."
+            )
+        _reject_unknown_config_keys(
+            coderabbit_auto_resume_triggers,
+            ALLOWED_CODERABBIT_AUTO_RESUME_TRIGGER_KEYS,
+            section="'coderabbit_auto_resume_triggers'",
+        )
+        normalized_triggers = dict(DEFAULT_CONFIG["coderabbit_auto_resume_triggers"])
+        for trigger_key in ALLOWED_CODERABBIT_AUTO_RESUME_TRIGGER_KEYS:
+            trigger_value = coderabbit_auto_resume_triggers.get(trigger_key)
+            if trigger_value is None:
+                continue
+            if not isinstance(trigger_value, bool):
+                raise ConfigError(
+                    f"coderabbit_auto_resume_triggers.{trigger_key} must be a boolean."
+                )
+            normalized_triggers[trigger_key] = trigger_value
+        config["coderabbit_auto_resume_triggers"] = normalized_triggers
 
     enabled_pr_labels = parsed.get("enabled_pr_labels")
     if enabled_pr_labels is not None:

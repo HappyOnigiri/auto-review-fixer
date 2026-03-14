@@ -26,6 +26,15 @@ _REVIEW_FAILED_BODY = """
 > The head commit changed during the review from 8c95504f7bdc7b6f178d693ad16194afa00240bd to 769422c80b767b53c7cd900db05a71bc8713b9a8.
 """.strip()
 
+_REVIEW_SKIPPED_DRAFT_BODY = """
+> [!IMPORTANT]
+> ## Review skipped
+>
+> Draft detected.
+>
+> Please check the settings in the CodeRabbit UI or the `.coderabbit.yaml` file in this repository. To trigger a single review, invoke the `@coderabbitai review` command.
+""".strip()
+
 
 def make_state_comment(*processed_ids: str) -> StateComment:
     return StateComment(
@@ -109,10 +118,10 @@ class TestMain:
             auto_fixer.main()
 
         out = capsys.readouterr().out
-        assert "CodeRabbit を resume した PR 一覧:" in out
+        assert "CodeRabbit を再トリガした PR 一覧:" in out
         assert "  - owner/repo PR #123" in out
         assert "コミットを追加した PR 一覧:" in out
-        assert out.index("CodeRabbit を resume した PR 一覧:") < out.index(
+        assert out.index("CodeRabbit を再トリガした PR 一覧:") < out.index(
             "コミットを追加した PR 一覧:"
         )
 
@@ -133,7 +142,7 @@ class TestMain:
             auto_fixer.main()
 
         out = capsys.readouterr().out
-        assert "CodeRabbit を resume した PR 一覧:" not in out
+        assert "CodeRabbit を再トリガした PR 一覧:" not in out
 
     def test_usage_limit_exits_nonzero_immediately(self, capsys):
         cfg = {
@@ -780,6 +789,132 @@ class TestProcessRepo:
         assert mock_post_issue_comment.call_count == 1
         assert auto_resume_run_state["posted"] == 1
         assert len(global_resumed_prs) == 1
+
+    def test_review_skipped_draft_detected_triggers_single_review(self):
+        prs = [{"number": 1, "title": "PR 1", "isDraft": False}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "comments": [],
+            "isDraft": False,
+        }
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "auto_merge": False,
+            "coderabbit_auto_resume": True,
+            "coderabbit_auto_resume_triggers": {
+                "rate_limit": True,
+                "draft_detected": True,
+            },
+            "coderabbit_auto_resume_max_per_run": 1,
+            "process_draft_prs": False,
+            "state_comment_timezone": "JST",
+            "max_modified_prs_per_run": 0,
+            "max_committed_prs_per_run": 2,
+            "max_claude_prs_per_run": 0,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch(
+                "auto_fixer.fetch_issue_comments",
+                return_value=[
+                    {
+                        "id": 111,
+                        "body": _REVIEW_SKIPPED_DRAFT_BODY,
+                        "user": {"login": "coderabbitai[bot]"},
+                        "updated_at": "2026-03-11T12:00:00Z",
+                    }
+                ],
+            ),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.set_pr_running_label"),
+            patch(
+                "auto_fixer.update_done_label_if_completed",
+                return_value=(False, False),
+            ) as mock_update_done,
+            patch("coderabbit._post_issue_comment", return_value=True) as mock_post,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_post.assert_called_once_with(
+            "owner/repo", 1, "@coderabbitai review", error_collector=None
+        )
+        assert (
+            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"]
+            is True
+        )
+
+    def test_review_skipped_draft_detected_does_not_trigger_while_pr_is_draft(self):
+        prs = [{"number": 1, "title": "PR 1", "isDraft": True}]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "comments": [],
+            "isDraft": True,
+        }
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "auto_merge": False,
+            "coderabbit_auto_resume": True,
+            "coderabbit_auto_resume_triggers": {
+                "rate_limit": True,
+                "draft_detected": True,
+            },
+            "coderabbit_auto_resume_max_per_run": 1,
+            "process_draft_prs": True,
+            "state_comment_timezone": "JST",
+            "max_modified_prs_per_run": 0,
+            "max_committed_prs_per_run": 2,
+            "max_claude_prs_per_run": 0,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch(
+                "auto_fixer.fetch_issue_comments",
+                return_value=[
+                    {
+                        "id": 111,
+                        "body": _REVIEW_SKIPPED_DRAFT_BODY,
+                        "user": {"login": "coderabbitai[bot]"},
+                        "updated_at": "2026-03-11T12:00:00Z",
+                    }
+                ],
+            ),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.set_pr_running_label"),
+            patch(
+                "auto_fixer.update_done_label_if_completed",
+                return_value=(False, False),
+            ) as mock_update_done,
+            patch("coderabbit._post_issue_comment") as mock_post,
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
+
+        mock_post.assert_not_called()
+        assert (
+            mock_update_done.call_args.kwargs["coderabbit_review_skipped_active"]
+            is True
+        )
 
     def test_summarize_only_stops_before_fix_and_state_update(self, tmp_path, capsys):
         """summarize_only=True -> no fix model, no state comment update."""

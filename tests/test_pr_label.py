@@ -619,6 +619,38 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
+    def test_update_done_label_skips_when_coderabbit_review_skipped_active(self):
+        with (
+            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
+            patch("pr_label.are_all_ci_checks_successful") as mock_ci,
+            patch("pr_label._set_pr_done_label") as mock_set_done,
+            patch("pr_label.set_pr_running_label") as mock_set_running,
+        ):
+            pr_label.update_done_label_if_completed(
+                repo="owner/repo",
+                pr_number=1,
+                has_review_targets=False,
+                review_fix_started=False,
+                review_fix_added_commits=False,
+                review_fix_failed=False,
+                state_saved=True,
+                commits_by_phase=[],
+                pr_data={"reviews": [], "comments": []},
+                review_comments=[],
+                issue_comments=[],
+                dry_run=False,
+                summarize_only=False,
+                coderabbit_review_skipped_active=True,
+            )
+        mock_ci.assert_not_called()
+        mock_set_done.assert_not_called()
+        mock_set_running.assert_called_once_with(
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
+        )
+
 
 class TestErrorCollectorIntegration:
     def test_ensure_repo_label_exists_subprocess_error_adds_repo_error(self):

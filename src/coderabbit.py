@@ -17,10 +17,18 @@ CODERABBIT_BOT_LOGIN = "coderabbitai"
 CODERABBIT_PROCESSING_MARKER = "Currently processing new changes in this PR."
 CODERABBIT_RATE_LIMIT_MARKER = "Rate limit exceeded"
 CODERABBIT_REVIEW_FAILED_MARKER = "## Review failed"
+CODERABBIT_REVIEW_SKIPPED_MARKER = "## Review skipped"
 CODERABBIT_REVIEW_FAILED_HEAD_CHANGED_MARKER = (
     "The head commit changed during the review"
 )
+CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT = "rate_limit"
+CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED = "draft_detected"
+CODERABBIT_REVIEW_SKIPPED_REASON_LABELS = {
+    CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT: "Rate limit exceeded",
+    CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED: "Draft detected",
+}
 CODERABBIT_RESUME_COMMENT = "@coderabbitai resume"
+CODERABBIT_REVIEW_COMMENT = "@coderabbitai review"
 
 
 def _pr_ref(repo: str, pr_number: int) -> str:
@@ -150,6 +158,46 @@ def _extract_coderabbit_review_failed_status(
     }
 
 
+def _extract_coderabbit_review_skipped_status(
+    comment: dict[str, Any],
+) -> dict[str, Any] | None:
+    """コメントから CodeRabbit の Review skipped ステータスを抽出する。"""
+    body = str(comment.get("body") or "")
+    body_lower = body.lower()
+    if CODERABBIT_REVIEW_SKIPPED_MARKER.lower() not in body_lower:
+        return None
+
+    reason: str | None = None
+    if (
+        CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
+            CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
+        ].lower()
+        in body_lower
+    ):
+        reason = CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
+    elif (
+        CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
+            CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT
+        ].lower()
+        in body_lower
+    ):
+        reason = CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT
+    if reason is None:
+        return None
+
+    updated_at = _comment_last_updated_at(comment)
+    if updated_at is None:
+        return None
+
+    return {
+        "comment_id": comment.get("id"),
+        "html_url": str(comment.get("html_url") or comment.get("url") or "").strip(),
+        "updated_at": updated_at,
+        "reason": reason,
+        "reason_label": CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[reason],
+    }
+
+
 def _latest_coderabbit_activity_at(
     pr_data: dict[str, Any],
     review_comments: list[dict[str, Any]],
@@ -264,11 +312,43 @@ def get_active_coderabbit_review_failed(
     return latest_review_failed
 
 
-def _has_resume_comment_after(
-    issue_comments: list[dict[str, Any]], threshold: datetime
+def get_active_coderabbit_review_skipped(
+    pr_data: dict[str, Any],
+    review_comments: list[dict[str, Any]],
+    issue_comments: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """有効な CodeRabbit Review skipped ステータスを取得する。"""
+    latest_review_skipped: dict[str, Any] | None = None
+    for comment in issue_comments:
+        login = str(comment.get("user", {}).get("login", ""))
+        if not is_coderabbit_login(login):
+            continue
+        review_skipped_status = _extract_coderabbit_review_skipped_status(comment)
+        if review_skipped_status is None:
+            continue
+        if (
+            latest_review_skipped is None
+            or review_skipped_status["updated_at"] > latest_review_skipped["updated_at"]
+        ):
+            latest_review_skipped = review_skipped_status
+
+    if latest_review_skipped is None:
+        return None
+
+    latest_review = _latest_coderabbit_review_submitted_at(pr_data)
+    if (
+        latest_review is not None
+        and latest_review > latest_review_skipped["updated_at"]
+    ):
+        return None
+    return latest_review_skipped
+
+
+def _has_issue_comment_with_body_after(
+    issue_comments: list[dict[str, Any]], threshold: datetime, target_body: str
 ) -> bool:
-    """指定日時以降に resume コメントが存在するか確認する。"""
-    normalized_target = CODERABBIT_RESUME_COMMENT.strip().lower()
+    """指定日時以降に特定本文のコメントが存在するか確認する。"""
+    normalized_target = target_body.strip().lower()
     for comment in issue_comments:
         body = str(comment.get("body") or "").strip().lower()
         if body != normalized_target:
@@ -277,6 +357,24 @@ def _has_resume_comment_after(
         if posted_at is not None and posted_at >= threshold:
             return True
     return False
+
+
+def _has_resume_comment_after(
+    issue_comments: list[dict[str, Any]], threshold: datetime
+) -> bool:
+    """指定日時以降に resume コメントが存在するか確認する。"""
+    return _has_issue_comment_with_body_after(
+        issue_comments, threshold, CODERABBIT_RESUME_COMMENT
+    )
+
+
+def _has_review_comment_after(
+    issue_comments: list[dict[str, Any]], threshold: datetime
+) -> bool:
+    """指定日時以降に review コメントが存在するか確認する。"""
+    return _has_issue_comment_with_body_after(
+        issue_comments, threshold, CODERABBIT_REVIEW_COMMENT
+    )
 
 
 def _post_issue_comment(
@@ -330,6 +428,7 @@ def maybe_auto_resume_coderabbit_review(
     remaining_resume_posts: int,
     dry_run: bool,
     summarize_only: bool,
+    trigger_enabled: bool = True,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """レート制限解除後に CodeRabbit の resume コメントを自動投稿する。"""
@@ -339,6 +438,12 @@ def maybe_auto_resume_coderabbit_review(
         print(
             f"CodeRabbit rate limit detected for {_pr_ref(repo, pr_number)}; "
             "auto resume is disabled."
+        )
+        return False
+    if not trigger_enabled:
+        print(
+            f"CodeRabbit rate limit detected for {_pr_ref(repo, pr_number)}; "
+            "rate-limit trigger is disabled."
         )
         return False
     if remaining_resume_posts <= 0:
@@ -436,6 +541,80 @@ def maybe_auto_resume_coderabbit_review_failed(
 
     return _post_issue_comment(
         repo, pr_number, CODERABBIT_RESUME_COMMENT, error_collector=error_collector
+    )
+
+
+def maybe_auto_trigger_coderabbit_review_skipped(
+    *,
+    repo: str,
+    pr_number: int,
+    issue_comments: list[dict[str, Any]],
+    review_skipped_status: dict[str, Any] | None,
+    auto_resume_enabled: bool,
+    trigger_enabled: bool,
+    remaining_resume_posts: int,
+    dry_run: bool,
+    summarize_only: bool,
+    is_draft: bool,
+    error_collector: ErrorCollector | None = None,
+) -> bool:
+    """Review skipped 後に CodeRabbit の単発 review を再トリガする。"""
+    if review_skipped_status is None:
+        return False
+
+    reason_label = str(review_skipped_status.get("reason_label") or "unknown reason")
+    if not auto_resume_enabled:
+        print(
+            f"CodeRabbit review skipped for {_pr_ref(repo, pr_number)} "
+            f"({reason_label}); auto resume is disabled."
+        )
+        return False
+    if not trigger_enabled:
+        print(
+            f"CodeRabbit review skipped for {_pr_ref(repo, pr_number)} "
+            f"({reason_label}); trigger is disabled."
+        )
+        return False
+    if remaining_resume_posts <= 0:
+        print(
+            f"CodeRabbit review skipped for {_pr_ref(repo, pr_number)} "
+            "but auto resume per-run limit reached."
+        )
+        return False
+    if (
+        review_skipped_status.get("reason")
+        == CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
+        and is_draft
+    ):
+        print(
+            f"CodeRabbit review skipped for {_pr_ref(repo, pr_number)} "
+            "(Draft detected); PR is still draft."
+        )
+        return False
+
+    threshold = review_skipped_status["updated_at"]
+    if _has_review_comment_after(issue_comments, threshold):
+        print(
+            "Review command already exists after the latest CodeRabbit "
+            f"review-skipped notice on {_pr_ref(repo, pr_number)}."
+        )
+        return False
+
+    if dry_run:
+        print(
+            "[DRY RUN] Would post CodeRabbit review comment to "
+            f"{_pr_ref(repo, pr_number)}: {CODERABBIT_REVIEW_COMMENT}"
+        )
+        return False
+    if summarize_only:
+        print(
+            "Summarize-only mode: skip posting CodeRabbit review comment to "
+            f"{_pr_ref(repo, pr_number)}."
+        )
+        return False
+
+    return _post_issue_comment(
+        repo, pr_number, CODERABBIT_REVIEW_COMMENT, error_collector=error_collector
     )
 
 
