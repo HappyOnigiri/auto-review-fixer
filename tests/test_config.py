@@ -288,27 +288,76 @@ repositories: []
         with pytest.raises(ConfigError):
             config.load_config(str(config_file))
 
-    def test_unknown_keys_warns_and_continues(self, tmp_path, capsys):
+    def test_unknown_top_level_key_raises(self, tmp_path):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             """
 invalid_top: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError) as excinfo:
+            config.load_config(str(config_file))
+        assert "Unknown config key(s) in top level" in str(excinfo.value)
+        assert "'invalid_top'" in str(excinfo.value)
+
+    def test_unknown_model_key_raises(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
 models:
   summarize: custom-haiku
   invalid_model_key: 123
 repositories:
   - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError) as excinfo:
+            config.load_config(str(config_file))
+        assert "Unknown config key(s) in 'models'" in str(excinfo.value)
+        assert "'invalid_model_key'" in str(excinfo.value)
+
+    def test_unknown_repository_key_raises(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/repo1
     invalid_repo_key: ignored
 """.strip()
         )
+        with pytest.raises(ConfigError) as excinfo:
+            config.load_config(str(config_file))
+        assert "Unknown config key(s) in 'repositories[0]'" in str(excinfo.value)
+        assert "'invalid_repo_key'" in str(excinfo.value)
 
+    def test_duplicate_repository_raises(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/repo1
+  - repo: owner/repo2
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError) as excinfo:
+            config.load_config(str(config_file))
+        assert "Duplicate repository 'owner/repo1'" in str(excinfo.value)
+
+    def test_wildcard_repos_not_checked_for_duplicates(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/*
+  - repo: owner/*
+""".strip()
+        )
+        # Wildcards are not checked for duplicates at load time; should not raise
         cfg = config.load_config(str(config_file))
-        err = capsys.readouterr().err
-        assert "Warning: Unknown key 'invalid_top' found in config." in err
-        assert "Warning: Unknown key 'invalid_model_key' found in config." in err
-        assert "Warning: Unknown key 'invalid_repo_key' found in config." in err
-        assert cfg["models"]["summarize"] == "custom-haiku"
-        assert cfg["repositories"][0]["repo"] == "owner/repo1"
+        assert len(cfg["repositories"]) == 2
 
 
 class TestExpandRepositories:

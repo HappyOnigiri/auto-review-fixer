@@ -1,6 +1,5 @@
 """設定ファイル（.refix.yaml）の読み込みと検証を行うモジュール。"""
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -112,12 +111,13 @@ def _validate_scalar_field(key: str, value: Any, spec: FieldSpec) -> Any:
     return int_value
 
 
-def _warn_unknown_config_keys(
-    config_section: dict[str, Any], allowed_keys: set[str]
+def _reject_unknown_config_keys(
+    config_section: dict[str, Any], allowed_keys: set[str], section: str
 ) -> None:
     unknown_keys = sorted(set(config_section.keys()) - allowed_keys)
-    for key in unknown_keys:
-        print(f"Warning: Unknown key '{key}' found in config.", file=sys.stderr)
+    if unknown_keys:
+        keys_str = ", ".join(f"'{k}'" for k in unknown_keys)
+        raise ConfigError(f"Unknown config key(s) in {section}: {keys_str}")
 
 
 def normalize_auto_resume_state(
@@ -194,7 +194,9 @@ def load_config(filepath: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ConfigError("config root must be a mapping/object.")
 
-    _warn_unknown_config_keys(parsed, ALLOWED_CONFIG_TOP_LEVEL_KEYS)
+    _reject_unknown_config_keys(
+        parsed, ALLOWED_CONFIG_TOP_LEVEL_KEYS, section="top level"
+    )
 
     config: dict[str, Any] = {
         "models": dict(DEFAULT_CONFIG["models"]),
@@ -222,7 +224,7 @@ def load_config(filepath: str) -> dict[str, Any]:
     if models is not None:
         if not isinstance(models, dict):
             raise ConfigError("models must be a mapping/object.")
-        _warn_unknown_config_keys(models, ALLOWED_MODEL_KEYS)
+        _reject_unknown_config_keys(models, ALLOWED_MODEL_KEYS, section="'models'")
 
         summarize_model = models.get("summarize")
         if summarize_model is not None:
@@ -330,7 +332,9 @@ def load_config(filepath: str) -> dict[str, Any]:
     for index, item in enumerate(repositories):
         if not isinstance(item, dict):
             raise ConfigError(f"repositories[{index}] must be a mapping/object.")
-        _warn_unknown_config_keys(item, ALLOWED_REPOSITORY_KEYS)
+        _reject_unknown_config_keys(
+            item, ALLOWED_REPOSITORY_KEYS, section=f"'repositories[{index}]'"
+        )
 
         repo_name = item.get("repo")
         if not isinstance(repo_name, str) or not repo_name.strip():
@@ -371,6 +375,15 @@ def load_config(filepath: str) -> dict[str, Any]:
                 else None,
             }
         )
+
+    seen_repos: set[str] = set()
+    for entry in normalized_repositories:
+        slug = entry["repo"]
+        if not slug or slug.endswith("/*"):
+            continue
+        if slug in seen_repos:
+            raise ConfigError(f"Duplicate repository '{slug}' in repositories.")
+        seen_repos.add(slug)
 
     config["repositories"] = normalized_repositories
     return config
