@@ -73,10 +73,10 @@ Processed review items are recorded back to the pull request, which prevents the
 
 4. Run one of the following commands:
 
-   - `make dry-run` — show what would happen without calling Claude
-   - `make run-summarize-only` — summarize review feedback only
-   - `make run` — run the full fix flow with verbose logs
-   - `make run-silent` — run the full fix flow with reduced logs
+   - `make dry-run` - show what would happen without calling Claude
+   - `make run-summarize-only` - summarize review feedback only
+   - `make run` - run the full fix flow with verbose logs
+   - `make run-silent` - run the full fix flow with reduced logs
 
 ## YAML configuration reference
 
@@ -177,7 +177,7 @@ Whether to write Claude's stdout to the PR state comment as a collapsible log.
 - Required: no
 - Default: `true`
 
-When enabled, each phase's stdout is embedded in the PR state comment under `実行ログ`.
+When enabled, each phase's stdout is embedded in the PR state comment under `Execution logs`.
 
 #### `auto_merge`
 
@@ -242,7 +242,7 @@ This cap is applied across all repositories and PRs processed by the same run, w
 
 #### `state_comment_timezone`
 
-Timezone used when writing `処理日時` in the PR state comment.
+Timezone used when writing `Processed at` in the PR state comment.
 
 - Type: string
 - Required: no
@@ -331,10 +331,10 @@ You can place a `.refix-project.yaml` file in the root of the **target repositor
 
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
-| `version` | integer | Yes | — | Schema version. Currently only `1` is supported. |
+| `version` | integer | Yes | - | Schema version. Currently only `1` is supported. |
 | `setup.when` | string | No | `"always"` | When to run setup commands. `"always"` runs on every clone and update; `"clone_only"` runs only on the first clone. |
-| `setup.commands[].run` | string | Yes | — | Shell command to execute (via `sh -c`) in the repository root. |
-| `setup.commands[].name` | string | No | — | Human-readable label shown in logs. |
+| `setup.commands[].run` | string | Yes | - | Shell command to execute (via `sh -c`) in the repository root. |
+| `setup.commands[].name` | string | No | - | Human-readable label shown in logs. |
 
 ### Example
 

@@ -12,7 +12,7 @@ models:
 ci_log_max_lines: 120
 
 # Whether to write Claude's stdout to the PR state comment as a collapsible log (Optional)
-# When enabled, each phase's stdout is embedded in the PR state comment under "実行ログ".
+# When enabled, each phase's stdout is embedded in the PR state comment under "Execution logs".
 # Default: true
 write_result_to_comment: true
 
@@ -21,15 +21,15 @@ write_result_to_comment: true
 # Default: false
 auto_merge: false
 
-# PR のマージ方式 (Optional)
-# "auto": リポジトリの設定から許可されている方式を自動選択 (merge > squash > rebase)
-# "merge" / "squash" / "rebase": 指定した方式のみ使用
+# PR merge strategy (Optional)
+# "auto": Automatically choose an allowed strategy from repo settings (merge > squash > rebase)
+# "merge" / "squash" / "rebase": Use only the specified strategy
 # Default: "auto"
 merge_method: "auto"
 
-# ベースブランチの更新方式 (Optional)
-# "merge": git merge でベースブランチを取り込む (デフォルト、マージコミットが作られる)
-# "rebase": git rebase でベースブランチ上にリベース (線形履歴、force-push が必要)
+# Base-branch update strategy (Optional)
+# "merge": Update by merging the base branch (default, creates a merge commit)
+# "rebase": Rebase onto the base branch (linear history, requires force-push)
 # Default: "merge"
 base_update_method: "merge"
 
@@ -68,18 +68,18 @@ include_fork_repositories: true
 # e.g. JST, UTC, Asia/Tokyo
 state_comment_timezone: JST
 
-# 1回の実行で変更を加えるPRの最大件数（0=無制限、Optional）
-# ラベル付け替え、コメント投稿、state comment 更新などすべての変更を含む
+# Maximum number of PRs that may be modified in one run (0 = unlimited, Optional)
+# Includes all mutations such as label updates, comment posting, and state-comment updates
 # Default: 0
 max_modified_prs_per_run: 0
 
-# 1回の実行でコミットを追加するPRの最大件数（0=無制限、Optional）
-# base branch マージ、CI修正、レビュー修正の push を含む
+# Maximum number of PRs that may receive new commits in one run (0 = unlimited, Optional)
+# Includes base-branch merges and pushes for CI/review fixes
 # Default: 2
 max_committed_prs_per_run: 2
 
-# 1回の実行でClaude修正を実行するPRの最大件数（0=無制限、Optional）
-# CI修正、コンフリクト解消、レビュー修正を含む
+# Maximum number of PRs that may run Claude fixes in one run (0 = unlimited, Optional)
+# Includes CI fixes, conflict resolution, and review fixes
 # Default: 0
 max_claude_prs_per_run: 0
 

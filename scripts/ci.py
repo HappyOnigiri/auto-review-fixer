@@ -20,6 +20,7 @@ TASKS: list[tuple[str, str] | tuple[str, str, str]] = [
         f"{sys.executable} -m ruff check src tests scripts --fix",
     ),
     ("Fix-Newlines", f"{sys.executable} scripts/fix_newlines.py"),
+    ("Check-Non-ASCII", f"{sys.executable} scripts/check_non_ascii.py"),
     ("Python-Lint-mypy", f"{sys.executable} -m mypy src tests scripts"),
     ("Python-Lint-pyright", "npx --yes pyright"),
     ("Python-Tests", f"{sys.executable} -m pytest -q --ignore=works"),
