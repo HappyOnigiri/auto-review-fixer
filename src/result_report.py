@@ -34,14 +34,9 @@ def format_phase_result_block(
     lines.extend(
         [
             "",
-            "<details>",
-            "<summary>stdout</summary>",
-            "",
             fence,
             stripped_stdout,
             fence,
-            "",
-            "</details>",
         ]
     )
     return "\n".join(lines)
