@@ -166,6 +166,15 @@ def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
         rebased_changes = pre_rebase_head != post_rebase_head
         return (rebased_changes, False)
     if is_rebase_in_progress(works_dir):
+        if not has_merge_conflicts(works_dir):
+            # 空パッチで停止（コミットの変更がベースに既に含まれている）→ --skip で対処
+            done = _skip_empty_patches(works_dir)
+            if done:
+                post_rebase_head = run_git(
+                    "rev-parse", "HEAD", cwd=works_dir, timeout=10
+                ).stdout.strip()
+                rebased_changes = pre_rebase_head != post_rebase_head
+                return (rebased_changes, False)
         return (False, True)
     raise RuntimeError(
         "git rebase failed without conflict markers: "
@@ -177,6 +186,33 @@ def is_rebase_in_progress(works_dir: Path) -> bool:
     """.git/rebase-merge または .git/rebase-apply の存在チェック。"""
     git_dir = works_dir / ".git"
     return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
+
+
+def _skip_empty_patches(works_dir: Path) -> bool:
+    """空パッチ（コンフリクトなし）で停止した rebase を --skip しながら進める。
+
+    Returns:
+        True  - rebase 完了
+        False - 真のコンフリクトが発生して停止
+    """
+    while True:
+        result = run_git(
+            "rebase",
+            "--skip",
+            cwd=works_dir,
+            check=False,
+            timeout=60,
+            env={"GIT_EDITOR": "true"},
+        )
+        if result.returncode == 0:
+            return True
+        if not is_rebase_in_progress(works_dir):
+            raise RuntimeError(
+                f"git rebase --skip failed: {(result.stderr or result.stdout).strip()}"
+            )
+        if has_merge_conflicts(works_dir):
+            return False
+        # 別の空パッチで停止、続けて skip
 
 
 def continue_rebase(works_dir: Path) -> bool:
@@ -192,6 +228,9 @@ def continue_rebase(works_dir: Path) -> bool:
     if result.returncode == 0:
         return True
     if is_rebase_in_progress(works_dir):
+        if not has_merge_conflicts(works_dir):
+            # コンフリクト解消後にコミットが空になった場合 → --skip で対処
+            return _skip_empty_patches(works_dir)
         return False
     raise RuntimeError(
         f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"
