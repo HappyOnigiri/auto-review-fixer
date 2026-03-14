@@ -365,14 +365,13 @@ def are_all_ci_checks_successful(
     if result.returncode != 0:
         stderr_text = result.stderr or ""
         if "403" in stderr_text:
-            msg = (
-                "check-runs API returned 403 for "
-                f"{_pr_ref(repo, pr_number)} (insufficient permissions); "
-                "treating as empty."
+            # CI (GitHub Actions / Checks App) が設定されていないリポジトリでは
+            # PAT で check-runs API にアクセスすると 403 が返る（GitHub の仕様）。
+            # これは正常系であり、CI なし (runs=[]) として処理を続行する。
+            print(
+                f"Info: {_pr_ref(repo, pr_number)} has no CI configured"
+                " (check-runs API returned 403); treating as no CI runs."
             )
-            print(f"Warning: {msg}", file=sys.stderr)
-            if error_collector:
-                error_collector.add_pr_error(repo, pr_number, msg)
         else:
             msg = (
                 f"check-runs API failed for {_pr_ref(repo, pr_number)} "

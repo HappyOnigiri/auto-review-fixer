@@ -374,8 +374,8 @@ class TestAreAllCiChecksSuccessful:
             )
         assert result is False
 
-    def test_check_runs_403_warning_includes_repo_name(self, capsys):
-        """403 警告ログに owner/repo が含まれることを確認。"""
+    def test_check_runs_403_info_log_includes_repo_name(self, capsys):
+        """CI 未設定の正常系ログに owner/repo が含まれることを確認。"""
         with (
             patch("ci_check.run_command") as mock_run,
             patch(
@@ -393,8 +393,9 @@ class TestAreAllCiChecksSuccessful:
                 ci_empty_as_success=False,
             )
         assert result is False
-        err = capsys.readouterr().err
-        assert "check-runs API returned 403 for owner/repo PR #1" in err
+        out = capsys.readouterr().out
+        assert "owner/repo PR #1" in out
+        assert "no CI configured" in out
 
 
 class TestErrorCollectorIntegration:
@@ -453,7 +454,9 @@ class TestErrorCollectorIntegration:
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#3"
 
-    def test_are_all_ci_checks_successful_check_runs_403_adds_pr_error(self):
+    def test_are_all_ci_checks_successful_check_runs_403_no_error(self):
+        # CI が設定されていないリポジトリでは 403 が返るが、これは想定内の挙動のため
+        # error_collector にエラーを追加せず、warning ログのみ出力する。
         ec = ErrorCollector()
         with (
             patch("ci_check.run_command") as mock_run,
@@ -473,8 +476,7 @@ class TestErrorCollectorIntegration:
                 error_collector=ec,
             )
         assert result is False
-        assert ec.has_errors
-        assert ec._errors[0].scope == "owner/repo#3"
+        assert not ec.has_errors  # 403 はエラーとして記録しない
 
     def test_are_all_ci_checks_successful_filters_workflow_dispatch(self):
         """workflow_dispatch の failure check run はフィルタされ、残りの成功 run で True を返す"""
