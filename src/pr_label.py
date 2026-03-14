@@ -765,6 +765,7 @@ def update_done_label_if_completed(
     merge_method: str = "auto",
     coderabbit_rate_limit_active: bool = False,
     coderabbit_review_failed_active: bool = False,
+    coderabbit_review_skipped_active: bool = False,
     enabled_pr_label_keys: set[str] | None = None,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
@@ -822,6 +823,14 @@ def update_done_label_if_completed(
             )
             is_completed = False
             block_reasons.append("CodeRabbit review failed")
+
+        if coderabbit_review_skipped_active:
+            print(
+                "CodeRabbit review skipped status is active on "
+                f"{_pr_ref(repo, pr_number)}; keep {REFIX_RUNNING_LABEL}."
+            )
+            is_completed = False
+            block_reasons.append("CodeRabbit review skipped")
 
     ci_grace_pending = False
     if is_completed:
