@@ -116,7 +116,7 @@ def generate_prompt(
 
 各指摘が現在のコードに対して妥当かどうかを確認し、runtime / security / CI / correctness / accessibility に関わる問題を優先しながら、必要なものだけ最小限の変更で修正してください。
 Minor / Nitpick / optional / preference とラベルされた提案、見た目だけの微調整、推測ベースのリファクタリングは、現在のコードに実害がある場合を除き慎重に扱ってください。
-変更した場合のみ git commit して push してください。変更不要なら commit / push はしないでください。
+変更した場合のみ git commit してください。変更不要なら commit はしないでください。
 可能な限り、1つの指摘に対して1つのコミットになるようにしてください。""".format(
         review_data_policy=review_data_policy,
         severity_policy=severity_policy,
@@ -200,8 +200,8 @@ def build_conflict_resolution_prompt(
 - 必須条件:
   1. `<<<<<<<`, `=======`, `>>>>>>>` の競合マーカーを完全に除去する
   2. 既存仕様を壊さない最小変更で解消する
-  3. 変更した場合のみ git commit して push する
-  4. 変更不要なら commit / push はしない
+  3. 変更した場合のみ git commit する
+  4. 変更不要なら commit はしない
 - 対象PRの情報は <pr_meta> ブロックを参照すること
 </instructions>
 

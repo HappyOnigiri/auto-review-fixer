@@ -410,6 +410,7 @@ def _run_ci_fix_phase(
             build_phase_result_entry("ci-fix", stdout, ctx.state_comment_timezone)
         )
     if ci_commits:
+        _run_git("push", "origin", ctx.branch_name, cwd=works_dir, timeout=120)
         ctx.committed_prs.add((repo, pr_number))
     ctx.claude_prs.add((repo, pr_number))
     return ci_commits
@@ -590,6 +591,7 @@ def _run_merge_phase_merge(
                 )
             )
         if conflict_commits:
+            _run_git("push", "origin", branch_name, cwd=works_dir, timeout=120)
             commits_by_phase.append(conflict_commits)
             ctx.committed_prs.add((repo, pr_number))
         ctx.claude_prs.add((repo, pr_number))
@@ -925,44 +927,65 @@ def _run_review_fix_phase(
                             repo, pr_number, f"git clean failed: {e}"
                         )
         if should_update_state and commits_by_phase:
-            unpushed_check = _run_git(
-                "log",
-                f"origin/{branch_name}..HEAD",
-                "--oneline",
-                cwd=works_dir,
-                check=False,
-                timeout=10,
+            push_result = _run_git(
+                "push", "origin", branch_name, cwd=works_dir, check=False, timeout=120
             )
-            if unpushed_check.returncode != 0:
+            if push_result.returncode != 0:
                 print(
-                    f"Warning: git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
+                    f"Warning: git push failed (rc={push_result.returncode}); skipping state update to allow retry.",
                     file=sys.stderr,
                 )
-                if unpushed_check.stderr.strip():
-                    print(f"  stderr: {unpushed_check.stderr.strip()}", file=sys.stderr)
+                if push_result.stderr.strip():
+                    print(f"  stderr: {push_result.stderr.strip()}", file=sys.stderr)
                 if error_collector:
                     error_collector.add_pr_error(
                         repo,
                         pr_number,
-                        f"git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
+                        f"git push failed (rc={push_result.returncode}); skipping state update to allow retry.",
                     )
                 should_update_state = False
-            elif unpushed_check.stdout.strip():
-                print(
-                    "Warning: local commits not pushed to remote; skipping state update to allow retry.",
-                    file=sys.stderr,
+            else:
+                unpushed_check = _run_git(
+                    "log",
+                    f"origin/{branch_name}..HEAD",
+                    "--oneline",
+                    cwd=works_dir,
+                    check=False,
+                    timeout=10,
                 )
-                print(
-                    f"  unpushed commits:\n{unpushed_check.stdout.strip()}",
-                    file=sys.stderr,
-                )
-                if error_collector:
-                    error_collector.add_pr_error(
-                        repo,
-                        pr_number,
-                        "local commits not pushed to remote; skipping state update to allow retry.",
+                if unpushed_check.returncode != 0:
+                    print(
+                        f"Warning: git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
+                        file=sys.stderr,
                     )
-                should_update_state = False
+                    if unpushed_check.stderr.strip():
+                        print(
+                            f"  stderr: {unpushed_check.stderr.strip()}",
+                            file=sys.stderr,
+                        )
+                    if error_collector:
+                        error_collector.add_pr_error(
+                            repo,
+                            pr_number,
+                            f"git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
+                        )
+                    should_update_state = False
+                elif unpushed_check.stdout.strip():
+                    print(
+                        "Warning: local commits not pushed to remote; skipping state update to allow retry.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"  unpushed commits:\n{unpushed_check.stdout.strip()}",
+                        file=sys.stderr,
+                    )
+                    if error_collector:
+                        error_collector.add_pr_error(
+                            repo,
+                            pr_number,
+                            "local commits not pushed to remote; skipping state update to allow retry.",
+                        )
+                    should_update_state = False
         if should_update_state:
             state_entries = [
                 create_state_entry(

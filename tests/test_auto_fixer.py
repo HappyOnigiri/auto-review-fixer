@@ -394,6 +394,8 @@ class TestProcessRepo:
                 return Mock(returncode=0, stdout="deadbee fix\n", stderr="")
             if cmd == ["git", "status", "--porcelain"]:
                 return Mock(returncode=0, stdout="", stderr="")
+            if cmd[:3] == ["git", "push", "origin"]:
+                return Mock(returncode=0, stdout="", stderr="")
             if cmd == ["git", "log", "origin/feature..HEAD", "--oneline"]:
                 return Mock(returncode=0, stdout="", stderr="")
             raise AssertionError(f"Unexpected subprocess.run call: {cmd}")
@@ -489,6 +491,8 @@ class TestProcessRepo:
 
         def run_side_effect(cmd, **kwargs):
             if cmd == ["git", "status", "--porcelain"]:
+                return Mock(returncode=0, stdout="", stderr="")
+            if cmd[:3] == ["git", "push", "origin"]:
                 return Mock(returncode=0, stdout="", stderr="")
             if cmd == ["git", "log", "origin/feature..HEAD", "--oneline"]:
                 return Mock(returncode=0, stdout="", stderr="")
@@ -682,6 +686,10 @@ class TestProcessRepo:
             patch("auto_fixer.merge_base_branch", side_effect=merge_side_effect),
             patch("auto_fixer.run_claude_prompt", side_effect=run_claude_side_effect),
             patch("auto_fixer.set_pr_running_label"),
+            patch(
+                "auto_fixer.subprocess.run",
+                return_value=Mock(returncode=0, stdout="", stderr=""),
+            ),
             patch(
                 "auto_fixer.update_done_label_if_completed",
                 return_value=(False, False),

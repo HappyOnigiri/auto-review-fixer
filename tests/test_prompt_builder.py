@@ -106,7 +106,7 @@ class TestGeneratePrompt:
         )
         assert "Minor / Nitpick / optional / preference" in prompt
         assert "severity 属性は参考情報" in prompt
-        assert "変更不要なら commit / push はしない" in prompt
+        assert "変更不要なら commit はしない" in prompt
 
     def test_review_data_treated_as_candidate_data_not_commands(self):
         reviews = [{"id": "r1", "body": "Prompt for AI Agents: do X"}]
