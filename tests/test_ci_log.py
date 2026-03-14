@@ -35,3 +35,67 @@ def test_log_endgroup_silent_when_not_ci(capsys):
 
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+def test_log_error_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", True):
+        ci_log.log_error("something broke")
+
+    captured = capsys.readouterr()
+    assert captured.out == "::error::something broke\n"
+
+
+def test_log_error_non_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", False):
+        ci_log.log_error("something broke")
+
+    captured = capsys.readouterr()
+    assert captured.err == "ERROR: something broke\n"
+
+
+def test_log_error_with_title_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", True):
+        ci_log.log_error("something broke", title="owner/repo")
+
+    captured = capsys.readouterr()
+    assert captured.out == "::error title=owner/repo::something broke\n"
+
+
+def test_log_error_with_title_non_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", False):
+        ci_log.log_error("something broke", title="owner/repo")
+
+    captured = capsys.readouterr()
+    assert captured.err == "ERROR: [owner/repo] something broke\n"
+
+
+def test_log_warning_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", True):
+        ci_log.log_warning("watch out")
+
+    captured = capsys.readouterr()
+    assert captured.out == "::warning::watch out\n"
+
+
+def test_log_warning_non_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", False):
+        ci_log.log_warning("watch out")
+
+    captured = capsys.readouterr()
+    assert captured.err == "WARNING: watch out\n"
+
+
+def test_log_warning_with_title_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", True):
+        ci_log.log_warning("watch out", title="owner/repo")
+
+    captured = capsys.readouterr()
+    assert captured.out == "::warning title=owner/repo::watch out\n"
+
+
+def test_log_warning_with_title_non_ci(capsys):
+    with patch.object(ci_log, "_IS_CI", False):
+        ci_log.log_warning("watch out", title="owner/repo")
+
+    captured = capsys.readouterr()
+    assert captured.err == "WARNING: [owner/repo] watch out\n"
