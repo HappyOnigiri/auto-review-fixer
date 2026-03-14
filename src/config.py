@@ -170,8 +170,7 @@ def get_coderabbit_auto_resume_triggers(
     """CodeRabbit 自動再トリガの理由別設定を取得する。"""
     default_triggers = default_config["coderabbit_auto_resume_triggers"]
     normalized = {
-        key: bool(default_triggers.get(key, False))
-        for key in default_triggers
+        key: bool(default_triggers.get(key, False)) for key in default_triggers
     }
     configured = runtime_config.get("coderabbit_auto_resume_triggers")
     if not isinstance(configured, dict):
@@ -287,7 +286,9 @@ def load_config(filepath: str) -> dict[str, Any]:
     coderabbit_auto_resume_triggers = parsed.get("coderabbit_auto_resume_triggers")
     if coderabbit_auto_resume_triggers is not None:
         if not isinstance(coderabbit_auto_resume_triggers, dict):
-            raise ConfigError("coderabbit_auto_resume_triggers must be a mapping/object.")
+            raise ConfigError(
+                "coderabbit_auto_resume_triggers must be a mapping/object."
+            )
         _reject_unknown_config_keys(
             coderabbit_auto_resume_triggers,
             ALLOWED_CODERABBIT_AUTO_RESUME_TRIGGER_KEYS,
