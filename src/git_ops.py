@@ -141,6 +141,17 @@ def has_merge_conflicts(works_dir: Path) -> bool:
     return bool(result.stdout.strip())
 
 
+def is_worktree_and_index_clean(works_dir: Path) -> bool:
+    """作業ツリーとインデックスが両方クリーンかどうか確認する。"""
+    diff_result = run_git("diff", cwd=works_dir, check=False, timeout=30)
+    if diff_result.returncode != 0:
+        raise RuntimeError("failed to check working tree diff")
+    cached_result = run_git("diff", "--cached", cwd=works_dir, check=False, timeout=30)
+    if cached_result.returncode != 0:
+        raise RuntimeError("failed to check index diff")
+    return not diff_result.stdout.strip() and not cached_result.stdout.strip()
+
+
 def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
     """origin/<base_branch> 上にリベースする。
 
@@ -166,7 +177,7 @@ def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
         rebased_changes = pre_rebase_head != post_rebase_head
         return (rebased_changes, False)
     if is_rebase_in_progress(works_dir):
-        if not has_merge_conflicts(works_dir):
+        if not has_merge_conflicts(works_dir) and is_worktree_and_index_clean(works_dir):
             # 空パッチで停止（コミットの変更がベースに既に含まれている）→ --skip で対処
             done = _skip_empty_patches(works_dir)
             if done:
@@ -210,7 +221,7 @@ def _skip_empty_patches(works_dir: Path) -> bool:
             raise RuntimeError(
                 f"git rebase --skip failed: {(result.stderr or result.stdout).strip()}"
             )
-        if has_merge_conflicts(works_dir):
+        if has_merge_conflicts(works_dir) or not is_worktree_and_index_clean(works_dir):
             return False
         # 別の空パッチで停止、続けて skip
 
@@ -228,7 +239,7 @@ def continue_rebase(works_dir: Path) -> bool:
     if result.returncode == 0:
         return True
     if is_rebase_in_progress(works_dir):
-        if not has_merge_conflicts(works_dir):
+        if not has_merge_conflicts(works_dir) and is_worktree_and_index_clean(works_dir):
             # コンフリクト解消後にコミットが空になった場合 → --skip で対処
             return _skip_empty_patches(works_dir)
         return False
