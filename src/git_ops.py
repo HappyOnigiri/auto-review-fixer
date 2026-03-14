@@ -141,6 +141,68 @@ def has_merge_conflicts(works_dir: Path) -> bool:
     return bool(result.stdout.strip())
 
 
+def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
+    """origin/<base_branch> 上にリベースする。
+
+    Returns:
+        (rebased_changes, has_conflicts)
+    """
+    run_git("fetch", "origin", base_branch, cwd=works_dir, timeout=120)
+    pre_rebase_head = run_git(
+        "rev-parse", "HEAD", cwd=works_dir, timeout=10
+    ).stdout.strip()
+    rebase_result = run_git(
+        "rebase",
+        f"origin/{base_branch}",
+        cwd=works_dir,
+        check=False,
+        timeout=60,
+        env={"GIT_EDITOR": "true"},
+    )
+    if rebase_result.returncode == 0:
+        post_rebase_head = run_git(
+            "rev-parse", "HEAD", cwd=works_dir, timeout=10
+        ).stdout.strip()
+        rebased_changes = pre_rebase_head != post_rebase_head
+        return (rebased_changes, False)
+    if is_rebase_in_progress(works_dir):
+        return (False, True)
+    raise RuntimeError(
+        "git rebase failed without conflict markers: "
+        f"{(rebase_result.stderr or rebase_result.stdout).strip()}"
+    )
+
+
+def is_rebase_in_progress(works_dir: Path) -> bool:
+    """.git/rebase-merge または .git/rebase-apply の存在チェック。"""
+    git_dir = works_dir / ".git"
+    return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
+
+
+def continue_rebase(works_dir: Path) -> bool:
+    """git rebase --continue。完了で True、まだコンフリクトがあれば False。"""
+    result = run_git(
+        "rebase",
+        "--continue",
+        cwd=works_dir,
+        check=False,
+        timeout=60,
+        env={"GIT_EDITOR": "true"},
+    )
+    if result.returncode == 0:
+        return True
+    if is_rebase_in_progress(works_dir):
+        return False
+    raise RuntimeError(
+        f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"
+    )
+
+
+def abort_rebase(works_dir: Path) -> None:
+    """git rebase --abort。"""
+    run_git("rebase", "--abort", cwd=works_dir, check=False, timeout=30)
+
+
 def merge_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
     """origin/<base_branch> を現在のブランチにマージする。
 
