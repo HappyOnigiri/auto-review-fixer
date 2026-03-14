@@ -1,11 +1,13 @@
 """Unit tests for CodeRabbit rate limit helpers."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 import auto_fixer
 import coderabbit
+from error_collector import ErrorCollector
+from subprocess_helpers import SubprocessError
 
 
 class TestCodeRabbitRateLimitHelpers:
@@ -148,7 +150,9 @@ class TestCodeRabbitRateLimitHelpers:
             )
 
         assert posted is True
-        mock_post.assert_called_once_with("owner/repo", 1, "@coderabbitai resume")
+        mock_post.assert_called_once_with(
+            "owner/repo", 1, "@coderabbitai resume", error_collector=None
+        )
 
     def test_maybe_auto_resume_skips_when_resume_already_exists(self):
         threshold = datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
@@ -215,7 +219,9 @@ class TestCodeRabbitRateLimitHelpers:
             )
 
         assert posted is True
-        mock_post.assert_called_once_with("owner/repo", 1, "@coderabbitai resume")
+        mock_post.assert_called_once_with(
+            "owner/repo", 1, "@coderabbitai resume", error_collector=None
+        )
 
     def test_maybe_auto_resume_review_failed_skips_when_per_run_limit_reached(self):
         threshold = datetime.now(timezone.utc)
@@ -235,3 +241,40 @@ class TestCodeRabbitRateLimitHelpers:
             )
         assert posted is False
         mock_post.assert_not_called()
+
+    def test_maybe_auto_resume_posts_comment_with_error_collector(self):
+        """error_collector が _post_issue_comment に伝わることを確認。"""
+        now = datetime.now(timezone.utc)
+        status = {
+            "updated_at": now,
+            "resume_after": now - timedelta(seconds=1),
+        }
+        ec = ErrorCollector()
+        with patch(
+            "coderabbit.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="forbidden"),
+        ):
+            posted = coderabbit.maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=2,
+                issue_comments=[],
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                remaining_resume_posts=1,
+                dry_run=False,
+                summarize_only=False,
+                error_collector=ec,
+            )
+        assert posted is False
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#2"
+
+    def test_post_issue_comment_subprocess_error_adds_pr_error(self):
+        ec = ErrorCollector()
+        with patch("coderabbit.run_command", side_effect=SubprocessError("net error")):
+            result = coderabbit._post_issue_comment(
+                "owner/repo", 5, "hello", error_collector=ec
+            )
+        assert result is False
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#5"

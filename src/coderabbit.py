@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from subprocess_helpers import SubprocessError, run_command
+from error_collector import ErrorCollector
 
 # --- 定数 ---
 # REST API は "coderabbitai[bot]"、GraphQL は "coderabbitai" を返す
@@ -273,7 +274,13 @@ def _has_resume_comment_after(
     return False
 
 
-def _post_issue_comment(repo: str, pr_number: int, body: str) -> bool:
+def _post_issue_comment(
+    repo: str,
+    pr_number: int,
+    body: str,
+    *,
+    error_collector: ErrorCollector | None = None,
+) -> bool:
     """PR にイシューコメントを投稿する。"""
     try:
         result = run_command(
@@ -289,19 +296,19 @@ def _post_issue_comment(repo: str, pr_number: int, body: str) -> bool:
             check=False,
         )
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to post comment to PR #{pr_number}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to post comment to PR #{pr_number}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False
     if result.returncode == 0:
         print(f"Posted comment to PR #{pr_number}: {body}")
         return True
 
-    print(
-        f"Warning: failed to post comment to PR #{pr_number}: {(result.stderr or result.stdout).strip()}",
-        file=sys.stderr,
-    )
+    msg = f"failed to post comment to PR #{pr_number}: {(result.stderr or result.stdout).strip()}"
+    print(f"Warning: {msg}", file=sys.stderr)
+    if error_collector:
+        error_collector.add_pr_error(repo, pr_number, msg)
     return False
 
 
@@ -315,6 +322,7 @@ def maybe_auto_resume_coderabbit_review(
     remaining_resume_posts: int,
     dry_run: bool,
     summarize_only: bool,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """レート制限解除後に CodeRabbit の resume コメントを自動投稿する。"""
     if rate_limit_status is None:
@@ -358,7 +366,9 @@ def maybe_auto_resume_coderabbit_review(
         )
         return False
 
-    return _post_issue_comment(repo, pr_number, CODERABBIT_RESUME_COMMENT)
+    return _post_issue_comment(
+        repo, pr_number, CODERABBIT_RESUME_COMMENT, error_collector=error_collector
+    )
 
 
 def maybe_auto_resume_coderabbit_review_failed(
@@ -371,6 +381,7 @@ def maybe_auto_resume_coderabbit_review_failed(
     remaining_resume_posts: int,
     dry_run: bool,
     summarize_only: bool,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """レビュー失敗後に CodeRabbit の resume コメントを自動投稿する。"""
     if review_failed_status is None:
@@ -405,7 +416,9 @@ def maybe_auto_resume_coderabbit_review_failed(
         )
         return False
 
-    return _post_issue_comment(repo, pr_number, CODERABBIT_RESUME_COMMENT)
+    return _post_issue_comment(
+        repo, pr_number, CODERABBIT_RESUME_COMMENT, error_collector=error_collector
+    )
 
 
 def contains_coderabbit_processing_marker(

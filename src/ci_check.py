@@ -9,6 +9,7 @@ from typing import Any
 from pr_reviewer import _fetch_classic_statuses_via_rest
 from prompt_builder import _xml_escape, _xml_escape_attr
 from subprocess_helpers import SubprocessError, run_command
+from error_collector import ErrorCollector
 
 # --- 定数 ---
 SUCCESSFUL_CI_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
@@ -128,6 +129,8 @@ def collect_ci_failure_materials(
     failing_contexts: list[dict[str, str]],
     *,
     max_lines: int,
+    error_collector: ErrorCollector | None = None,
+    pr_number: int | None = None,
 ) -> list[dict[str, Any]]:
     """失敗した CI ログを取得し、構造化されたプロンプト素材を構築する。"""
     max_lines = max(20, max_lines)
@@ -146,16 +149,22 @@ def collect_ci_failure_materials(
                 timeout=60,
             )
         except SubprocessError:
-            print(
-                f"Warning: failed to fetch CI logs for run {run_id}; skipping",
-                file=sys.stderr,
-            )
+            msg = f"failed to fetch CI logs for run {run_id}; skipping"
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                if pr_number is not None:
+                    error_collector.add_pr_error(repo, pr_number, msg)
+                else:
+                    error_collector.add_repo_error(repo, msg)
             continue
         if run_view_result.returncode != 0:
-            print(
-                f"Warning: failed to fetch failed CI logs for run {run_id}: {run_view_result.stderr.strip()}",
-                file=sys.stderr,
-            )
+            msg = f"failed to fetch failed CI logs for run {run_id}: {run_view_result.stderr.strip()}"
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                if pr_number is not None:
+                    error_collector.add_pr_error(repo, pr_number, msg)
+                else:
+                    error_collector.add_repo_error(repo, msg)
             continue
         raw_log = run_view_result.stdout.strip("\n")
         if not raw_log.strip():
@@ -291,6 +300,7 @@ def are_all_ci_checks_successful(
     *,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
+    error_collector: ErrorCollector | None = None,
 ) -> bool | None:
     """REST API 経由で全 CI チェックが成功しているか確認する。
 
@@ -304,16 +314,18 @@ def are_all_ci_checks_successful(
             timeout=60,
         )
     except Exception:
-        print(
-            f"Warning: timed out fetching head SHA for PR #{pr_number}; "
-            "skip refix: done labeling.",
-            file=sys.stderr,
-        )
+        msg = f"timed out fetching head SHA for PR #{pr_number}; skip refix: done labeling."
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return None
     if head_result.returncode != 0 or not (
         head_sha := (head_result.stdout or "").strip()
     ):
-        print(f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling.")
+        msg = f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+        print(msg)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return None
 
     # REST 経由で check runs を取得
@@ -330,36 +342,33 @@ def are_all_ci_checks_successful(
             timeout=60,
         )
     except Exception:
-        print(
-            f"Warning: timed out fetching check runs for PR #{pr_number}; "
-            "skip refix: done labeling.",
-            file=sys.stderr,
-        )
+        msg = f"timed out fetching check runs for PR #{pr_number}; skip refix: done labeling."
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return None
     runs: list[dict[str, Any]] = []
     if result.returncode != 0:
         stderr_text = result.stderr or ""
         if "403" in stderr_text:
-            print(
-                f"Warning: check-runs API returned 403 for PR #{pr_number} "
-                "(insufficient permissions); treating as empty.",
-                file=sys.stderr,
-            )
+            msg = f"check-runs API returned 403 for PR #{pr_number} (insufficient permissions); treating as empty."
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
         else:
-            print(
-                f"Warning: check-runs API failed for PR #{pr_number} "
-                f"(exit {result.returncode}); skip refix: done labeling.",
-                file=sys.stderr,
-            )
+            msg = f"check-runs API failed for PR #{pr_number} (exit {result.returncode}); skip refix: done labeling."
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
             return None
     else:
         try:
             data = json.loads(result.stdout) if result.stdout else []
         except json.JSONDecodeError:
-            print(
-                f"Warning: failed to parse CI check state for PR #{pr_number}",
-                file=sys.stderr,
-            )
+            msg = f"failed to parse CI check state for PR #{pr_number}"
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
             return None
 
         for page in data if isinstance(data, list) else [data]:

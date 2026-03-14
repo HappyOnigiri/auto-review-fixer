@@ -203,6 +203,7 @@ def _handle_coderabbit_status(
     review_comments: list,
     issue_comments: list,
     coderabbit_resumed_prs: set,
+    error_collector: ErrorCollector | None = None,
 ) -> tuple[Any, Any]:
     """Handle CodeRabbit rate-limit and review-failed detection.
 
@@ -242,6 +243,7 @@ def _handle_coderabbit_status(
             ),
             dry_run=ctx.dry_run,
             summarize_only=ctx.summarize_only,
+            error_collector=error_collector,
         )
         if posted_resume_comment:
             ctx.auto_resume_run_state["posted"] = (
@@ -284,6 +286,7 @@ def _handle_coderabbit_status(
                 ),
                 dry_run=ctx.dry_run,
                 summarize_only=ctx.summarize_only,
+                error_collector=error_collector,
             )
             if posted_review_failed_comment:
                 ctx.auto_resume_run_state["posted"] = (
@@ -645,6 +648,12 @@ def _run_review_fix_phase(
             )
             if dirty_check.stderr.strip():
                 print(f"  stderr: {dirty_check.stderr.strip()}", file=sys.stderr)
+            if error_collector:
+                error_collector.add_pr_error(
+                    repo,
+                    pr_number,
+                    f"git status failed (rc={dirty_check.returncode}); skipping state update to allow retry.",
+                )
             should_update_state = False
         elif dirty_check.stdout.strip():
             # 未コミットの変更がある = 想定外の状態のため、状態更新はスキップ
@@ -666,6 +675,10 @@ def _run_review_fix_phase(
                     "Warning: git not found in PATH; skipping cleanup.",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo, pr_number, "git not found in PATH; skipping cleanup."
+                    )
             else:
                 try:
                     _run_git("reset", "--hard", "HEAD", cwd=works_dir, timeout=30)
@@ -675,6 +688,10 @@ def _run_review_fix_phase(
                         f"Warning: git clean failed: {e}",
                         file=sys.stderr,
                     )
+                    if error_collector:
+                        error_collector.add_pr_error(
+                            repo, pr_number, f"git clean failed: {e}"
+                        )
         if should_update_state and commits_by_phase:
             unpushed_check = _run_git(
                 "log",
@@ -691,6 +708,12 @@ def _run_review_fix_phase(
                 )
                 if unpushed_check.stderr.strip():
                     print(f"  stderr: {unpushed_check.stderr.strip()}", file=sys.stderr)
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo,
+                        pr_number,
+                        f"git log failed (rc={unpushed_check.returncode}); skipping state update to allow retry.",
+                    )
                 should_update_state = False
             elif unpushed_check.stdout.strip():
                 print(
@@ -701,6 +724,12 @@ def _run_review_fix_phase(
                     f"  unpushed commits:\n{unpushed_check.stdout.strip()}",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo,
+                        pr_number,
+                        "local commits not pushed to remote; skipping state update to allow retry.",
+                    )
                 should_update_state = False
         if should_update_state:
             state_entries = [
@@ -724,7 +753,8 @@ def _run_review_fix_phase(
                     rid = inline_comment_state_id(comment)
                     thread_id = thread_map.get(comment["id"])
                     try:
-                        if thread_id and resolve_review_thread(thread_id):
+                        if thread_id:
+                            resolve_review_thread(thread_id)
                             resolved += 1
                             state_entries.append(
                                 create_state_entry(
@@ -735,17 +765,17 @@ def _run_review_fix_phase(
                                     timezone_name=ctx.state_comment_timezone,
                                 )
                             )
-                        else:
-                            any_comment_failed = True
-                            print(
-                                f"Warning: resolve_review_thread returned False for {rid} (thread_id={thread_id})",
-                                file=sys.stderr,
-                            )
                     except Exception as e:
                         print(
-                            f"Warning: state update/resolve_review_thread failed for {rid}: {e}",
+                            f"Warning: resolve_review_thread failed for {rid}: {e}",
                             file=sys.stderr,
                         )
+                        if error_collector:
+                            error_collector.add_pr_error(
+                                repo,
+                                pr_number,
+                                f"resolve_review_thread failed for {rid}: {e}",
+                            )
                         any_comment_failed = True
                 print(
                     f"Resolved {resolved}/{len(unresolved_comments)} review thread(s)"
@@ -757,6 +787,10 @@ def _run_review_fix_phase(
                     f"Warning: failed to reload state comment for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo, pr_number, f"failed to reload state comment: {e}"
+                    )
                 _latest = state_comment
             result_log_body_to_save = (
                 merge_result_log_body(_latest.result_log_body, result_blocks)
@@ -781,6 +815,10 @@ def _run_review_fix_phase(
                         f"Warning: failed to update state comment for PR #{pr_number}: {e}",
                         file=sys.stderr,
                     )
+                    if error_collector:
+                        error_collector.add_pr_error(
+                            repo, pr_number, f"failed to update state comment: {e}"
+                        )
             elif not any_comment_failed:
                 state_saved = True  # nothing to save; state is consistent
         _remove_running_on_exit = False
@@ -806,6 +844,12 @@ def _run_review_fix_phase(
                         f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
                         file=sys.stderr,
                     )
+                    if error_collector:
+                        error_collector.add_pr_error(
+                            repo,
+                            pr_number,
+                            f"failed to save execution result: {_save_err}",
+                        )
         raise
     except subprocess.CalledProcessError as e:
         review_fix_failed = True
@@ -831,6 +875,10 @@ def _run_review_fix_phase(
                     f"Warning: failed to save execution result for PR #{pr_number}: {_save_err}",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo, pr_number, f"failed to save execution result: {_save_err}"
+                    )
     finally:
         if _remove_running_on_exit:
             edit_pr_label(
@@ -839,6 +887,7 @@ def _run_review_fix_phase(
                 add=False,
                 label=REFIX_RUNNING_LABEL,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+                error_collector=error_collector,
             )
 
     return review_fix_started, review_fix_added_commits, state_saved, review_fix_failed
@@ -1064,7 +1113,12 @@ def _process_single_pr(
 
     # Handle CodeRabbit rate limit and review-failed status
     active_rate_limit, active_review_failed = _handle_coderabbit_status(
-        ctx, pr_data, review_comments, issue_comments, coderabbit_resumed_prs
+        ctx,
+        pr_data,
+        review_comments,
+        issue_comments,
+        coderabbit_resumed_prs,
+        error_collector=error_collector,
     )
 
     has_review_targets = bool(unresolved_reviews or unresolved_comments)
@@ -1093,6 +1147,7 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
+            error_collector=error_collector,
         )
         if _done_updated:
             modified_prs.add((repo, pr_number))
@@ -1283,6 +1338,10 @@ def _process_single_pr(
                     f"Warning: failed to update result log section for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo, pr_number, f"failed to update result log section: {e}"
+                    )
         else:
             state_saved = True
         if ci_commits and not is_behind:
@@ -1323,6 +1382,7 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
+            error_collector=error_collector,
         )
         if _done_updated:
             modified_prs.add((repo, pr_number))
@@ -1378,6 +1438,10 @@ def _process_single_pr(
                     f"Warning: failed to update result log section for PR #{pr_number}: {e}",
                     file=sys.stderr,
                 )
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo, pr_number, f"failed to update result log section: {e}"
+                    )
         print(
             f"Skipping review-fix for PR #{pr_number} because {skip_review_fix_reason}; "
             "CI repair and merge-base handling already ran."
@@ -1402,6 +1466,7 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
+            error_collector=error_collector,
         )
         if _done_updated:
             modified_prs.add((repo, pr_number))
@@ -1496,6 +1561,7 @@ def _process_single_pr(
         enabled_pr_label_keys=enabled_pr_label_keys,
         ci_empty_as_success=ci_empty_as_success,
         ci_empty_grace_minutes=ci_empty_grace_minutes,
+        error_collector=error_collector,
     )
     if _done_updated:
         modified_prs.add((repo, pr_number))
@@ -1652,6 +1718,7 @@ def process_repo(
             repo,
             limit=backfill_limit,
             enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
         )
         if global_backfilled_count is not None:
             global_backfilled_count[0] += backfilled_count
@@ -1732,11 +1799,16 @@ def process_repo(
                     repo,
                     limit=remaining,
                     enabled_pr_label_keys=enabled_pr_label_keys,
+                    error_collector=error_collector,
                 )
                 if global_backfilled_count is not None:
                     global_backfilled_count[0] += additional
         else:
-            backfill_merged_labels(repo, enabled_pr_label_keys=enabled_pr_label_keys)
+            backfill_merged_labels(
+                repo,
+                enabled_pr_label_keys=enabled_pr_label_keys,
+                error_collector=error_collector,
+            )
     return commits_added_to
 
 

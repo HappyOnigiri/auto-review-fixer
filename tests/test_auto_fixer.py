@@ -8,6 +8,7 @@ import pytest
 
 import auto_fixer
 from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
+from error_collector import ErrorCollector
 from state_manager import StateComment, StateEntry
 
 # Rate limit body constants (also used in TestProcessRepo tests)
@@ -270,6 +271,7 @@ class TestProcessRepo:
             "owner/repo",
             limit=100,
             enabled_pr_label_keys={"running", "done", "merged", "auto_merge_requested"},
+            error_collector=None,
         )
 
     def test_draft_pr_is_skipped_by_default(self):
@@ -1348,3 +1350,86 @@ class TestExcludeFilters:
             auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
 
         mock_fetch.assert_called_once()
+
+
+class TestErrorCollectorInProcessSinglePr:
+    """_process_single_pr 内の各エラー箇所で ErrorCollector にエラーが記録されることを確認するテスト。"""
+
+    _PR = {"number": 1, "title": "PR #1", "isDraft": False}
+    _PR_DATA = {
+        "headRefName": "feature",
+        "baseRefName": "main",
+        "title": "PR #1",
+        "reviews": [],
+        "comments": [],
+    }
+
+    def test_load_state_comment_failure_records_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=[self._PR]),
+            patch("auto_fixer.fetch_pr_details", return_value=self._PR_DATA),
+            patch(
+                "auto_fixer.load_state_comment",
+                side_effect=RuntimeError("network error"),
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=ec)
+
+        assert ec.has_errors
+        assert any("owner/repo#1" == r.scope for r in ec._errors)
+        assert any("Failed to load state comment" in r.message for r in ec._errors)
+
+    def test_fetch_review_comments_failure_records_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=[self._PR]),
+            patch("auto_fixer.fetch_pr_details", return_value=self._PR_DATA),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.fetch_pr_review_comments",
+                side_effect=RuntimeError("fetch failed"),
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=ec)
+
+        assert ec.has_errors
+        assert any("owner/repo#1" == r.scope for r in ec._errors)
+        assert any("Failed to fetch review comments" in r.message for r in ec._errors)
+
+    def test_fetch_review_threads_failure_records_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=[self._PR]),
+            patch("auto_fixer.fetch_pr_details", return_value=self._PR_DATA),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch(
+                "auto_fixer.fetch_review_threads",
+                side_effect=RuntimeError("threads failed"),
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=ec)
+
+        assert ec.has_errors
+        assert any("owner/repo#1" == r.scope for r in ec._errors)
+        assert any("Failed to fetch review threads" in r.message for r in ec._errors)
+
+    def test_fetch_issue_comments_failure_records_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=[self._PR]),
+            patch("auto_fixer.fetch_pr_details", return_value=self._PR_DATA),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch(
+                "auto_fixer.fetch_issue_comments",
+                side_effect=RuntimeError("issue comments failed"),
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=ec)
+
+        assert ec.has_errors
+        assert any("owner/repo#1" == r.scope for r in ec._errors)
+        assert any("Failed to fetch issue comments" in r.message for r in ec._errors)

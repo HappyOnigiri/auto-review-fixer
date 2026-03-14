@@ -8,6 +8,7 @@ from urllib.parse import quote
 from subprocess_helpers import SubprocessError, run_command
 
 from ci_check import are_all_ci_checks_successful
+from error_collector import ErrorCollector
 from coderabbit import contains_coderabbit_processing_marker
 
 # --- ラベル定数 ---
@@ -48,7 +49,12 @@ def _resolve_enabled_pr_label_keys(
 
 
 def _ensure_repo_label_exists(
-    repo: str, label: str, *, color: str, description: str
+    repo: str,
+    label: str,
+    *,
+    color: str,
+    description: str,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """リポジトリにラベルが存在しなければ作成する。"""
     encoded_label = quote(label, safe="")
@@ -56,10 +62,10 @@ def _ensure_repo_label_exists(
     try:
         get_result = run_command(get_cmd, check=False)
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to check label '{label}' on {repo}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to check label '{label}' on {repo}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return False
     if get_result.returncode == 0:
         return True
@@ -67,10 +73,10 @@ def _ensure_repo_label_exists(
     stderr_lower = (get_result.stderr or "").lower()
     not_found = "not found" in stderr_lower or "404" in stderr_lower
     if not not_found:
-        print(
-            f"Warning: failed to verify label '{label}' on {repo}: {(get_result.stderr or '').strip()}",
-            file=sys.stderr,
-        )
+        msg = f"failed to verify label '{label}' on {repo}: {(get_result.stderr or '').strip()}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return False
 
     create_cmd = [
@@ -89,10 +95,10 @@ def _ensure_repo_label_exists(
     try:
         create_result = run_command(create_cmd, check=False)
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to create label '{label}' in {repo}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to create label '{label}' in {repo}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return False
     if create_result.returncode == 0:
         print(f"Created missing label '{label}' in {repo}")
@@ -102,15 +108,18 @@ def _ensure_repo_label_exists(
     if "already_exists" in create_stderr or "already exists" in create_stderr:
         return True
 
-    print(
-        f"Warning: failed to create label '{label}' in {repo}: {(create_result.stderr or '').strip()}",
-        file=sys.stderr,
-    )
+    msg = f"failed to create label '{label}' in {repo}: {(create_result.stderr or '').strip()}"
+    print(f"Warning: {msg}", file=sys.stderr)
+    if error_collector:
+        error_collector.add_repo_error(repo, msg)
     return False
 
 
 def _ensure_refix_labels(
-    repo: str, *, enabled_pr_label_keys: set[str] | None = None
+    repo: str,
+    *,
+    enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> None:
     """必要な refix ラベルをリポジトリに作成する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -120,6 +129,7 @@ def _ensure_refix_labels(
             REFIX_RUNNING_LABEL,
             color=REFIX_RUNNING_LABEL_COLOR,
             description="Refix is currently processing review fixes.",
+            error_collector=error_collector,
         )
     if "done" in enabled:
         _ensure_repo_label_exists(
@@ -127,6 +137,7 @@ def _ensure_refix_labels(
             REFIX_DONE_LABEL,
             color=REFIX_DONE_LABEL_COLOR,
             description="Refix finished review checks/fixes for now.",
+            error_collector=error_collector,
         )
     if "merged" in enabled:
         _ensure_repo_label_exists(
@@ -134,6 +145,7 @@ def _ensure_refix_labels(
             REFIX_MERGED_LABEL,
             color=REFIX_MERGED_LABEL_COLOR,
             description="PR has been merged after Refix auto-merge.",
+            error_collector=error_collector,
         )
     if "auto_merge_requested" in enabled:
         _ensure_repo_label_exists(
@@ -141,6 +153,7 @@ def _ensure_refix_labels(
             REFIX_AUTO_MERGE_REQUESTED_LABEL,
             color=REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR,
             description="Refix has requested auto-merge for this PR.",
+            error_collector=error_collector,
         )
 
 
@@ -151,6 +164,7 @@ def edit_pr_label(
     add: bool,
     label: str,
     enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """PR にラベルを追加または削除する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -173,10 +187,10 @@ def edit_pr_label(
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
         action = "add" if add else "remove"
-        print(
-            f"Warning: failed to {action} label '{label}' on PR #{pr_number}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to {action} label '{label}' on PR #{pr_number}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False
     if result.returncode == 0:
         return True
@@ -190,10 +204,10 @@ def edit_pr_label(
         return True
 
     action = "add" if add else "remove"
-    print(
-        f"Warning: failed to {action} label '{label}' on PR #{pr_number}: {(result.stderr or '').strip()}",
-        file=sys.stderr,
-    )
+    msg = f"failed to {action} label '{label}' on PR #{pr_number}: {(result.stderr or '').strip()}"
+    print(f"Warning: {msg}", file=sys.stderr)
+    if error_collector:
+        error_collector.add_pr_error(repo, pr_number, msg)
     return False
 
 
@@ -214,6 +228,7 @@ def set_pr_running_label(
     *,
     pr_data: dict[str, Any] | None = None,
     enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """refix: running を設定し、refix: done を削除する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -228,13 +243,21 @@ def set_pr_running_label(
     ):
         return False
     if enabled_pr_label_keys is None:
-        _ensure_refix_labels(repo)
+        _ensure_refix_labels(repo, error_collector=error_collector)
     else:
-        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+        _ensure_refix_labels(
+            repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+        )
     changed = False
     if done_enabled and (pr_data is None or _pr_has_label(pr_data, REFIX_DONE_LABEL)):
         if enabled_pr_label_keys is None:
-            if edit_pr_label(repo, pr_number, add=False, label=REFIX_DONE_LABEL):
+            if edit_pr_label(
+                repo,
+                pr_number,
+                add=False,
+                label=REFIX_DONE_LABEL,
+                error_collector=error_collector,
+            ):
                 changed = True
         else:
             if edit_pr_label(
@@ -243,13 +266,20 @@ def set_pr_running_label(
                 add=False,
                 label=REFIX_DONE_LABEL,
                 enabled_pr_label_keys=enabled,
+                error_collector=error_collector,
             ):
                 changed = True
     if running_enabled and (
         pr_data is None or not _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if edit_pr_label(repo, pr_number, add=True, label=REFIX_RUNNING_LABEL):
+            if edit_pr_label(
+                repo,
+                pr_number,
+                add=True,
+                label=REFIX_RUNNING_LABEL,
+                error_collector=error_collector,
+            ):
                 changed = True
         else:
             if edit_pr_label(
@@ -258,6 +288,7 @@ def set_pr_running_label(
                 add=True,
                 label=REFIX_RUNNING_LABEL,
                 enabled_pr_label_keys=enabled,
+                error_collector=error_collector,
             ):
                 changed = True
     return changed
@@ -269,6 +300,7 @@ def _set_pr_done_label(
     *,
     pr_data: dict[str, Any] | None = None,
     enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """refix: done を設定し、refix: running を削除する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -283,15 +315,23 @@ def _set_pr_done_label(
     ):
         return False
     if enabled_pr_label_keys is None:
-        _ensure_refix_labels(repo)
+        _ensure_refix_labels(repo, error_collector=error_collector)
     else:
-        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+        _ensure_refix_labels(
+            repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+        )
     changed = False
     if running_enabled and (
         pr_data is None or _pr_has_label(pr_data, REFIX_RUNNING_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
+            if edit_pr_label(
+                repo,
+                pr_number,
+                add=False,
+                label=REFIX_RUNNING_LABEL,
+                error_collector=error_collector,
+            ):
                 changed = True
         else:
             if edit_pr_label(
@@ -300,13 +340,20 @@ def _set_pr_done_label(
                 add=False,
                 label=REFIX_RUNNING_LABEL,
                 enabled_pr_label_keys=enabled,
+                error_collector=error_collector,
             ):
                 changed = True
     if done_enabled and (
         pr_data is None or not _pr_has_label(pr_data, REFIX_DONE_LABEL)
     ):
         if enabled_pr_label_keys is None:
-            if edit_pr_label(repo, pr_number, add=True, label=REFIX_DONE_LABEL):
+            if edit_pr_label(
+                repo,
+                pr_number,
+                add=True,
+                label=REFIX_DONE_LABEL,
+                error_collector=error_collector,
+            ):
                 changed = True
         else:
             if edit_pr_label(
@@ -315,13 +362,18 @@ def _set_pr_done_label(
                 add=True,
                 label=REFIX_DONE_LABEL,
                 enabled_pr_label_keys=enabled,
+                error_collector=error_collector,
             ):
                 changed = True
     return changed
 
 
 def _set_pr_merged_label(
-    repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
+    repo: str,
+    pr_number: int,
+    *,
+    enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """refix: merged を設定し、refix: running と refix: auto-merge-requested を削除する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -331,23 +383,42 @@ def _set_pr_merged_label(
         return False
     changed = False
     if enabled_pr_label_keys is None:
-        _ensure_refix_labels(repo)
-        if edit_pr_label(repo, pr_number, add=False, label=REFIX_RUNNING_LABEL):
-            changed = True
+        _ensure_refix_labels(repo, error_collector=error_collector)
         if edit_pr_label(
-            repo, pr_number, add=False, label=REFIX_AUTO_MERGE_REQUESTED_LABEL
+            repo,
+            pr_number,
+            add=False,
+            label=REFIX_RUNNING_LABEL,
+            error_collector=error_collector,
         ):
             changed = True
-        if edit_pr_label(repo, pr_number, add=True, label=REFIX_MERGED_LABEL):
+        if edit_pr_label(
+            repo,
+            pr_number,
+            add=False,
+            label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
+            error_collector=error_collector,
+        ):
+            changed = True
+        if edit_pr_label(
+            repo,
+            pr_number,
+            add=True,
+            label=REFIX_MERGED_LABEL,
+            error_collector=error_collector,
+        ):
             changed = True
     else:
-        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+        _ensure_refix_labels(
+            repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+        )
         if edit_pr_label(
             repo,
             pr_number,
             add=False,
             label=REFIX_RUNNING_LABEL,
             enabled_pr_label_keys=enabled,
+            error_collector=error_collector,
         ):
             changed = True
         if edit_pr_label(
@@ -356,6 +427,7 @@ def _set_pr_merged_label(
             add=False,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled,
+            error_collector=error_collector,
         ):
             changed = True
         if edit_pr_label(
@@ -364,13 +436,18 @@ def _set_pr_merged_label(
             add=True,
             label=REFIX_MERGED_LABEL,
             enabled_pr_label_keys=enabled,
+            error_collector=error_collector,
         ):
             changed = True
     return changed
 
 
 def _mark_pr_merged_label_if_needed(
-    repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
+    repo: str,
+    pr_number: int,
+    *,
+    enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> bool:
     """マージ済みの PR に refix: merged ラベルを追加する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -389,24 +466,24 @@ def _mark_pr_merged_label_if_needed(
     try:
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to inspect merge state for PR #{pr_number}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to inspect merge state for PR #{pr_number}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False
     if result.returncode != 0:
-        print(
-            f"Warning: failed to inspect merge state for PR #{pr_number}: {(result.stderr or '').strip()}",
-            file=sys.stderr,
-        )
+        msg = f"failed to inspect merge state for PR #{pr_number}: {(result.stderr or '').strip()}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False
     try:
         pr_data = json.loads(result.stdout) if result.stdout else {}
     except json.JSONDecodeError:
-        print(
-            f"Warning: failed to parse merge state for PR #{pr_number}",
-            file=sys.stderr,
-        )
+        msg = f"failed to parse merge state for PR #{pr_number}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False
     if not isinstance(pr_data, dict):
         return False
@@ -425,8 +502,10 @@ def _mark_pr_merged_label_if_needed(
 
     print(f"PR #{pr_number} is merged; adding {REFIX_MERGED_LABEL} label.")
     if enabled_pr_label_keys is None:
-        return _set_pr_merged_label(repo, pr_number)
-    return _set_pr_merged_label(repo, pr_number, enabled_pr_label_keys=enabled)
+        return _set_pr_merged_label(repo, pr_number, error_collector=error_collector)
+    return _set_pr_merged_label(
+        repo, pr_number, enabled_pr_label_keys=enabled, error_collector=error_collector
+    )
 
 
 def backfill_merged_labels(
@@ -434,6 +513,7 @@ def backfill_merged_labels(
     *,
     limit: int = 100,
     enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> int:
     """マージ済みで refix: done が付いている PR に refix: merged ラベルをバックフィルする。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -472,24 +552,24 @@ def backfill_merged_labels(
     try:
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to list merged PRs for {repo}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to list merged PRs for {repo}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return 0
     if result.returncode != 0:
-        print(
-            f"Warning: failed to list merged PRs for {repo}: {(result.stderr or '').strip()}",
-            file=sys.stderr,
-        )
+        msg = f"failed to list merged PRs for {repo}: {(result.stderr or '').strip()}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return 0
     try:
         prs = json.loads(result.stdout) if result.stdout else []
     except json.JSONDecodeError:
-        print(
-            f"Warning: failed to parse merged PR list for {repo}",
-            file=sys.stderr,
-        )
+        msg = f"failed to parse merged PR list for {repo}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_repo_error(repo, msg)
         return 0
     if not isinstance(prs, list):
         return 0
@@ -502,10 +582,15 @@ def backfill_merged_labels(
         if not isinstance(pr_number, int):
             continue
         if enabled_pr_label_keys is None:
-            marked = _mark_pr_merged_label_if_needed(repo, pr_number)
+            marked = _mark_pr_merged_label_if_needed(
+                repo, pr_number, error_collector=error_collector
+            )
         else:
             marked = _mark_pr_merged_label_if_needed(
-                repo, pr_number, enabled_pr_label_keys=enabled
+                repo,
+                pr_number,
+                enabled_pr_label_keys=enabled,
+                error_collector=error_collector,
             )
         if marked:
             count += 1
@@ -515,7 +600,11 @@ def backfill_merged_labels(
 
 
 def _trigger_pr_auto_merge(
-    repo: str, pr_number: int, *, enabled_pr_label_keys: set[str] | None = None
+    repo: str,
+    pr_number: int,
+    *,
+    enabled_pr_label_keys: set[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool]:
     """auto-merge を要求する。(merge_state_reached, modified) を返す。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
@@ -523,20 +612,23 @@ def _trigger_pr_auto_merge(
     try:
         result = run_command(cmd, check=False)
     except SubprocessError as exc:
-        print(
-            f"Warning: failed to auto-merge PR #{pr_number}: {exc}",
-            file=sys.stderr,
-        )
+        msg = f"failed to auto-merge PR #{pr_number}: {exc}"
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
         return False, False
     if result.returncode == 0:
         print(f"Auto-merge requested for PR #{pr_number}.")
-        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+        _ensure_refix_labels(
+            repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+        )
         modified = edit_pr_label(
             repo,
             pr_number,
             add=True,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
         )
         return True, modified
 
@@ -545,21 +637,24 @@ def _trigger_pr_auto_merge(
     combined_lower = f"{stdout_text}\n{stderr_text}".lower()
     if "already merged" in combined_lower:
         print(f"PR #{pr_number} is already merged.")
-        _ensure_refix_labels(repo, enabled_pr_label_keys=enabled)
+        _ensure_refix_labels(
+            repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+        )
         modified = edit_pr_label(
             repo,
             pr_number,
             add=True,
             label=REFIX_AUTO_MERGE_REQUESTED_LABEL,
             enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
         )
         return True, modified
 
     details = stderr_text or stdout_text or "unknown error"
-    print(
-        f"Warning: failed to auto-merge PR #{pr_number}: {details}",
-        file=sys.stderr,
-    )
+    msg = f"failed to auto-merge PR #{pr_number}: {details}"
+    print(f"Warning: {msg}", file=sys.stderr)
+    if error_collector:
+        error_collector.add_pr_error(repo, pr_number, msg)
     return False, False
 
 
@@ -584,6 +679,7 @@ def update_done_label_if_completed(
     enabled_pr_label_keys: set[str] | None = None,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
+    error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool]:
     """完了条件を満たした場合に refix: done ラベルを設定する。
 
@@ -642,6 +738,7 @@ def update_done_label_if_completed(
             pr_number,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
+            error_collector=error_collector,
         )
         if ci_check_result is None:
             ci_grace_pending = True
@@ -657,34 +754,44 @@ def update_done_label_if_completed(
         )
         current_pr_data = None if review_fix_started else pr_data
         if enabled_pr_label_keys is None:
-            done_changed = _set_pr_done_label(repo, pr_number, pr_data=current_pr_data)
+            done_changed = _set_pr_done_label(
+                repo,
+                pr_number,
+                pr_data=current_pr_data,
+                error_collector=error_collector,
+            )
         else:
             done_changed = _set_pr_done_label(
                 repo,
                 pr_number,
                 pr_data=current_pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
+                error_collector=error_collector,
             )
         merge_triggered = False
         if auto_merge_enabled:
             if enabled_pr_label_keys is None:
                 merge_state_reached, label_modified = _trigger_pr_auto_merge(
-                    repo, pr_number
+                    repo, pr_number, error_collector=error_collector
                 )
             else:
                 merge_state_reached, label_modified = _trigger_pr_auto_merge(
                     repo,
                     pr_number,
                     enabled_pr_label_keys=enabled_pr_label_keys,
+                    error_collector=error_collector,
                 )
             if merge_state_reached:
                 if enabled_pr_label_keys is None:
-                    _mark_pr_merged_label_if_needed(repo, pr_number)
+                    _mark_pr_merged_label_if_needed(
+                        repo, pr_number, error_collector=error_collector
+                    )
                 else:
                     _mark_pr_merged_label_if_needed(
                         repo,
                         pr_number,
                         enabled_pr_label_keys=enabled_pr_label_keys,
+                        error_collector=error_collector,
                     )
             merge_triggered = label_modified
         return done_changed or merge_triggered, ci_grace_pending
@@ -699,13 +806,16 @@ def update_done_label_if_completed(
             f"PR #{pr_number} is not completed yet; switching label to {REFIX_RUNNING_LABEL}."
         )
     if enabled_pr_label_keys is None:
-        return set_pr_running_label(repo, pr_number, pr_data=pr_data), ci_grace_pending
+        return set_pr_running_label(
+            repo, pr_number, pr_data=pr_data, error_collector=error_collector
+        ), ci_grace_pending
     return (
         set_pr_running_label(
             repo,
             pr_number,
             pr_data=pr_data,
             enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
         ),
         ci_grace_pending,
     )

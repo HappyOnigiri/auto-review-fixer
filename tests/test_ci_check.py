@@ -5,6 +5,8 @@ from unittest.mock import Mock, patch
 
 import auto_fixer
 import ci_check
+from error_collector import ErrorCollector
+from subprocess_helpers import SubprocessError
 
 
 class TestCiFixHelpers:
@@ -370,3 +372,83 @@ class TestAreAllCiChecksSuccessful:
                 ci_empty_as_success=False,
             )
         assert result is False
+
+
+class TestErrorCollectorIntegration:
+    def test_collect_ci_failure_materials_subprocess_error_adds_pr_error(self):
+        ec = ErrorCollector()
+        failing_contexts = [{"name": "lint", "status": "FAILURE", "run_id": "12345"}]
+        with patch(
+            "ci_check.run_command", side_effect=SubprocessError("network error")
+        ):
+            materials = ci_check.collect_ci_failure_materials(
+                "owner/repo",
+                failing_contexts,
+                max_lines=120,
+                error_collector=ec,
+                pr_number=5,
+            )
+        assert materials == []
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#5"
+        assert "failed to fetch CI logs" in ec._errors[0].message
+
+    def test_collect_ci_failure_materials_nonzero_exit_adds_repo_error(self):
+        ec = ErrorCollector()
+        failing_contexts = [{"name": "lint", "status": "FAILURE", "run_id": "12345"}]
+        with patch(
+            "ci_check.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="not found"),
+        ):
+            materials = ci_check.collect_ci_failure_materials(
+                "owner/repo",
+                failing_contexts,
+                max_lines=120,
+                error_collector=ec,
+            )
+        assert materials == []
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo"
+        assert "failed to fetch failed CI logs" in ec._errors[0].message
+
+    def test_are_all_ci_checks_successful_head_sha_failure_adds_pr_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout="{}", stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=1, stdout="", stderr="error"),  # head SHA fails
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo", 3, error_collector=ec
+            )
+        assert result is None  # head SHA 取得失敗は None を返す
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#3"
+
+    def test_are_all_ci_checks_successful_check_runs_403_adds_pr_error(self):
+        ec = ErrorCollector()
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch(
+                "pr_reviewer.run_command",
+                return_value=Mock(returncode=0, stdout="{}", stderr=""),
+            ),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
+            ]
+            result = ci_check.are_all_ci_checks_successful(
+                "owner/repo",
+                3,
+                ci_empty_as_success=False,
+                error_collector=ec,
+            )
+        assert result is False
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#3"

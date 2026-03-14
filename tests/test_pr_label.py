@@ -6,6 +6,8 @@ from unittest.mock import Mock, call, patch
 
 import coderabbit
 import pr_label
+from error_collector import ErrorCollector
+from subprocess_helpers import SubprocessError
 
 
 class TestRefixLabeling:
@@ -37,11 +39,23 @@ class TestRefixLabeling:
         ):
             pr_label.set_pr_running_label("owner/repo", 9)
 
-        mock_ensure.assert_called_once_with("owner/repo")
+        mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
             [
-                call("owner/repo", 9, add=False, label="refix: done"),
-                call("owner/repo", 9, add=True, label="refix: running"),
+                call(
+                    "owner/repo",
+                    9,
+                    add=False,
+                    label="refix: done",
+                    error_collector=None,
+                ),
+                call(
+                    "owner/repo",
+                    9,
+                    add=True,
+                    label="refix: running",
+                    error_collector=None,
+                ),
             ]
         )
 
@@ -76,11 +90,23 @@ class TestRefixLabeling:
         ):
             pr_label._set_pr_done_label("owner/repo", 11)
 
-        mock_ensure.assert_called_once_with("owner/repo")
+        mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
             [
-                call("owner/repo", 11, add=False, label="refix: running"),
-                call("owner/repo", 11, add=True, label="refix: done"),
+                call(
+                    "owner/repo",
+                    11,
+                    add=False,
+                    label="refix: running",
+                    error_collector=None,
+                ),
+                call(
+                    "owner/repo",
+                    11,
+                    add=True,
+                    label="refix: done",
+                    error_collector=None,
+                ),
             ]
         )
 
@@ -91,12 +117,30 @@ class TestRefixLabeling:
         ):
             pr_label._set_pr_merged_label("owner/repo", 12)
 
-        mock_ensure.assert_called_once_with("owner/repo")
+        mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
             [
-                call("owner/repo", 12, add=False, label="refix: running"),
-                call("owner/repo", 12, add=False, label="refix: auto-merge-requested"),
-                call("owner/repo", 12, add=True, label="refix: merged"),
+                call(
+                    "owner/repo",
+                    12,
+                    add=False,
+                    label="refix: running",
+                    error_collector=None,
+                ),
+                call(
+                    "owner/repo",
+                    12,
+                    add=False,
+                    label="refix: auto-merge-requested",
+                    error_collector=None,
+                ),
+                call(
+                    "owner/repo",
+                    12,
+                    add=True,
+                    label="refix: merged",
+                    error_collector=None,
+                ),
             ]
         )
 
@@ -126,7 +170,7 @@ class TestRefixLabeling:
                 enabled_pr_label_keys={"done"},
             )
         mock_ensure.assert_called_once_with(
-            "owner/repo", enabled_pr_label_keys={"done"}
+            "owner/repo", enabled_pr_label_keys={"done"}, error_collector=None
         )
         mock_edit.assert_called_once_with(
             "owner/repo",
@@ -134,6 +178,7 @@ class TestRefixLabeling:
             add=False,
             label="refix: done",
             enabled_pr_label_keys={"done"},
+            error_collector=None,
         )
 
     def test_backfill_merged_labels_skips_when_no_merge_related_labels_enabled(self):
@@ -187,7 +232,7 @@ class TestRefixLabeling:
         ):
             ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 21)
         assert ok is True
-        mock_set_merged.assert_called_once_with("owner/repo", 21)
+        mock_set_merged.assert_called_once_with("owner/repo", 21, error_collector=None)
 
     def test_mark_pr_merged_label_if_needed_skips_when_not_merged(self):
         pr_view = {
@@ -239,7 +284,12 @@ class TestRefixLabeling:
         ):
             count = pr_label.backfill_merged_labels("owner/repo")
         assert count == 2
-        mock_mark.assert_has_calls([call("owner/repo", 31), call("owner/repo", 32)])
+        mock_mark.assert_has_calls(
+            [
+                call("owner/repo", 31, error_collector=None),
+                call("owner/repo", 32, error_collector=None),
+            ]
+        )
 
     def test_backfill_merged_labels_returns_zero_on_list_failure(self):
         with (
@@ -289,7 +339,10 @@ class TestRefixLabeling:
                 summarize_only=False,
             )
         mock_set_done.assert_called_once_with(
-            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
         mock_set_running.assert_not_called()
         mock_auto_merge.assert_not_called()
@@ -322,11 +375,14 @@ class TestRefixLabeling:
                 auto_merge_enabled=True,
             )
         mock_set_done.assert_called_once_with(
-            "owner/repo", 3, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            3,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
         mock_set_running.assert_not_called()
-        mock_auto_merge.assert_called_once_with("owner/repo", 3)
-        mock_mark_merged.assert_called_once_with("owner/repo", 3)
+        mock_auto_merge.assert_called_once_with("owner/repo", 3, error_collector=None)
+        mock_mark_merged.assert_called_once_with("owner/repo", 3, error_collector=None)
 
     def test_update_done_label_sets_running_when_review_fix_added_commit(self):
         with (
@@ -354,7 +410,10 @@ class TestRefixLabeling:
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
-            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
 
     def test_update_done_label_sets_running_when_ci_not_success(self):
@@ -381,7 +440,10 @@ class TestRefixLabeling:
             )
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
-            "owner/repo", 2, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            2,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
 
     def test_update_done_label_skips_when_review_fix_failed(self):
@@ -406,7 +468,10 @@ class TestRefixLabeling:
             )
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
-            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
 
     def test_update_done_label_skips_when_dry_run(self):
@@ -472,7 +537,10 @@ class TestRefixLabeling:
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
-            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
 
     def test_update_done_label_skips_when_coderabbit_rate_limit_active(self):
@@ -501,5 +569,84 @@ class TestRefixLabeling:
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
-            "owner/repo", 1, pr_data={"reviews": [], "comments": []}
+            "owner/repo",
+            1,
+            pr_data={"reviews": [], "comments": []},
+            error_collector=None,
         )
+
+
+class TestErrorCollectorIntegration:
+    def test_ensure_repo_label_exists_subprocess_error_adds_repo_error(self):
+        ec = ErrorCollector()
+        with patch(
+            "pr_label.run_command", side_effect=SubprocessError("network error")
+        ):
+            ok = pr_label._ensure_repo_label_exists(
+                "owner/repo",
+                "refix: running",
+                color="FBCA04",
+                description="desc",
+                error_collector=ec,
+            )
+        assert ok is False
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo"
+        assert "failed to check label" in ec._errors[0].message
+
+    def test_ensure_repo_label_exists_unexpected_api_error_adds_repo_error(self):
+        ec = ErrorCollector()
+        with patch(
+            "pr_label.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="403 Forbidden"),
+        ):
+            ok = pr_label._ensure_repo_label_exists(
+                "owner/repo",
+                "refix: running",
+                color="FBCA04",
+                description="desc",
+                error_collector=ec,
+            )
+        assert ok is False
+        assert ec.has_errors
+        assert "failed to verify label" in ec._errors[0].message
+
+    def test_edit_pr_label_failure_adds_pr_error(self):
+        ec = ErrorCollector()
+        with patch(
+            "pr_label.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="API error"),
+        ):
+            ok = pr_label.edit_pr_label(
+                "owner/repo",
+                42,
+                add=True,
+                label="refix: running",
+                error_collector=ec,
+            )
+        assert ok is False
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#42"
+
+    def test_backfill_merged_labels_list_failure_adds_repo_error(self):
+        ec = ErrorCollector()
+        with patch(
+            "pr_label.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="boom"),
+        ):
+            count = pr_label.backfill_merged_labels("owner/repo", error_collector=ec)
+        assert count == 0
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo"
+
+    def test_trigger_pr_auto_merge_failure_adds_pr_error(self):
+        ec = ErrorCollector()
+        with patch(
+            "pr_label.run_command",
+            return_value=Mock(returncode=1, stdout="", stderr="forbidden"),
+        ):
+            merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
+                "owner/repo", 7, error_collector=ec
+            )
+        assert ec.has_errors
+        assert ec._errors[0].scope == "owner/repo#7"
