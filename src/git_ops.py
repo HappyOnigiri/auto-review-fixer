@@ -177,9 +177,9 @@ def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
         rebased_changes = pre_rebase_head != post_rebase_head
         return (rebased_changes, False)
     if is_rebase_in_progress(works_dir):
-        if not has_merge_conflicts(works_dir) and is_worktree_and_index_clean(
-            works_dir
-        ):
+        if has_merge_conflicts(works_dir):
+            return (False, True)
+        if is_worktree_and_index_clean(works_dir):
             # 空パッチで停止（コミットの変更がベースに既に含まれている）→ --skip で対処
             done = _skip_empty_patches(works_dir)
             if done:
@@ -188,7 +188,9 @@ def rebase_base_branch(works_dir: Path, base_branch: str) -> tuple[bool, bool]:
                 ).stdout.strip()
                 rebased_changes = pre_rebase_head != post_rebase_head
                 return (rebased_changes, False)
-        return (False, True)
+            return (False, True)
+        # コンフリクトなし・ダーティな作業ツリー → 非コンフリクト要因による失敗
+        return (False, False)
     raise RuntimeError(
         "git rebase failed without conflict markers: "
         f"{(rebase_result.stderr or rebase_result.stdout).strip()}"
@@ -223,8 +225,12 @@ def _skip_empty_patches(works_dir: Path) -> bool:
             raise RuntimeError(
                 f"git rebase --skip failed: {(result.stderr or result.stdout).strip()}"
             )
-        if has_merge_conflicts(works_dir) or not is_worktree_and_index_clean(works_dir):
+        if has_merge_conflicts(works_dir):
             return False
+        if not is_worktree_and_index_clean(works_dir):
+            raise RuntimeError(
+                "git rebase --skip resulted in dirty worktree without conflict markers"
+            )
         # 別の空パッチで停止、続けて skip
 
 
@@ -241,12 +247,14 @@ def continue_rebase(works_dir: Path) -> bool:
     if result.returncode == 0:
         return True
     if is_rebase_in_progress(works_dir):
-        if not has_merge_conflicts(works_dir) and is_worktree_and_index_clean(
-            works_dir
-        ):
+        if has_merge_conflicts(works_dir):
+            return False
+        if is_worktree_and_index_clean(works_dir):
             # コンフリクト解消後にコミットが空になった場合 → --skip で対処
             return _skip_empty_patches(works_dir)
-        return False
+        raise RuntimeError(
+            "git rebase --continue resulted in dirty worktree without conflict markers"
+        )
     raise RuntimeError(
         f"git rebase --continue failed: {(result.stderr or result.stdout).strip()}"
     )
