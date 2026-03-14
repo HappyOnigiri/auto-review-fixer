@@ -15,6 +15,8 @@ class TestFormatPhaseResultBlock:
         assert "**実行日時:** 2026-03-13 15:30:00 JST" in block
         assert "All tests passed" in block
         assert "<summary>stdout</summary>" not in block
+        assert "<details>" not in block
+        assert "</details>" not in block
         assert "```" in block
         assert "**対象コメント:**" not in block
 
