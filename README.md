@@ -368,7 +368,7 @@ Set the following values in the target repository or organization:
 
 #### Repository or organization secrets
 
-- `GH_PAT`
+- `GH_TOKEN`
   - Personal access token used for GitHub API access and pushing fix commits.
 - `CLAUDE_CODE_OAUTH_TOKEN`
   - Token used by the Claude CLI during automated fix runs.
@@ -377,7 +377,7 @@ Set the following values in the target repository or organization:
 
 1. Open `Settings` -> `Secrets and variables` -> `Actions`.
 2. Add the `REFIX_CONFIG_YAML` variable.
-3. Add the `GH_PAT` and `CLAUDE_CODE_OAUTH_TOKEN` secrets.
+3. Add the `GH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` secrets.
 4. Open the `Run auto review` workflow in the Actions tab.
 5. Trigger the workflow with `Run workflow`.
 

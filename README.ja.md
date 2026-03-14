@@ -335,7 +335,7 @@ setup:
 
 #### Secrets
 
-- `GH_PAT`
+- `GH_TOKEN`
   - GitHub API 利用と修正コミット push に使う Personal Access Token
 - `CLAUDE_CODE_OAUTH_TOKEN`
   - Claude CLI が自動修正時に使うトークン
@@ -344,7 +344,7 @@ setup:
 
 1. `Settings` -> `Secrets and variables` -> `Actions` を開きます。
 2. `REFIX_CONFIG_YAML` を Variable として追加します。
-3. `GH_PAT` と `CLAUDE_CODE_OAUTH_TOKEN` を Secret として追加します。
+3. `GH_TOKEN` と `CLAUDE_CODE_OAUTH_TOKEN` を Secret として追加します。
 4. Actions タブで `Run auto review` ワークフローを開きます。
 5. `Run workflow` で手動実行します。
 

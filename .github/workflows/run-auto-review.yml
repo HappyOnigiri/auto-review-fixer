@@ -30,7 +30,7 @@ jobs:
       - name: Configure git credentials
         run: git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Generate config.yaml from GitHub Variables
         env:
@@ -45,5 +45,5 @@ jobs:
       - name: Run Refix
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: cd src && python auto_fixer.py --config ../.refix.yaml
