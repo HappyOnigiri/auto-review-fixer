@@ -138,3 +138,73 @@ def test_resolve_review_thread_success_returns_true():
     result = Mock(returncode=0, stdout='{"data": {}}', stderr="")
     with patch("pr_reviewer.run_command", return_value=result):
         assert pr_reviewer.resolve_review_thread("thread-node-id") is True
+
+
+class TestFilterCheckRuns:
+    def test_excludes_workflow_dispatch(self):
+        runs = [
+            {
+                "id": 1,
+                "name": "dispatch-job",
+                "html_url": "https://github.com/owner/repo/actions/runs/999/jobs/1",
+            }
+        ]
+        with patch(
+            "pr_reviewer.run_command",
+            return_value=Mock(returncode=0, stdout="workflow_dispatch", stderr=""),
+        ):
+            result = pr_reviewer._filter_check_runs(runs, "owner/repo")
+        assert result == []
+
+    def test_keeps_latest_by_name(self):
+        runs = [
+            {"id": 10, "name": "ci-build"},
+            {"id": 20, "name": "ci-build"},
+        ]
+        # no run IDs in URLs, so run_command is not called
+        result = pr_reviewer._filter_check_runs(runs, "owner/repo")
+        assert len(result) == 1
+        assert result[0]["id"] == 20
+
+    def test_combined_dispatch_excluded_then_dedup(self):
+        runs = [
+            {
+                "id": 1,
+                "name": "job",
+                "html_url": "https://github.com/owner/repo/actions/runs/999/jobs/1",
+            },
+            {
+                "id": 2,
+                "name": "job",
+                "html_url": "https://github.com/owner/repo/actions/runs/888/jobs/2",
+            },
+            {
+                "id": 3,
+                "name": "job",
+                "html_url": "https://github.com/owner/repo/actions/runs/888/jobs/3",
+            },
+        ]
+
+        def mock_run(cmd, **kwargs):
+            if "runs/999" in cmd[2]:
+                return Mock(returncode=0, stdout="workflow_dispatch", stderr="")
+            return Mock(returncode=0, stdout="push", stderr="")
+
+        with patch("pr_reviewer.run_command", side_effect=mock_run):
+            result = pr_reviewer._filter_check_runs(runs, "owner/repo")
+
+        # dispatch run (id=1) excluded; among id=2 and id=3 (same name, run 888), id=3 wins
+        assert len(result) == 1
+        assert result[0]["id"] == 3
+
+    def test_no_run_id_keeps_run(self):
+        runs = [
+            {
+                "id": 5,
+                "name": "external-ci",
+                "html_url": "https://jenkins.example.com/build/1",
+            },
+        ]
+        result = pr_reviewer._filter_check_runs(runs, "owner/repo")
+        assert len(result) == 1
+        assert result[0]["id"] == 5

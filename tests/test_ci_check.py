@@ -1,5 +1,6 @@
 """Unit tests for ci_check helpers and are_all_ci_checks_successful."""
 
+import json
 from unittest.mock import Mock, patch
 
 
@@ -452,3 +453,49 @@ class TestErrorCollectorIntegration:
         assert result is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#3"
+
+    def test_are_all_ci_checks_successful_filters_workflow_dispatch(self):
+        """workflow_dispatch の failure check run はフィルタされ、残りの成功 run で True を返す"""
+        check_runs_response = json.dumps(
+            [
+                {
+                    "check_runs": [
+                        {
+                            "id": 1,
+                            "name": "dispatch-job",
+                            "status": "completed",
+                            "conclusion": "failure",
+                            "html_url": "https://github.com/owner/repo/actions/runs/999/jobs/1",
+                        },
+                        {
+                            "id": 2,
+                            "name": "ci-build",
+                            "status": "completed",
+                            "conclusion": "success",
+                            "html_url": "https://github.com/owner/repo/actions/runs/888/jobs/2",
+                        },
+                    ]
+                }
+            ]
+        )
+
+        def pr_run_command(cmd, **kwargs):
+            url = cmd[2] if len(cmd) > 2 else ""
+            if "actions/runs/999" in url:
+                return Mock(returncode=0, stdout="workflow_dispatch", stderr="")
+            if "actions/runs/888" in url:
+                return Mock(returncode=0, stdout="push", stderr="")
+            # classic statuses
+            return Mock(returncode=0, stdout='{"statuses": []}', stderr="")
+
+        with (
+            patch("ci_check.run_command") as mock_run,
+            patch("pr_reviewer.run_command", side_effect=pr_run_command),
+        ):
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
+                Mock(returncode=0, stdout=check_runs_response, stderr=""),  # check-runs
+            ]
+            result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
+
+        assert result is True

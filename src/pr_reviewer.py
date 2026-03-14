@@ -5,17 +5,68 @@ Displays review comments that are newer than the latest commit.
 """
 
 import json
+import re
 import sys
 from datetime import datetime
 from typing import Any
 
 from subprocess_helpers import SubprocessError, run_command
 
+_GITHUB_ACTIONS_RUN_URL_RE = re.compile(r"/actions/runs/(\d+)")
+
 # Set UTF-8 encoding for output
 if sys.stdout.encoding != "utf-8" and hasattr(sys.stdout, "buffer"):
     import io
 
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+
+def _filter_check_runs(runs: list[dict[str, Any]], repo: str) -> list[dict[str, Any]]:
+    """check run をフィルタリングする。
+    - workflow_dispatch トリガーの run を除外
+    - 同名 check run は最新（id が最大）のみ保持
+    """
+    # run ID ごとにグループ化
+    run_id_to_runs: dict[str, list[dict[str, Any]]] = {}
+    no_run_id: list[dict[str, Any]] = []
+    for r in runs:
+        url = r.get("details_url") or r.get("html_url") or ""
+        m = _GITHUB_ACTIONS_RUN_URL_RE.search(url)
+        if m:
+            run_id_to_runs.setdefault(m.group(1), []).append(r)
+        else:
+            no_run_id.append(r)
+
+    # workflow_dispatch の run ID を特定
+    dispatch_run_ids: set[str] = set()
+    for run_id in run_id_to_runs:
+        try:
+            result = run_command(
+                ["gh", "api", f"repos/{repo}/actions/runs/{run_id}", "--jq", ".event"],
+                check=False,
+            )
+            if result.returncode == 0:
+                event = (result.stdout or "").strip().strip('"')
+                if event == "workflow_dispatch":
+                    dispatch_run_ids.add(run_id)
+        except SubprocessError:
+            pass  # API 失敗時はフィルタせずそのまま残す
+
+    # dispatch を除外
+    filtered: list[dict[str, Any]] = list(no_run_id)
+    for run_id, run_list in run_id_to_runs.items():
+        if run_id not in dispatch_run_ids:
+            filtered.extend(run_list)
+
+    # 同名 check run は id が最大のものだけ保持
+    by_name: dict[str, dict[str, Any]] = {}
+    for r in filtered:
+        name = r.get("name") or ""
+        existing = by_name.get(name)
+        if existing is None or (r.get("id") or 0) > (existing.get("id") or 0):
+            by_name[name] = r
+
+    return list(by_name.values())
 
 
 def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:
@@ -59,6 +110,7 @@ def _fetch_check_runs_via_rest(repo: str, ref: str) -> list[dict[str, Any]]:
             runs.extend(
                 r for r in (page.get("check_runs") or []) if isinstance(r, dict)
             )
+    runs = _filter_check_runs(runs, repo)
     # Convert to format expected by _extract_failing_ci_contexts (name, conclusion, state, detailsUrl, targetUrl)
     rollup: list[dict[str, Any]] = []
     for r in runs:

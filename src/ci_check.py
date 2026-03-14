@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from pr_reviewer import _fetch_classic_statuses_via_rest
+from pr_reviewer import _fetch_classic_statuses_via_rest, _filter_check_runs
 from prompt_builder import _xml_escape, _xml_escape_attr
 from subprocess_helpers import SubprocessError, run_command
 from error_collector import ErrorCollector
@@ -376,6 +376,7 @@ def are_all_ci_checks_successful(
                 runs.extend(
                     r for r in (page.get("check_runs") or []) if isinstance(r, dict)
                 )
+        runs = _filter_check_runs(runs, repo)
 
     # classic statuses（Jenkins, Travis 等）も取得
     classic = _fetch_classic_statuses_via_rest(repo, head_sha)
