@@ -35,3 +35,13 @@ def test_log_endgroup_silent_when_not_ci(capsys):
 
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+def test_log_error_exists():
+    # TODO: log_error が未実装のため失敗する（ErrorCollector 動作検証用）
+    assert hasattr(ci_log, "log_error"), "log_error is not implemented yet"
+
+
+def test_log_warning_exists():
+    # TODO: log_warning が未実装のため失敗する（ErrorCollector 動作検証用）
+    assert hasattr(ci_log, "log_warning"), "log_warning is not implemented yet"
