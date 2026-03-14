@@ -1706,12 +1706,6 @@ def process_repo(
             )
             if this_pr_fetch_failed:
                 pr_fetch_failed = True
-                if error_collector:
-                    error_collector.add_pr_error(
-                        repo,
-                        pr.get("number", 0),
-                        "PR processing encountered an error (see log above)",
-                    )
             if count_as_processed:
                 processed_count += 1
             if commits_entry:
