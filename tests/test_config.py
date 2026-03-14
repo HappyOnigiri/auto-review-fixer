@@ -21,6 +21,9 @@ ci_log_max_lines: 250
 write_result_to_comment: false
 auto_merge: true
 coderabbit_auto_resume: true
+coderabbit_auto_resume_triggers:
+  rate_limit: false
+  draft_detected: true
 coderabbit_auto_resume_max_per_run: 3
 include_fork_repositories: false
 state_comment_timezone: UTC
@@ -48,6 +51,10 @@ repositories:
                 "auto_merge_requested",
             ],
             "coderabbit_auto_resume": True,
+            "coderabbit_auto_resume_triggers": {
+                "rate_limit": False,
+                "draft_detected": True,
+            },
             "coderabbit_auto_resume_max_per_run": 3,
             "process_draft_prs": False,
             "include_fork_repositories": False,
@@ -97,6 +104,10 @@ repositories:
             "auto_merge_requested",
         ]
         assert cfg["coderabbit_auto_resume"] is False
+        assert cfg["coderabbit_auto_resume_triggers"] == {
+            "rate_limit": True,
+            "draft_detected": True,
+        }
         assert cfg["coderabbit_auto_resume_max_per_run"] == 1
         assert cfg["process_draft_prs"] is False
         assert cfg["include_fork_repositories"] is True
@@ -192,6 +203,60 @@ repositories:
         config_file.write_text(
             """
 coderabbit_auto_resume: "true"
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+    def test_coderabbit_auto_resume_triggers_accept_partial_override(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_triggers:
+  draft_detected: false
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        cfg = config.load_config(str(config_file))
+        assert cfg["coderabbit_auto_resume_triggers"] == {
+            "rate_limit": True,
+            "draft_detected": False,
+        }
+
+    def test_coderabbit_auto_resume_triggers_requires_mapping(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_triggers: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+    def test_coderabbit_auto_resume_triggers_rejects_unknown_key(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_triggers:
+  unknown: true
+repositories:
+  - repo: owner/repo1
+""".strip()
+        )
+        with pytest.raises(ConfigError):
+            config.load_config(str(config_file))
+
+    def test_coderabbit_auto_resume_triggers_rejects_non_boolean_value(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+coderabbit_auto_resume_triggers:
+  rate_limit: "true"
 repositories:
   - repo: owner/repo1
 """.strip()

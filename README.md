@@ -108,9 +108,16 @@ enabled_pr_labels:
   - auto_merge_requested
 
 # Automatically post `@coderabbitai resume` when CodeRabbit can be resumed automatically
-# (rate-limit wait expiry or "Review failed" status caused by head commit changes)
+# (rate-limit wait expiry, "Review failed" status caused by head commit changes,
+# or re-requesting a skipped review)
 # (optional, default false)
 coderabbit_auto_resume: false
+
+# Optional per-reason auto-trigger switches for CodeRabbit review skip handling
+# Default: both true
+coderabbit_auto_resume_triggers:
+  rate_limit: true
+  draft_detected: true
 
 # Maximum number of `@coderabbitai resume` comments posted per single run
 # (optional, default 1)
@@ -228,17 +235,38 @@ Whether `refix` should automatically post `@coderabbitai resume` when CodeRabbit
 - Required: no
 - Default: `false`
 
-When a rate-limit notice is active, `refix` keeps the PR in `refix: running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed. It also auto-resumes when CodeRabbit posts a `Review failed` status comment caused by head commit changes during review.
+When a rate-limit notice is active, `refix` keeps the PR in `refix: running`, skips review-fix / auto-merge, and still performs CI repair plus base-branch merge handling. Enabling this option lets `refix` resume CodeRabbit automatically once the wait window has passed. It also auto-resumes when CodeRabbit posts a `Review failed` status comment caused by head commit changes during review, and can re-request a skipped review via `@coderabbitai review` once a PR is no longer draft.
+
+#### `coderabbit_auto_resume_triggers`
+
+Per-reason switches for CodeRabbit auto-trigger behavior.
+
+- Type: mapping
+- Required: no
+- Default:
+
+  ```yaml
+  coderabbit_auto_resume_triggers:
+    rate_limit: true
+    draft_detected: true
+  ```
+
+Supported nested keys:
+
+- `rate_limit`
+- `draft_detected`
+
+`rate_limit` controls automatic retry behavior for rate-limited CodeRabbit runs. `draft_detected` controls whether `refix` posts `@coderabbitai review` after CodeRabbit skipped review because the PR was draft. `draft_detected` is ignored while the PR is still draft, so `refix` only re-requests the review after the PR becomes ready for review.
 
 #### `coderabbit_auto_resume_max_per_run`
 
-Maximum number of `@coderabbitai resume` comments that `refix` can post in a single execution.
+Maximum number of CodeRabbit auto-trigger comments that `refix` can post in a single execution.
 
 - Type: integer (`>= 1`)
 - Required: no
 - Default: `1`
 
-This cap is applied across all repositories and PRs processed by the same run, which helps avoid hitting CodeRabbit rate limits again by posting too many resume comments at once.
+This cap is applied across all repositories and PRs processed by the same run, which helps avoid posting too many `@coderabbitai resume` / `@coderabbitai review` commands at once.
 
 #### `state_comment_timezone`
 
@@ -320,8 +348,10 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 - `state_comment_timezone` must be a valid IANA timezone name (or `JST` alias).
 - `include_fork_repositories` controls whether `owner/*` expansion includes forks (`true`) or only source repositories (`false`).
 - `models.summarize` in YAML takes priority over the `REFIX_MODEL_SUMMARIZE` environment variable when selecting the summarization model.
-- The `coderabbit_auto_resume` option applies to active CodeRabbit rate-limit comments and active `Review failed` status comments (head commit changed during review). Duplicate `@coderabbitai resume` comments are avoided when one has already been posted after the latest matching status comment.
-- `coderabbit_auto_resume_max_per_run` limits how many auto-resume comments can be posted per execution (default: 1).
+- The `coderabbit_auto_resume` option applies to active CodeRabbit rate-limit comments, active `Review failed` status comments (head commit changed during review), and supported `Review skipped` reasons.
+- `coderabbit_auto_resume_triggers` lets you enable or disable automatic retry per supported skip reason. Currently supported reasons are `rate_limit` and `draft_detected`.
+- Duplicate `@coderabbitai resume` / `@coderabbitai review` comments are avoided when one has already been posted after the latest matching status comment.
+- `coderabbit_auto_resume_max_per_run` limits how many auto-trigger comments can be posted per execution (default: 1).
 
 ## Per-repository project configuration
 
