@@ -400,18 +400,21 @@ def are_all_ci_checks_successful(
                 timeout=60,
             )
         except Exception:
-            print(
-                f"Warning: timed out fetching commit date for PR #{pr_number}; "
-                "skip refix: done labeling.",
-                file=sys.stderr,
+            msg = (
+                f"timed out fetching commit date for PR #{pr_number}; "
+                "skip refix: done labeling."
             )
+            print(f"Warning: {msg}", file=sys.stderr)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
             return None
         if commit_result.returncode != 0 or not (
             date_str := (commit_result.stdout or "").strip()
         ):
-            print(
-                f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
-            )
+            msg = f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            print(msg)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
             return None
         try:
             # jq は JSON 文字列を出力するため、パースして生の日付文字列を取得
@@ -428,9 +431,10 @@ def are_all_ci_checks_successful(
                 )
                 return None  # 猶予期間: 経過後にリトライ; updatedAt をキャッシュしない
         except (ValueError, TypeError):
-            print(
-                f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
-            )
+            msg = f"CI checks unavailable for PR #{pr_number}; skip refix: done labeling."
+            print(msg)
+            if error_collector:
+                error_collector.add_pr_error(repo, pr_number, msg)
             return None
         print(
             f"PR #{pr_number}: no CI checks, commit >{ci_empty_grace_minutes}min ago; treat as success."
