@@ -1913,8 +1913,9 @@ def main():
                 print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
             sys.exit(1)
         except Exception as e:
-            print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
-            error_collector.add_repo_error(repo_info["repo"], str(e))
+            repo_name = str(repo_info.get("repo") or "<unknown-repo>")
+            print(f"Error processing {repo_name}: {e}", file=sys.stderr)
+            error_collector.add_repo_error(repo_name, str(e))
             continue
 
     if global_coderabbit_resumed_prs:
