@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -19,13 +20,16 @@ def run_command(
     cwd: str | Path | None = None,
     timeout: int = 60,
     check: bool = True,
+    env: dict[str, str] | None = None,
 ) -> CompletedProcess[str]:
     """汎用コマンド実行ヘルパー。
 
     capture_output=True, text=True, encoding="utf-8" を常に設定する。
     check=True（デフォルト）かつ returncode != 0 の場合は SubprocessError を送出する。
     タイムアウト時も SubprocessError を送出する。
+    env が指定された場合は現在の環境変数にマージして使用する。
     """
+    merged_env = {**os.environ, **env} if env is not None else None
     try:
         result = subprocess.run(
             cmd,
@@ -35,6 +39,7 @@ def run_command(
             encoding="utf-8",
             cwd=str(cwd) if cwd is not None else None,
             timeout=timeout,
+            env=merged_env,
         )
     except subprocess.TimeoutExpired as exc:
         raise SubprocessError(
@@ -119,6 +124,7 @@ def run_git(
     cwd: str | Path,
     timeout: int = 60,
     check: bool = True,
+    env: dict[str, str] | None = None,
 ) -> CompletedProcess[str]:
     """git コマンドを実行する。"""
-    return run_command(["git", *args], cwd=cwd, timeout=timeout, check=check)
+    return run_command(["git", *args], cwd=cwd, timeout=timeout, check=check, env=env)
