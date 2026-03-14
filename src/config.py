@@ -24,6 +24,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "coderabbit_auto_resume_max_per_run": 1,
     "process_draft_prs": False,
     "state_comment_timezone": "JST",
+    "merge_method": "auto",
+    "base_update_method": "merge",
     "max_modified_prs_per_run": 0,
     "max_committed_prs_per_run": 2,
     "max_claude_prs_per_run": 0,
@@ -45,6 +47,8 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "coderabbit_auto_resume_max_per_run",
     "process_draft_prs",
     "state_comment_timezone",
+    "merge_method",
+    "base_update_method",
     "max_modified_prs_per_run",
     "max_committed_prs_per_run",
     "max_claude_prs_per_run",
@@ -54,6 +58,8 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "exclude_labels",
     "repositories",
 }
+ALLOWED_MERGE_METHODS = ("auto", "merge", "squash", "rebase")
+ALLOWED_BASE_UPDATE_METHODS = ("merge", "rebase")
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
 ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 
@@ -210,6 +216,8 @@ def load_config(filepath: str) -> dict[str, Any]:
         ],
         "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
         "state_comment_timezone": DEFAULT_CONFIG["state_comment_timezone"],
+        "merge_method": DEFAULT_CONFIG["merge_method"],
+        "base_update_method": DEFAULT_CONFIG["base_update_method"],
         "max_modified_prs_per_run": DEFAULT_CONFIG["max_modified_prs_per_run"],
         "max_committed_prs_per_run": DEFAULT_CONFIG["max_committed_prs_per_run"],
         "max_claude_prs_per_run": DEFAULT_CONFIG["max_claude_prs_per_run"],
@@ -291,6 +299,26 @@ def load_config(filepath: str) -> dict[str, Any]:
                 "state_comment_timezone must be a valid IANA timezone (e.g. Asia/Tokyo) or JST."
             ) from exc
         config["state_comment_timezone"] = timezone_name
+
+    merge_method = parsed.get("merge_method")
+    if merge_method is not None:
+        if not isinstance(merge_method, str) or not merge_method.strip():
+            raise ConfigError("merge_method must be a non-empty string.")
+        normalized_merge_method = merge_method.strip()
+        if normalized_merge_method not in ALLOWED_MERGE_METHODS:
+            allowed_str = ", ".join(f'"{m}"' for m in ALLOWED_MERGE_METHODS)
+            raise ConfigError(f"merge_method must be one of: {allowed_str}.")
+        config["merge_method"] = normalized_merge_method
+
+    base_update_method = parsed.get("base_update_method")
+    if base_update_method is not None:
+        if not isinstance(base_update_method, str) or not base_update_method.strip():
+            raise ConfigError("base_update_method must be a non-empty string.")
+        normalized_base_update_method = base_update_method.strip()
+        if normalized_base_update_method not in ALLOWED_BASE_UPDATE_METHODS:
+            allowed_str = ", ".join(f'"{m}"' for m in ALLOWED_BASE_UPDATE_METHODS)
+            raise ConfigError(f"base_update_method must be one of: {allowed_str}.")
+        config["base_update_method"] = normalized_base_update_method
 
     ci_empty_grace_minutes = parsed.get("ci_empty_grace_minutes")
     if ci_empty_grace_minutes is not None:
