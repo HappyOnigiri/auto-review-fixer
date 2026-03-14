@@ -1748,8 +1748,7 @@ def _process_single_pr(
     elif active_review_skipped:
         skip_review_fix = True
         skip_review_fix_reason = (
-            "CodeRabbit review is skipped "
-            f"({active_review_skipped['reason_label']})"
+            f"CodeRabbit review is skipped ({active_review_skipped['reason_label']})"
         )
     elif commit_limit_reached:
         skip_review_fix = True

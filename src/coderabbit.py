@@ -168,13 +168,19 @@ def _extract_coderabbit_review_skipped_status(
         return None
 
     reason: str | None = None
-    if CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
-        CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
-    ].lower() in body_lower:
+    if (
+        CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
+            CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
+        ].lower()
+        in body_lower
+    ):
         reason = CODERABBIT_REVIEW_SKIPPED_REASON_DRAFT_DETECTED
-    elif CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
-        CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT
-    ].lower() in body_lower:
+    elif (
+        CODERABBIT_REVIEW_SKIPPED_REASON_LABELS[
+            CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT
+        ].lower()
+        in body_lower
+    ):
         reason = CODERABBIT_REVIEW_SKIPPED_REASON_RATE_LIMIT
     if reason is None:
         return None
@@ -330,7 +336,10 @@ def get_active_coderabbit_review_skipped(
         return None
 
     latest_review = _latest_coderabbit_review_submitted_at(pr_data)
-    if latest_review is not None and latest_review > latest_review_skipped["updated_at"]:
+    if (
+        latest_review is not None
+        and latest_review > latest_review_skipped["updated_at"]
+    ):
         return None
     return latest_review_skipped
 
