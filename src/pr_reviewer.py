@@ -44,6 +44,7 @@ def _filter_check_runs(runs: list[dict[str, Any]], repo: str) -> list[dict[str, 
             result = run_command(
                 ["gh", "api", f"repos/{repo}/actions/runs/{run_id}", "--jq", ".event"],
                 check=False,
+                timeout=10,
             )
             if result.returncode == 0:
                 event = (result.stdout or "").strip().strip('"')
