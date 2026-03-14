@@ -53,13 +53,13 @@ def _filter_check_runs(runs: list[dict[str, Any]], repo: str) -> list[dict[str, 
         except SubprocessError:
             pass  # API 失敗時はフィルタせずそのまま残す
 
-    # dispatch を除外
-    filtered: list[dict[str, Any]] = list(no_run_id)
+    # dispatch を除外（run ID を持つものだけ対象）
+    filtered: list[dict[str, Any]] = []
     for run_id, run_list in run_id_to_runs.items():
         if run_id not in dispatch_run_ids:
             filtered.extend(run_list)
 
-    # 同名 check run は id が最大のものだけ保持
+    # 同名 check run は id が最大のものだけ保持（run ID を持つもののみ対象）
     by_name: dict[str, dict[str, Any]] = {}
     for r in filtered:
         name = r.get("name") or ""
@@ -67,7 +67,8 @@ def _filter_check_runs(runs: list[dict[str, Any]], repo: str) -> list[dict[str, 
         if existing is None or (r.get("id") or 0) > (existing.get("id") or 0):
             by_name[name] = r
 
-    return list(by_name.values())
+    # run ID を抽出できない外部 CI はそのまま保持（dedup 対象外）
+    return list(by_name.values()) + no_run_id
 
 
 def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:

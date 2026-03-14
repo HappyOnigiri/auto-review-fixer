@@ -157,14 +157,35 @@ class TestFilterCheckRuns:
         assert result == []
 
     def test_keeps_latest_by_name(self):
+        # GitHub Actions runs with the same name should be deduped (keep latest)
+        runs = [
+            {
+                "id": 10,
+                "name": "ci-build",
+                "html_url": "https://github.com/owner/repo/actions/runs/111/jobs/10",
+            },
+            {
+                "id": 20,
+                "name": "ci-build",
+                "html_url": "https://github.com/owner/repo/actions/runs/111/jobs/20",
+            },
+        ]
+        with patch(
+            "pr_reviewer.run_command",
+            return_value=Mock(returncode=0, stdout='"push"'),
+        ):
+            result = pr_reviewer._filter_check_runs(runs, "owner/repo")
+        assert len(result) == 1
+        assert result[0]["id"] == 20
+
+    def test_no_run_id_all_kept(self):
+        # 外部 CI (run ID なし) は dedup 対象外 - 同名でも全て保持
         runs = [
             {"id": 10, "name": "ci-build"},
             {"id": 20, "name": "ci-build"},
         ]
-        # no run IDs in URLs, so run_command is not called
         result = pr_reviewer._filter_check_runs(runs, "owner/repo")
-        assert len(result) == 1
-        assert result[0]["id"] == 20
+        assert len(result) == 2
 
     def test_combined_dispatch_excluded_then_dedup(self):
         runs = [
