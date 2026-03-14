@@ -44,11 +44,20 @@ enabled_pr_labels:
   - auto_merge_requested
 
 # Automatically post `@coderabbitai resume` when CodeRabbit can be resumed
-# (after rate-limit wait expires or when a "Review failed" head-commit-changed status appears) (Optional)
+# (after rate-limit wait expires, when a "Review failed" head-commit-changed status appears,
+# or when a skipped review should be re-requested) (Optional)
 # Default: false
 coderabbit_auto_resume: false
 
-# Maximum number of `@coderabbitai resume` comments posted in a single run (Optional, min: 1)
+# Enable/disable auto-trigger behavior per CodeRabbit skip reason (Optional)
+# rate_limit: retry rate-limited reviews
+# draft_detected: post `@coderabbitai review` after a draft PR becomes ready
+# Defaults: both true
+coderabbit_auto_resume_triggers:
+  rate_limit: true
+  draft_detected: true
+
+# Maximum number of CodeRabbit auto-trigger comments posted in a single run (Optional, min: 1)
 # The code enforces coderabbit_auto_resume_max_per_run >= 1.
 # Default: 1
 coderabbit_auto_resume_max_per_run: 1

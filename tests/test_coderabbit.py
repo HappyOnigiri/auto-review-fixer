@@ -23,6 +23,14 @@ class TestCodeRabbitRateLimitHelpers:
 >
 > The head commit changed during the review from 8c95504f7bdc7b6f178d693ad16194afa00240bd to 769422c80b767b53c7cd900db05a71bc8713b9a8.
 """.strip()
+    REVIEW_SKIPPED_DRAFT_BODY = """
+> [!IMPORTANT]
+> ## Review skipped
+>
+> Draft detected.
+>
+> Please check the settings in the CodeRabbit UI or the `.coderabbit.yaml` file in this repository. To trigger a single review, invoke the `@coderabbitai review` command.
+""".strip()
 
     def test_extract_coderabbit_rate_limit_status(self):
         status = coderabbit._extract_coderabbit_rate_limit_status(
@@ -108,6 +116,22 @@ class TestCodeRabbitRateLimitHelpers:
         assert status["comment_id"] == 77
         assert status["updated_at"].isoformat() == "2026-03-11T12:00:00+00:00"
 
+    def test_extract_coderabbit_review_skipped_status(self):
+        status = coderabbit._extract_coderabbit_review_skipped_status(
+            {
+                "id": 88,
+                "body": self.REVIEW_SKIPPED_DRAFT_BODY,
+                "updated_at": "2026-03-11T12:00:00Z",
+                "html_url": "https://github.com/owner/repo/issues/1#issuecomment-88",
+            }
+        )
+
+        assert status is not None
+        assert status["comment_id"] == 88
+        assert status["reason"] == "draft_detected"
+        assert status["reason_label"] == "Draft detected"
+        assert status["updated_at"].isoformat() == "2026-03-11T12:00:00+00:00"
+
     def test_get_active_coderabbit_review_failed_ignores_stale_notice(self):
         pr_data = {
             "reviews": [
@@ -127,6 +151,29 @@ class TestCodeRabbitRateLimitHelpers:
         ]
 
         status = auto_fixer.get_active_coderabbit_review_failed(
+            pr_data, [], issue_comments
+        )
+        assert status is None
+
+    def test_get_active_coderabbit_review_skipped_ignores_stale_notice(self):
+        pr_data = {
+            "reviews": [
+                {
+                    "author": {"login": "coderabbitai"},
+                    "submittedAt": "2026-03-11T12:10:00Z",
+                }
+            ]
+        }
+        issue_comments = [
+            {
+                "id": 88,
+                "body": self.REVIEW_SKIPPED_DRAFT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": "2026-03-11T12:00:00Z",
+            }
+        ]
+
+        status = auto_fixer.get_active_coderabbit_review_skipped(
             pr_data, [], issue_comments
         )
         assert status is None
@@ -239,6 +286,77 @@ class TestCodeRabbitRateLimitHelpers:
                 dry_run=False,
                 summarize_only=False,
             )
+        assert posted is False
+        mock_post.assert_not_called()
+
+    def test_maybe_auto_resume_skips_when_rate_limit_trigger_disabled(self):
+        threshold = datetime.now(timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        with patch("coderabbit._post_issue_comment") as mock_post:
+            posted = coderabbit.maybe_auto_resume_coderabbit_review(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                rate_limit_status=status,
+                auto_resume_enabled=True,
+                remaining_resume_posts=1,
+                dry_run=False,
+                summarize_only=False,
+                trigger_enabled=False,
+            )
+        assert posted is False
+        mock_post.assert_not_called()
+
+    def test_maybe_auto_trigger_review_skipped_posts_review_comment(self):
+        threshold = datetime.now(timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "reason": "draft_detected",
+            "reason_label": "Draft detected",
+        }
+        with patch("coderabbit._post_issue_comment", return_value=True) as mock_post:
+            posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                review_skipped_status=status,
+                auto_resume_enabled=True,
+                trigger_enabled=True,
+                remaining_resume_posts=1,
+                dry_run=False,
+                summarize_only=False,
+                is_draft=False,
+            )
+
+        assert posted is True
+        mock_post.assert_called_once_with(
+            "owner/repo", 1, "@coderabbitai review", error_collector=None
+        )
+
+    def test_maybe_auto_trigger_review_skipped_skips_when_pr_is_draft(self):
+        threshold = datetime.now(timezone.utc)
+        status = {
+            "updated_at": threshold,
+            "reason": "draft_detected",
+            "reason_label": "Draft detected",
+        }
+        with patch("coderabbit._post_issue_comment") as mock_post:
+            posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
+                repo="owner/repo",
+                pr_number=1,
+                issue_comments=[],
+                review_skipped_status=status,
+                auto_resume_enabled=True,
+                trigger_enabled=True,
+                remaining_resume_posts=1,
+                dry_run=False,
+                summarize_only=False,
+                is_draft=True,
+            )
+
         assert posted is False
         mock_post.assert_not_called()
 

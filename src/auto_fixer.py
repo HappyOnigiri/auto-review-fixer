@@ -44,17 +44,20 @@ from claude_runner import run_claude_prompt
 from coderabbit import (
     get_active_coderabbit_rate_limit,
     get_active_coderabbit_review_failed,
+    get_active_coderabbit_review_skipped,
     is_coderabbit_login,
     maybe_auto_resume_coderabbit_review,
     maybe_auto_resume_coderabbit_review_failed,
+    maybe_auto_trigger_coderabbit_review_skipped,
 )
 from config import (
     DEFAULT_CONFIG,
-    normalize_auto_resume_state,
     expand_repositories,
+    get_coderabbit_auto_resume_triggers,
     get_enabled_pr_label_keys,
     get_process_draft_prs,
     load_config,
+    normalize_auto_resume_state,
 )
 from constants import SEPARATOR_LEN
 from git_ops import (
@@ -111,6 +114,7 @@ class PRContext:
     repo: str
     pr_number: int
     title: str
+    is_draft: bool
     branch_name: str
     base_branch: str
     works_dir: Any  # Path
@@ -125,6 +129,7 @@ class PRContext:
     auto_merge_enabled: bool
     enabled_pr_label_keys: set[str]
     coderabbit_auto_resume: bool
+    coderabbit_auto_resume_triggers: dict[str, bool]
     auto_resume_run_state: dict[str, int]
     process_draft_prs: bool
     state_comment_timezone: str
@@ -220,11 +225,11 @@ def _handle_coderabbit_status(
     issue_comments: list,
     coderabbit_resumed_prs: set,
     error_collector: ErrorCollector | None = None,
-) -> tuple[Any, Any]:
+) -> tuple[Any, Any, Any]:
     """Handle CodeRabbit rate-limit and review-failed detection.
 
     Modifies ctx.modified_prs and coderabbit_resumed_prs as side effects.
-    Returns (active_rate_limit, active_review_failed).
+    Returns (active_rate_limit, active_review_failed, active_review_skipped).
     """
     repo = ctx.repo
     pr_number = ctx.pr_number
@@ -232,7 +237,7 @@ def _handle_coderabbit_status(
     active_rate_limit = get_active_coderabbit_rate_limit(
         pr_data, review_comments, issue_comments
     )
-    resume_comment_posted_for_pr = False
+    command_comment_posted_for_pr = False
     if active_rate_limit:
         print(
             f"CodeRabbit rate limit is active for {_pr_ref(repo, pr_number)} "
@@ -252,6 +257,7 @@ def _handle_coderabbit_status(
             issue_comments=issue_comments,
             rate_limit_status=active_rate_limit,
             auto_resume_enabled=ctx.coderabbit_auto_resume,
+            trigger_enabled=ctx.coderabbit_auto_resume_triggers.get("rate_limit", True),
             remaining_resume_posts=max(
                 0,
                 int(ctx.auto_resume_run_state["max_per_run"])
@@ -266,7 +272,7 @@ def _handle_coderabbit_status(
                 int(ctx.auto_resume_run_state["posted"]) + 1
             )
             coderabbit_resumed_prs.add((repo, pr_number))
-            resume_comment_posted_for_pr = True
+            command_comment_posted_for_pr = True
 
     active_review_failed = get_active_coderabbit_review_failed(
         pr_data, review_comments, issue_comments
@@ -289,7 +295,7 @@ def _handle_coderabbit_status(
             timezone.utc
         ):
             can_attempt_resume = False
-        if can_attempt_resume and not resume_comment_posted_for_pr:
+        if can_attempt_resume and not command_comment_posted_for_pr:
             posted_review_failed_comment = maybe_auto_resume_coderabbit_review_failed(
                 repo=repo,
                 pr_number=pr_number,
@@ -310,8 +316,59 @@ def _handle_coderabbit_status(
                     int(ctx.auto_resume_run_state["posted"]) + 1
                 )
                 coderabbit_resumed_prs.add((repo, pr_number))
+                command_comment_posted_for_pr = True
 
-    return active_rate_limit, active_review_failed
+    active_review_skipped = get_active_coderabbit_review_skipped(
+        pr_data, review_comments, issue_comments
+    )
+    if active_review_skipped:
+        reason_label = active_review_skipped["reason_label"]
+        print(
+            f"CodeRabbit review skipped is active for {_pr_ref(repo, pr_number)} "
+            f"(reason={reason_label})."
+        )
+        if not ctx.dry_run and not ctx.summarize_only:
+            if set_pr_running_label(
+                repo,
+                pr_number,
+                pr_data=pr_data,
+                enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+            ):
+                ctx.modified_prs.add((repo, pr_number))
+        can_attempt_review = not command_comment_posted_for_pr
+        if (
+            active_review_skipped["reason"] == "rate_limit"
+            and active_rate_limit is not None
+        ):
+            can_attempt_review = False
+        if can_attempt_review:
+            posted_review_comment = maybe_auto_trigger_coderabbit_review_skipped(
+                repo=repo,
+                pr_number=pr_number,
+                issue_comments=issue_comments,
+                review_skipped_status=active_review_skipped,
+                auto_resume_enabled=ctx.coderabbit_auto_resume,
+                trigger_enabled=ctx.coderabbit_auto_resume_triggers.get(
+                    active_review_skipped["reason"], True
+                ),
+                remaining_resume_posts=max(
+                    0,
+                    int(ctx.auto_resume_run_state["max_per_run"])
+                    - int(ctx.auto_resume_run_state["posted"]),
+                ),
+                dry_run=ctx.dry_run,
+                summarize_only=ctx.summarize_only,
+                is_draft=ctx.is_draft,
+                error_collector=error_collector,
+            )
+            if posted_review_comment:
+                ctx.auto_resume_run_state["posted"] = (
+                    int(ctx.auto_resume_run_state["posted"]) + 1
+                )
+                coderabbit_resumed_prs.add((repo, pr_number))
+                command_comment_posted_for_pr = True
+
+    return active_rate_limit, active_review_failed, active_review_skipped
 
 
 def _run_ci_fix_phase(
@@ -1164,6 +1221,7 @@ def _process_single_pr(
     merge_method: str,
     base_update_method: str,
     coderabbit_auto_resume_enabled: bool,
+    coderabbit_auto_resume_triggers: dict[str, bool],
     auto_resume_run_state: dict[str, int],
     process_draft_prs: bool,
     state_comment_timezone: str,
@@ -1341,6 +1399,7 @@ def _process_single_pr(
         repo=repo,
         pr_number=pr_number,
         title=pr_title,
+        is_draft=is_draft,
         branch_name=branch_name,
         base_branch=base_branch,
         works_dir=None,
@@ -1355,6 +1414,7 @@ def _process_single_pr(
         auto_merge_enabled=auto_merge_enabled,
         enabled_pr_label_keys=enabled_pr_label_keys,
         coderabbit_auto_resume=coderabbit_auto_resume_enabled,
+        coderabbit_auto_resume_triggers=coderabbit_auto_resume_triggers,
         auto_resume_run_state=auto_resume_run_state,
         process_draft_prs=process_draft_prs,
         state_comment_timezone=state_comment_timezone,
@@ -1375,14 +1435,16 @@ def _process_single_pr(
         _fetch_pr_context(ctx, pr_data, review_comments, issue_comments, processed_ids)
     )
 
-    # Handle CodeRabbit rate limit and review-failed status
-    active_rate_limit, active_review_failed = _handle_coderabbit_status(
-        ctx,
-        pr_data,
-        review_comments,
-        issue_comments,
-        coderabbit_resumed_prs,
-        error_collector=error_collector,
+    # Handle CodeRabbit status comments
+    active_rate_limit, active_review_failed, active_review_skipped = (
+        _handle_coderabbit_status(
+            ctx,
+            pr_data,
+            review_comments,
+            issue_comments,
+            coderabbit_resumed_prs,
+            error_collector=error_collector,
+        )
     )
 
     has_review_targets = bool(unresolved_reviews or unresolved_comments)
@@ -1390,7 +1452,9 @@ def _process_single_pr(
         print(
             f"No unresolved reviews, not behind, and no failing CI for {_pr_ref(repo, pr_number)}"
         )
-        count_pr = bool(active_rate_limit)
+        count_pr = bool(
+            active_rate_limit or active_review_failed or active_review_skipped
+        )
         _done_updated, _ci_grace = update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
@@ -1409,6 +1473,7 @@ def _process_single_pr(
             merge_method=merge_method,
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
+            coderabbit_review_skipped_active=bool(active_review_skipped),
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1422,6 +1487,7 @@ def _process_single_pr(
             None,
             not bool(active_rate_limit)
             and not bool(active_review_failed)
+            and not bool(active_review_skipped)
             and not _ci_grace,
         )
 
@@ -1648,6 +1714,7 @@ def _process_single_pr(
             merge_method=merge_method,
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
+            coderabbit_review_skipped_active=bool(active_review_skipped),
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1660,6 +1727,7 @@ def _process_single_pr(
             and state_saved
             and not bool(active_rate_limit)
             and not bool(active_review_failed)
+            and not bool(active_review_skipped)
             and not _ci_grace
         )
         if commits_by_phase:
@@ -1677,6 +1745,12 @@ def _process_single_pr(
     if active_rate_limit:
         skip_review_fix = True
         skip_review_fix_reason = "CodeRabbit is rate-limited"
+    elif active_review_skipped:
+        skip_review_fix = True
+        skip_review_fix_reason = (
+            "CodeRabbit review is skipped "
+            f"({active_review_skipped['reason_label']})"
+        )
     elif commit_limit_reached:
         skip_review_fix = True
         skip_review_fix_reason = (
@@ -1734,6 +1808,7 @@ def _process_single_pr(
             merge_method=merge_method,
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
+            coderabbit_review_skipped_active=bool(active_review_skipped),
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1830,6 +1905,7 @@ def _process_single_pr(
         merge_method=merge_method,
         coderabbit_rate_limit_active=bool(active_rate_limit),
         coderabbit_review_failed_active=bool(active_review_failed),
+        coderabbit_review_skipped_active=bool(active_review_skipped),
         enabled_pr_label_keys=enabled_pr_label_keys,
         ci_empty_as_success=ci_empty_as_success,
         ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1843,6 +1919,7 @@ def _process_single_pr(
         and not review_fix_failed
         and not bool(active_rate_limit)
         and not bool(active_review_failed)
+        and not bool(active_review_skipped)
         and not _ci_grace
     )
     if commits_by_phase:
@@ -1892,6 +1969,9 @@ def process_repo(
         runtime_config.get(
             "coderabbit_auto_resume", DEFAULT_CONFIG["coderabbit_auto_resume"]
         )
+    )
+    coderabbit_auto_resume_triggers = get_coderabbit_auto_resume_triggers(
+        runtime_config, DEFAULT_CONFIG
     )
     auto_resume_run_state = normalize_auto_resume_state(
         runtime_config, DEFAULT_CONFIG, auto_resume_run_state
@@ -2036,6 +2116,7 @@ def process_repo(
                     merge_method=merge_method,
                     base_update_method=base_update_method,
                     coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
+                    coderabbit_auto_resume_triggers=coderabbit_auto_resume_triggers,
                     auto_resume_run_state=auto_resume_run_state,
                     process_draft_prs=process_draft_prs,
                     state_comment_timezone=state_comment_timezone,
@@ -2213,7 +2294,7 @@ def main():
 
     if global_coderabbit_resumed_prs:
         print("\n" + "=" * SEPARATOR_LEN)
-        print("CodeRabbit を resume した PR 一覧:")
+        print("CodeRabbit を再トリガした PR 一覧:")
         for repo, pr_number in sorted(global_coderabbit_resumed_prs):
             print(f"  - {repo} PR #{pr_number}")
         print("=" * SEPARATOR_LEN)
