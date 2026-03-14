@@ -37,7 +37,8 @@ from ci_check import (
     collect_ci_failure_materials,
     extract_failing_ci_contexts,
 )
-from ci_log import log_endgroup, log_group
+from ci_log import log_endgroup, log_error, log_group
+from error_collector import ErrorCollector
 from claude_limit import ClaudeCommandFailedError
 from claude_runner import run_claude_prompt
 from coderabbit import (
@@ -549,6 +550,7 @@ def _run_review_fix_phase(
     works_dir: Any,
     thread_map: dict,
     commits_by_phase: list[str],
+    error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool, bool, bool]:
     """Run review summarization and Claude fix.
 
@@ -812,6 +814,10 @@ def _run_review_fix_phase(
             print(f"  stdout: {e.output.strip()}", file=sys.stderr)
         if e.stderr:
             print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Claude execution failed: {e}"
+            )
         if ctx.write_result_to_comment and result_blocks:
             try:
                 _fresh = load_state_comment(repo, pr_number)
@@ -868,6 +874,7 @@ def _process_single_pr(
     ci_empty_grace_minutes: int = 5,
     exclude_authors: list[str] | None = None,
     exclude_labels: list[str] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool, tuple[str, int, str] | None, bool]:
     """Process a single PR within process_repo's main loop.
 
@@ -935,6 +942,10 @@ def _process_single_pr(
         pr_data = fetch_pr_details(repo, pr_number)
     except Exception as e:
         print(f"Error fetching PR details: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to fetch PR details: {e}"
+            )
         return True, False, None, False
 
     branch_name = pr_data.get("headRefName")
@@ -950,6 +961,10 @@ def _process_single_pr(
         state_comment: StateComment = load_state_comment(repo, pr_number)
     except Exception as e:
         print(f"Error fetching state comment: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to load state comment: {e}"
+            )
         return True, False, None, False
     processed_ids = state_comment.processed_ids
 
@@ -959,19 +974,35 @@ def _process_single_pr(
         review_comments = fetch_pr_review_comments(repo, pr_number)
     except Exception as e:
         print(f"Error: could not fetch inline comments: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to fetch review comments: {e}"
+            )
         return True, False, None, False
     try:
         thread_map = fetch_review_threads(repo, pr_number)
     except Exception as e:
         print(f"Error: could not fetch review threads: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to fetch review threads: {e}"
+            )
         return True, False, None, False
     try:
         issue_comments = fetch_issue_comments(repo, pr_number)
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to fetch issue comments: {e}"
+            )
         return True, False, None, False
     except Exception as e:
         print(f"Error: could not fetch issue comments: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to fetch issue comments: {e}"
+            )
         return True, False, None, False
 
     unresolved_thread_ids = set(thread_map.keys())
@@ -1197,6 +1228,10 @@ def _process_single_pr(
     except Exception as e:
         log_endgroup()
         print(f"Error preparing repository: {e}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(
+                repo, pr_number, f"Failed to prepare repository: {e}"
+            )
         return False, True, None, False
 
     ctx.works_dir = works_dir
@@ -1437,6 +1472,7 @@ def _process_single_pr(
             works_dir,
             thread_map,
             commits_by_phase,
+            error_collector=error_collector,
         )
     )
 
@@ -1488,6 +1524,7 @@ def process_repo(
     global_coderabbit_resumed_prs: set[tuple[str, int]] | None = None,
     auto_resume_run_state: dict[str, int] | None = None,
     global_backfilled_count: list[int] | None = None,
+    error_collector: ErrorCollector | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
 
@@ -1600,6 +1637,8 @@ def process_repo(
     except Exception as e:
         print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
         fetch_failed = True
+        if error_collector:
+            error_collector.add_repo_error(repo, f"Failed to fetch PRs: {e}")
         return []
     backfilled_count = 0
     if auto_merge_enabled and not dry_run and not summarize_only:
@@ -1662,10 +1701,17 @@ def process_repo(
                     ci_empty_grace_minutes=ci_empty_grace_minutes,
                     exclude_authors=exclude_authors,
                     exclude_labels=exclude_labels,
+                    error_collector=error_collector,
                 )
             )
             if this_pr_fetch_failed:
                 pr_fetch_failed = True
+                if error_collector:
+                    error_collector.add_pr_error(
+                        repo,
+                        pr.get("number", 0),
+                        "PR processing encountered an error (see log above)",
+                    )
             if count_as_processed:
                 processed_count += 1
             if commits_entry:
@@ -1678,6 +1724,8 @@ def process_repo(
                 file=sys.stderr,
             )
             pr_fetch_failed = True
+            if error_collector:
+                error_collector.add_pr_error(repo, pr.get("number", 0), str(e))
             continue
 
     if processed_count == 0 and not fetch_failed and not pr_fetch_failed:
@@ -1750,6 +1798,12 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if not repos:
+        log_error(
+            "No target repositories after expansion. Check your config.", title="config"
+        )
+        sys.exit(1)
+
     print(f"Processing {len(repos)} repository(ies)")
     if args.dry_run:
         print("[DRY RUN MODE]")
@@ -1763,7 +1817,7 @@ def main():
     global_coderabbit_resumed_prs: set[tuple[str, int]] = set()
     global_backfilled_count: list[int] = [0]
     auto_resume_run_state = normalize_auto_resume_state(config, DEFAULT_CONFIG)
-    had_errors = False
+    error_collector = ErrorCollector()
     for repo_info in repos:
         try:
             results = process_repo(
@@ -1778,6 +1832,7 @@ def main():
                 global_coderabbit_resumed_prs=global_coderabbit_resumed_prs,
                 auto_resume_run_state=auto_resume_run_state,
                 global_backfilled_count=global_backfilled_count,
+                error_collector=error_collector,
             )
             if results:
                 commits_added_to.extend(results)
@@ -1793,7 +1848,7 @@ def main():
             sys.exit(1)
         except Exception as e:
             print(f"Error processing {repo_info['repo']}: {e}", file=sys.stderr)
-            had_errors = True
+            error_collector.add_repo_error(repo_info["repo"], str(e))
             continue
 
     if global_coderabbit_resumed_prs:
@@ -1812,7 +1867,8 @@ def main():
                 print(f"      {line}")
         print("=" * SEPARATOR_LEN)
     print("\nDone!")
-    if had_errors:
+    if error_collector.has_errors:
+        error_collector.print_summary()
         sys.exit(1)
 
 

@@ -76,6 +76,7 @@ class TestMain:
             global_coderabbit_resumed_prs=set(),
             auto_resume_run_state=ANY,
             global_backfilled_count=[0],
+            error_collector=ANY,
         )
         assert mock_process_repo.call_args.kwargs["auto_resume_run_state"] == {
             "posted": 0,
@@ -192,6 +193,46 @@ class TestMain:
         assert "Failing CI immediately" in err
         assert "stdout: API Error" in err
         assert "stderr: bad headers" in err
+
+    def test_empty_repos_exits_nonzero(self):
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [],
+        }
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=cfg),
+            patch("auto_fixer.expand_repositories", return_value=[]),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+
+    def test_repo_error_exits_nonzero_with_summary(self, capsys):
+        cfg = {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+        with (
+            patch.object(sys, "argv", ["auto_fixer.py", "--config", "config.yaml"]),
+            patch("auto_fixer.load_dotenv"),
+            patch("auto_fixer.load_config", return_value=cfg),
+            patch(
+                "auto_fixer.process_repo", side_effect=RuntimeError("connection error")
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "Error summary" in out
 
 
 class TestProcessRepo:
@@ -992,6 +1033,38 @@ class TestProcessRepo:
             auto_fixer.process_repo({"repo": "owner/repo"}, config=cfg)
 
         assert captured_timezones == ["UTC"]
+
+    def test_fetch_open_prs_failure_records_in_error_collector(self):
+        """fetch_open_prs 失敗時に error_collector にエラーが記録される。"""
+        from error_collector import ErrorCollector
+
+        collector = ErrorCollector()
+        with patch(
+            "auto_fixer.fetch_open_prs", side_effect=RuntimeError("network error")
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=collector)
+
+        assert collector.has_errors
+        assert any("owner/repo" == r.scope for r in collector._errors)
+        assert any("Failed to fetch PRs" in r.message for r in collector._errors)
+
+    def test_pr_exception_records_in_error_collector(self):
+        """PR ループ内でエラー時に error_collector にエラーが記録される。"""
+        from error_collector import ErrorCollector
+
+        prs = [{"number": 1, "title": "PR #1", "isDraft": False}]
+        collector = ErrorCollector()
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch(
+                "auto_fixer.fetch_pr_details",
+                side_effect=RuntimeError("API error"),
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, error_collector=collector)
+
+        assert collector.has_errors
+        assert any("owner/repo#1" == r.scope for r in collector._errors)
 
 
 class TestPerRunLimitsProcessRepo:
