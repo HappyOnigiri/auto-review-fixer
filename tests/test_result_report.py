@@ -14,8 +14,8 @@ class TestFormatPhaseResultBlock:
         assert "#### CI 修正" in block
         assert "**実行日時:** 2026-03-13 15:30:00 JST" in block
         assert "All tests passed" in block
-        assert "<details>" in block
-        assert "<summary>stdout</summary>" in block
+        assert "<summary>stdout</summary>" not in block
+        assert "```" in block
         assert "**対象コメント:**" not in block
 
     def test_review_fix_with_comment_urls(self):
