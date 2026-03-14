@@ -53,7 +53,6 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "exclude_authors",
     "exclude_labels",
     "repositories",
-    "execution_report",
 }
 ALLOWED_MODEL_KEYS = {"summarize", "fix"}
 ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
