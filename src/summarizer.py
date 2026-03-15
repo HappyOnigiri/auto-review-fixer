@@ -16,7 +16,12 @@ from claude_limit import (
 )
 from ci_log import log_endgroup, log_group
 from constants import SEPARATOR_LEN
-from prompt_builder import InlineCommentData, ReviewData
+from prompt_builder import (
+    InlineCommentData,
+    ReviewData,
+    inline_comment_state_id,
+    review_summary_id,
+)
 
 
 def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -> None:
@@ -60,13 +65,13 @@ def summarize_reviews(
     pr_body = (pr_body or "")[:_PR_BODY_MAX_CHARS]
     items = []
     for r in reviews:
-        if r.get("id") and r.get("body"):
-            items.append({"id": r.get("id", ""), "body": r.get("body", "")})
+        rid = review_summary_id(r)
+        if rid and r.get("body"):
+            items.append({"id": rid, "body": r.get("body", "")})
     for c in comments:
-        if c.get("id") and c.get("body"):
-            items.append(
-                {"id": f"discussion_r{c.get('id', '')}", "body": c.get("body", "")}
-            )
+        cid = inline_comment_state_id(c)
+        if cid and c.get("body"):
+            items.append({"id": cid, "body": c.get("body", "")})
 
     if not items:
         return {}
