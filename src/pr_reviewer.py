@@ -26,6 +26,7 @@ _GITHUB_ACTIONS_RUN_URL_RE = re.compile(r"/actions/runs/(\d+)")
 class ReviewComment(TypedDict, total=False):
     """get_review_comments の戻り値要素。"""
 
+    id: str
     author: str
     createdAt: str
     body: str
@@ -453,6 +454,7 @@ def get_review_comments(reviews: list[NormalizedReview]) -> list[ReviewComment]:
     for review in reviews:
         all_comments.append(
             {
+                "id": review.get("id", ""),
                 "author": review.get("author", {}).get("login", "Unknown"),
                 "createdAt": review.get("submittedAt", ""),
                 "body": review.get("body", ""),
