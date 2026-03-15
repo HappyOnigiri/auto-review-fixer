@@ -2068,13 +2068,14 @@ class TestFetchCiPendingPrs:
 
         assert result == [10, 20]
 
-    def test_returns_empty_on_failure(self, mocker):
+    def test_raises_on_failure(self, mocker):
         mock_result = mocker.MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
         mocker.patch("auto_fixer.run_command", return_value=mock_result)
 
-        assert auto_fixer._fetch_ci_pending_prs("owner/repo") == []
+        with pytest.raises(RuntimeError, match="_fetch_ci_pending_prs: gh pr list failed"):
+            auto_fixer._fetch_ci_pending_prs("owner/repo")
 
 
 class TestResolveActionTargets:
