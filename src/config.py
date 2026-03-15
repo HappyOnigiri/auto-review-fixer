@@ -411,7 +411,12 @@ def load_config(filepath: str) -> dict[str, Any]:
                 raise ConfigError(f"{_list_key} must be a list.")
             _normalized: list[str] = []
             for _idx, _item in enumerate(_list_value):
-                if not isinstance(_item, str) or not _item:
+                if not isinstance(_item, str):
+                    raise ConfigError(
+                        f"{_list_key}[{_idx}] must be a non-empty string."
+                    )
+                _item = _item.strip()
+                if not _item:
                     raise ConfigError(
                         f"{_list_key}[{_idx}] must be a non-empty string."
                     )
