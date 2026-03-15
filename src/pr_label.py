@@ -255,6 +255,10 @@ def set_pr_running_label(
     running_enabled = "running" in enabled
     done_enabled = "done" in enabled
     if not running_enabled and not done_enabled:
+        if "ci_pending" in enabled:
+            _ensure_refix_labels(
+                repo, enabled_pr_label_keys=enabled, error_collector=error_collector
+            )
         return False
     if (
         pr_data
