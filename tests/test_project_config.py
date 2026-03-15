@@ -7,6 +7,8 @@ import pytest
 import project_config
 from errors import ProjectConfigError, SubprocessError
 
+DEFAULT_GIT = {"user_name": None, "user_email": None}
+
 
 # ---------------------------------------------------------------------------
 # load_project_config
@@ -26,6 +28,7 @@ def test_returns_parsed_config_with_name(tmp_path):
     assert result == {
         "version": 1,
         "setup": {"when": "always", "commands": [{"name": "install", "run": "npm ci"}]},
+        "git": DEFAULT_GIT,
     }
 
 
@@ -37,6 +40,7 @@ def test_returns_parsed_config_without_name(tmp_path):
     assert result == {
         "version": 1,
         "setup": {"when": "always", "commands": [{"run": "npm ci"}]},
+        "git": DEFAULT_GIT,
     }
 
 
@@ -113,13 +117,21 @@ def test_empty_commands_list_is_valid(tmp_path):
         "version: 1\nsetup:\n  commands: []\n"
     )
     result = project_config.load_project_config(tmp_path)
-    assert result == {"version": 1, "setup": {"when": "always", "commands": []}}
+    assert result == {
+        "version": 1,
+        "setup": {"when": "always", "commands": []},
+        "git": DEFAULT_GIT,
+    }
 
 
 def test_no_setup_section_returns_defaults(tmp_path):
     (tmp_path / ".refix-project.yaml").write_text("version: 1\n")
     result = project_config.load_project_config(tmp_path)
-    assert result == {"version": 1, "setup": {"when": "always", "commands": []}}
+    assert result == {
+        "version": 1,
+        "setup": {"when": "always", "commands": []},
+        "git": DEFAULT_GIT,
+    }
 
 
 def test_version_defaults_to_1_when_omitted(tmp_path):
@@ -269,3 +281,72 @@ def test_when_clone_only_skips_on_subsequent_update(tmp_path, mocker):
     mock_run = mocker.patch.object(project_config, "run_command")
     project_config.run_project_setup(tmp_path, is_first_clone=False)
     mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _parse_git / git セクション
+# ---------------------------------------------------------------------------
+
+
+def test_git_section_both_fields(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_name: Alice\n  user_email: alice@example.com\n"
+    )
+    result = project_config.load_project_config(tmp_path)
+    assert result is not None
+    assert result["git"] == {"user_name": "Alice", "user_email": "alice@example.com"}
+
+
+def test_git_section_user_name_only(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_name: Bob\n"
+    )
+    result = project_config.load_project_config(tmp_path)
+    assert result is not None
+    assert result["git"] == {"user_name": "Bob", "user_email": None}
+
+
+def test_git_section_user_email_only(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_email: bob@example.com\n"
+    )
+    result = project_config.load_project_config(tmp_path)
+    assert result is not None
+    assert result["git"] == {"user_name": None, "user_email": "bob@example.com"}
+
+
+def test_git_section_absent_returns_none_defaults(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text("version: 1\n")
+    result = project_config.load_project_config(tmp_path)
+    assert result is not None
+    assert result["git"] == {"user_name": None, "user_email": None}
+
+
+def test_git_section_unknown_key_raises(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_name: Alice\n  unknown_key: value\n"
+    )
+    with pytest.raises(ProjectConfigError, match="不明なキー"):
+        project_config.load_project_config(tmp_path)
+
+
+def test_git_section_non_string_user_name_raises(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_name: 123\n"
+    )
+    with pytest.raises(ProjectConfigError, match="git.user_name は文字列"):
+        project_config.load_project_config(tmp_path)
+
+
+def test_git_section_non_string_user_email_raises(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text(
+        "version: 1\ngit:\n  user_email: 123\n"
+    )
+    with pytest.raises(ProjectConfigError, match="git.user_email は文字列"):
+        project_config.load_project_config(tmp_path)
+
+
+def test_git_section_non_dict_raises(tmp_path):
+    (tmp_path / ".refix-project.yaml").write_text("version: 1\ngit: not_a_dict\n")
+    with pytest.raises(ProjectConfigError, match="git はマッピング"):
+        project_config.load_project_config(tmp_path)

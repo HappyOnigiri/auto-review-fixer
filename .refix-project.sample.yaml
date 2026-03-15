@@ -12,6 +12,14 @@
 # Currently only version 1 is supported.
 version: 1
 
+# Git committer identity (Optional)
+# Override the git user.name and user.email used for commits.
+# In single-PR (action) mode, .refix.yaml repository settings are not used,
+# so specify them here instead.
+git:
+  user_name: "your-name"
+  user_email: "your-email@example.com"
+
 # Setup commands (Optional)
 # Commands to run after cloning or updating the repository.
 setup:

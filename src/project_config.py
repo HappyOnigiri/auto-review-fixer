@@ -11,6 +11,7 @@ CONFIG_FILENAME = ".refix-project.yaml"
 SUPPORTED_VERSIONS = {1}
 SETUP_COMMAND_TIMEOUT = 300
 VALID_WHEN_VALUES = {"always", "clone_only"}
+ALLOWED_GIT_KEYS = {"user_name", "user_email"}
 
 
 def load_project_config(repo_root: Path) -> dict | None:
@@ -42,7 +43,40 @@ def load_project_config(repo_root: Path) -> dict | None:
         )
 
     setup = _parse_setup(raw)
-    return {"version": version, "setup": setup}
+    git = _parse_git(raw)
+    return {"version": version, "setup": setup, "git": git}
+
+
+def _parse_git(raw: dict) -> dict:
+    """git セクションを検証して正規化した dict を返す。"""
+    git = raw.get("git")
+    if git is None:
+        return {"user_name": None, "user_email": None}
+
+    if not isinstance(git, dict):
+        raise ProjectConfigError(
+            f"{CONFIG_FILENAME}: git はマッピングでなければなりません"
+        )
+
+    unknown_keys = set(git.keys()) - ALLOWED_GIT_KEYS
+    if unknown_keys:
+        raise ProjectConfigError(
+            f"{CONFIG_FILENAME}: git に不明なキーがあります: {sorted(unknown_keys)}"
+        )
+
+    user_name = git.get("user_name")
+    if user_name is not None and not isinstance(user_name, str):
+        raise ProjectConfigError(
+            f"{CONFIG_FILENAME}: git.user_name は文字列でなければなりません"
+        )
+
+    user_email = git.get("user_email")
+    if user_email is not None and not isinstance(user_email, str):
+        raise ProjectConfigError(
+            f"{CONFIG_FILENAME}: git.user_email は文字列でなければなりません"
+        )
+
+    return {"user_name": user_name, "user_email": user_email}
 
 
 def _parse_setup(raw: dict) -> dict:
@@ -96,15 +130,17 @@ def _parse_setup(raw: dict) -> dict:
     return {"when": when, "commands": result}
 
 
-def run_project_setup(repo_root: Path, *, is_first_clone: bool) -> None:
-    """リポジトリルートの .refix-project.yaml に定義されたセットアップコマンドを実行する。
+def run_project_setup_from_config(
+    config: dict | None, repo_root: Path, *, is_first_clone: bool
+) -> None:
+    """読み込み済みの config からセットアップコマンドを実行する。
 
+    config が None の場合は何もしない。
     is_first_clone=True の場合は初回クローン直後、False の場合は既存リポジトリの更新後。
     setup.when が "clone_only" のときは is_first_clone=True のときのみ実行する。
-    ファイルが存在しない場合や commands が空の場合は何もしない。
+    commands が空の場合は何もしない。
     コマンドが失敗した場合は SubprocessError を送出する。
     """
-    config = load_project_config(repo_root)
     if config is None:
         return
 
@@ -124,3 +160,15 @@ def run_project_setup(repo_root: Path, *, is_first_clone: bool) -> None:
         else:
             print(f"Running setup command: {run_str}")
         run_command(["sh", "-c", run_str], cwd=repo_root, timeout=SETUP_COMMAND_TIMEOUT)
+
+
+def run_project_setup(repo_root: Path, *, is_first_clone: bool) -> None:
+    """リポジトリルートの .refix-project.yaml に定義されたセットアップコマンドを実行する。
+
+    is_first_clone=True の場合は初回クローン直後、False の場合は既存リポジトリの更新後。
+    setup.when が "clone_only" のときは is_first_clone=True のときのみ実行する。
+    ファイルが存在しない場合や commands が空の場合は何もしない。
+    コマンドが失敗した場合は SubprocessError を送出する。
+    """
+    config = load_project_config(repo_root)
+    run_project_setup_from_config(config, repo_root, is_first_clone=is_first_clone)

@@ -202,12 +202,14 @@ def test_prepare_repository_calls_run_project_setup_with_is_first_clone_false(
 ):
     mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
     mocker.patch.object(git_ops, "setup_claude_settings")
-    mock_setup = mocker.patch.object(git_ops, "run_project_setup")
+    mock_load = mocker.patch.object(git_ops, "load_project_config", return_value=None)
+    mock_setup = mocker.patch.object(git_ops, "run_project_setup_from_config")
     mocker.patch.object(Path, "exists", return_value=True)
     mocker.patch.object(Path, "mkdir")
     result = git_ops.prepare_repository("owner/repo", "main")
 
-    mock_setup.assert_called_once_with(result, is_first_clone=False)
+    mock_load.assert_called_once_with(result)
+    mock_setup.assert_called_once_with(None, result, is_first_clone=False)
 
 
 def test_prepare_repository_calls_run_project_setup_with_is_first_clone_true(
@@ -215,12 +217,14 @@ def test_prepare_repository_calls_run_project_setup_with_is_first_clone_true(
 ):
     mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
     mocker.patch.object(git_ops, "setup_claude_settings")
-    mock_setup = mocker.patch.object(git_ops, "run_project_setup")
+    mock_load = mocker.patch.object(git_ops, "load_project_config", return_value=None)
+    mock_setup = mocker.patch.object(git_ops, "run_project_setup_from_config")
     mocker.patch.object(Path, "exists", return_value=False)
     mocker.patch.object(Path, "mkdir")
     result = git_ops.prepare_repository("owner/repo", "main")
 
-    mock_setup.assert_called_once_with(result, is_first_clone=True)
+    mock_load.assert_called_once_with(result)
+    mock_setup.assert_called_once_with(None, result, is_first_clone=True)
 
 
 def test_prepare_repository_propagates_project_config_error(
@@ -229,7 +233,7 @@ def test_prepare_repository_propagates_project_config_error(
     mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
     mocker.patch.object(git_ops, "setup_claude_settings")
     mocker.patch.object(
-        git_ops, "run_project_setup", side_effect=ProjectConfigError("bad config")
+        git_ops, "load_project_config", side_effect=ProjectConfigError("bad config")
     )
     mocker.patch.object(Path, "exists", return_value=True)
     mocker.patch.object(Path, "mkdir")
