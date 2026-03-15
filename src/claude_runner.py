@@ -35,7 +35,10 @@ DEFAULT_REFIX_CLAUDE_SETTINGS: ClaudeSettings = {
 }
 
 
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+def _deep_merge(
+    base: dict[str, Any],  # dict-any: ok
+    override: dict[str, Any],  # dict-any: ok
+) -> dict[str, Any]:  # dict-any: ok
     """override を base のコピーに再帰的にマージする。ネストされたキーを保持する。"""
     result = dict(base)
     for key, value in override.items():
@@ -74,7 +77,10 @@ def setup_claude_settings(works_dir: Path) -> None:
         if isinstance(parsed, dict):
             existing = cast(ClaudeSettings, parsed)
 
-    merged = _deep_merge(cast(dict[str, Any], existing), cast(dict[str, Any], settings))
+    merged = _deep_merge(
+        cast(dict[str, Any], existing),  # dict-any: ok
+        cast(dict[str, Any], settings),  # dict-any: ok
+    )
     settings_file.write_text(
         json.dumps(merged, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

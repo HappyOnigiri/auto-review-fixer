@@ -98,12 +98,12 @@ def _filter_check_runs(runs: list[CheckRunData], repo: str) -> list[CheckRunData
     return list(by_name.values()) + no_run_id
 
 
-def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:
+def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:  # dict-any: ok
     """Flatten gh api --paginate/--slurp responses into a list of objects."""
     if not isinstance(data, list):
         return []
 
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []  # dict-any: ok
     for item in data:
         if isinstance(item, list):
             items.extend(entry for entry in item if isinstance(entry, dict))
@@ -293,7 +293,9 @@ def fetch_pr_reviews(repo: str, pr_number: int) -> list[NormalizedReview]:
     return normalized_reviews
 
 
-def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
+def fetch_pr_review_comments(
+    repo: str, pr_number: int
+) -> list[dict[str, Any]]:  # dict-any: ok
     """Fetch inline review comments (discussion_r<id> format) via REST API."""
     cmd = [
         "gh",
@@ -321,7 +323,9 @@ def fetch_pr_review_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
     return _flatten_paginated_response(data)
 
 
-def fetch_issue_comments(repo: str, pr_number: int) -> list[dict[str, Any]]:
+def fetch_issue_comments(
+    repo: str, pr_number: int
+) -> list[dict[str, Any]]:  # dict-any: ok
     """Fetch issue comments for a pull request via REST API."""
     cmd = [
         "gh",

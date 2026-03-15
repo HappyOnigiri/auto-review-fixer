@@ -4,7 +4,7 @@ from typing import Any, TypedDict
 
 # AppConfig は将来的に TypedDict 化するための型エイリアス。
 # 30 以上のキーを持つ複雑な型のため、段階的移行を見据えてエイリアスとして定義する。
-AppConfig = dict[str, Any]
+AppConfig = dict[str, Any]  # dict-any: ok
 
 
 class UserInfo(TypedDict, total=False):

@@ -1372,7 +1372,7 @@ def _process_single_pr(
 
     # Filter inline review comments (discussion_r<id>) not yet processed
     # Also skip threads already resolved on GitHub
-    review_comments_raw: list[dict[str, Any]]
+    review_comments_raw: list[dict[str, Any]]  # dict-any: ok
     try:
         review_comments_raw = fetch_pr_review_comments(repo, pr_number)
     except Exception as e:
@@ -1391,7 +1391,7 @@ def _process_single_pr(
                 repo, pr_number, f"Failed to fetch review threads: {e}"
             )
         return True, False, None, False
-    issue_comments_raw: list[dict[str, Any]]
+    issue_comments_raw: list[dict[str, Any]]  # dict-any: ok
     try:
         issue_comments_raw = fetch_issue_comments(repo, pr_number)
     except RuntimeError as e:

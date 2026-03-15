@@ -132,7 +132,9 @@ def _validate_scalar_field(key: str, value: Any, spec: FieldSpec) -> Any:
 
 
 def _reject_unknown_config_keys(
-    config_section: dict[str, Any], allowed_keys: set[str], section: str
+    config_section: dict[str, Any],  # dict-any: ok
+    allowed_keys: set[str],
+    section: str,
 ) -> None:
     unknown_keys = sorted(set(config_section.keys()) - allowed_keys)
     if unknown_keys:
