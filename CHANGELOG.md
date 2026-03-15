@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.3.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.2.0...refix-v0.3.0) (2026-03-15)
+
+
+### Features
+
+* **auto_fixer:** merge_method/base_update_method を PRContext に追加し _run_merge_phase を改修 ([775d14c](https://github.com/HappyOnigiri/Refix/commit/775d14c931072f7326f6b901731d0924dc10f954))
+* **auto_fixer:** target_authors / auto_merge_authors によるPRフィルタリングを実装 ([1d467f2](https://github.com/HappyOnigiri/Refix/commit/1d467f2a3088cd05cc6bcab469d3ca412f8aee92))
+* **ci_check:** workflow_dispatch 除外と同名最新保持の check run フィルタを追加 ([f8e3e02](https://github.com/HappyOnigiri/Refix/commit/f8e3e0257b9f2e705e3dc85f30428e93bbebab6b))
+* **config:** merge_method と base_update_method の設定項目を追加 ([ed45b35](https://github.com/HappyOnigiri/Refix/commit/ed45b358519188ad2e80739be97780c4891ab353))
+* **config:** target_authors / auto_merge_authors 設定を追加 ([fe353af](https://github.com/HappyOnigiri/Refix/commit/fe353afbb3fea2a22ebca4cebe14a343a723e739))
+* **git_ops:** rebase によるベースブランチ更新関数を追加 ([5925c1a](https://github.com/HappyOnigiri/Refix/commit/5925c1a57b0bd6114cee427c9ab4ddf4b7788a26))
+* **pr_label:** merge_method による PR マージ方式の選択に対応 ([18e3f4e](https://github.com/HappyOnigiri/Refix/commit/18e3f4ed8ef5940f80c007437728e52dc67bc70c))
+* **subprocess_helpers:** run_command/run_git に env パラメータを追加 ([c626898](https://github.com/HappyOnigiri/Refix/commit/c626898768391c4b2799168bd044291f8f7dbc56))
+
+
+### Bug Fixes
+
+* **auto_fixer:** 各フェーズで push を明示的に実行し、プロンプトから push 文言を削除 ([79ac272](https://github.com/HappyOnigiri/Refix/commit/79ac27267af0d6d0c0181611cac0c87a93100732))
+* **ci_check:** check-runs 403 を正常系として扱い error_collector に登録しない ([43f79ad](https://github.com/HappyOnigiri/Refix/commit/43f79ad447af3bbb38a788bd887dd1a198a101be))
+* **config:** explicit null in coderabbit_auto_resume_triggers now raises ConfigError ([d597247](https://github.com/HappyOnigiri/Refix/commit/d597247c2c7598413552e9c09f6a6b51bd261942))
+* **config:** strip whitespace from target_authors / auto_merge_authors list items before validation ([a46032c](https://github.com/HappyOnigiri/Refix/commit/a46032c207ceabd049203ab6ea0d426f8ceef8fc))
+* **git_ops:** abort_rebase が失敗した場合に RuntimeError を発生させる ([72bebfd](https://github.com/HappyOnigiri/Refix/commit/72bebfd80b8c910e63ba5a71b7d7b276224c507a))
+* **git_ops:** rebase 中の空パッチを --skip で処理し conflict 扱いを回避 ([5294b30](https://github.com/HappyOnigiri/Refix/commit/5294b3071ee61acb617c5aff81097d901d5223c6))
+* **git_ops:** コンフリクトなし・ダーティ状態を真のコンフリクトと誤判定しないよう修正 ([10a971b](https://github.com/HappyOnigiri/Refix/commit/10a971b23731aab71aaf81056b9e95518270f9d8))
+* **git_ops:** 空パッチ判定に作業ツリー・インデックスのクリーン確認を追加 ([982e0f5](https://github.com/HappyOnigiri/Refix/commit/982e0f5bdd1d15d971227f9d490853ecf77c528b))
+* **pr_reviewer:** no_run_id の外部 CI を by_name dedup 対象から除外 ([e73b789](https://github.com/HappyOnigiri/Refix/commit/e73b78920c2942ddcdd3bf159b75e7b8b88d7b56))
+* **pr_reviewer:** run_id の event チェックに 10 秒タイムアウトを設定 ([8c75307](https://github.com/HappyOnigiri/Refix/commit/8c753070b58f7dcab6200a43abffcf4ede91ecbb))
+
+
+### Documentation
+
+* **config:** .refix.sample.yaml に merge_method と base_update_method を追記 ([9be71ca](https://github.com/HappyOnigiri/Refix/commit/9be71ca878b4fe6d736a6175576c01c241a94d1f))
+
 ## [0.2.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.1.0...refix-v0.2.0) (2026-03-14)
 
 
