@@ -1,5 +1,8 @@
 version: 1
 
+git:
+  user_name: "HappyOnigiri"
+  user_email: "253838257+NodeMeld@users.noreply.github.com"
 setup:
   commands:
     - run: pip install -r requirements.txt
