@@ -1240,6 +1240,8 @@ def _process_single_pr(
     ci_empty_grace_minutes: int = 5,
     exclude_authors: list[str] | None = None,
     exclude_labels: list[str] | None = None,
+    target_authors: list[str] | None = None,
+    auto_merge_authors: list[str] | None = None,
     error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool, tuple[str, int, str] | None, bool]:
     """Process a single PR within process_repo's main loop.
@@ -1293,6 +1295,29 @@ def _process_single_pr(
                 f"(label '{matched_label}' matches exclude_labels): {pr_title}"
             )
             return False, False, None, False
+
+    if target_authors:
+        pr_author = pr.get("author", {}) or {}
+        author_login = pr_author.get("login", "") or ""
+        if not any(fnmatch.fnmatchcase(author_login, pat) for pat in target_authors):
+            print(
+                f"\nSkipping {_pr_ref(repo, pr_number)} "
+                f"(author '{author_login}' not in target_authors): {pr_title}"
+            )
+            return False, False, None, False
+
+    if auto_merge_enabled and auto_merge_authors:
+        pr_author = pr.get("author", {}) or {}
+        author_login = pr_author.get("login", "") or ""
+        if not any(
+            fnmatch.fnmatchcase(author_login, pat) for pat in auto_merge_authors
+        ):
+            print(
+                f"{_pr_ref(repo, pr_number)}: "
+                f"author '{author_login}' not in auto_merge_authors; "
+                "auto-merge disabled for this PR"
+            )
+            auto_merge_enabled = False
 
     # A上限チェック: 変更PR数の上限に達した場合、PR全体をスキップ
     if (
@@ -1983,6 +2008,12 @@ def process_repo(
     exclude_labels = list(
         runtime_config.get("exclude_labels", DEFAULT_CONFIG["exclude_labels"])
     )
+    target_authors = list(
+        runtime_config.get("target_authors", DEFAULT_CONFIG["target_authors"])
+    )
+    auto_merge_authors = list(
+        runtime_config.get("auto_merge_authors", DEFAULT_CONFIG["auto_merge_authors"])
+    )
     state_comment_timezone = (
         str(
             runtime_config.get(
@@ -2134,6 +2165,8 @@ def process_repo(
                     ci_empty_grace_minutes=ci_empty_grace_minutes,
                     exclude_authors=exclude_authors,
                     exclude_labels=exclude_labels,
+                    target_authors=target_authors,
+                    auto_merge_authors=auto_merge_authors,
                     error_collector=error_collector,
                 )
             )
