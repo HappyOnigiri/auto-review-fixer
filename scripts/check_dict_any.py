@@ -3,15 +3,11 @@
 
 from __future__ import annotations
 
-import re
+import io
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
-
-# Matches dict[str, Any] or Dict[str, Any] (with optional spaces)
-_PATTERN = re.compile(
-    r"\bdict\s*\[\s*str\s*,\s*Any\s*\]|\bDict\s*\[\s*str\s*,\s*Any\s*\]"
-)
 
 
 def _tracked_src_files() -> list[Path]:
@@ -41,27 +37,46 @@ def _tracked_src_files() -> list[Path]:
     ]
 
 
-def _is_comment_or_string(line: str, match_start: int) -> bool:
-    """Return True if the match position is inside a comment or string literal."""
-    before = line[:match_start]
-    # Comment: anything after '#' (outside strings — simple heuristic)
-    stripped = before.lstrip()
-    if stripped.startswith("#"):
-        return True
-    # Inline comment: count quotes to approximate whether we're in a string
-    single_quotes = before.count("'") - before.count("\\'")
-    double_quotes = before.count('"') - before.count('\\"')
-    if single_quotes % 2 == 1 or double_quotes % 2 == 1:
-        return True
-    # Hash after code: if '#' appears and quote count is even up to that point
-    hash_pos = before.find("#")
-    if hash_pos != -1:
-        pre_hash = before[:hash_pos]
-        sq = pre_hash.count("'") - pre_hash.count("\\'")
-        dq = pre_hash.count('"') - pre_hash.count('\\"')
-        if sq % 2 == 0 and dq % 2 == 0:
-            return True
-    return False
+def _check_file(path: Path) -> list[str]:
+    """Return violation strings for dict[str, Any] found in real code tokens."""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return []
+
+    violations: list[str] = []
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except tokenize.TokenError:
+        return []
+
+    # Lines that carry a "# dict-any: ok" in a COMMENT token
+    ok_lines: set[int] = set()
+    for tok in tokens:
+        if tok.type == tokenize.COMMENT and "# dict-any: ok" in tok.string:
+            ok_lines.add(tok.start[0])
+
+    # Detect NAME/OP/NAME/OP/NAME/OP token sequences for dict[str, Any]
+    # Sequence: NAME('dict'|'Dict') OP('[') NAME('str') OP(',') NAME('Any') OP(']')
+    for i, tok in enumerate(tokens):
+        if tok.type != tokenize.NAME or tok.string not in ("dict", "Dict"):
+            continue
+        rest = tokens[i + 1 : i + 6]
+        if len(rest) < 6:
+            continue
+        types = [t.type for t in rest]
+        strings = [t.string for t in rest]
+        if (
+            types == [tokenize.OP, tokenize.NAME, tokenize.OP, tokenize.NAME, tokenize.OP]
+            and strings == ["[", "str", ",", "Any", "]"]
+        ):
+            line_no = tok.start[0]
+            if line_no not in ok_lines:
+                matched = tok.string + "".join(strings)
+                violations.append(
+                    f"{path}:{line_no}: found `{matched}` — consider TypedDict or dataclass"
+                )
+    return violations
 
 
 def main() -> None:
@@ -70,19 +85,7 @@ def main() -> None:
     for path in _tracked_src_files():
         if not path.is_file():
             continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if "# dict-any: ok" in line:
-                continue
-            for match in _PATTERN.finditer(line):
-                if not _is_comment_or_string(line, match.start()):
-                    violations.append(
-                        f"{path}:{line_no}: found `{match.group()}` — consider TypedDict or dataclass"
-                    )
+        violations.extend(_check_file(path))
 
     if violations:
         print("dict[str, Any] usage detected:")
