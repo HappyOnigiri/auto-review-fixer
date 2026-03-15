@@ -49,7 +49,12 @@ jobs:
           fi
           printf '%s\n' "$REFIX_CONFIG_YAML" > .refix.yaml
 
-      - uses: ./
+      # NOTE: `uses: ./` references the checked-out action.yml on the current branch,
+      # enabling testing of unreleased changes within this repository.
+      # When using this file as a template in another repository,
+      # change `./` to `HappyOnigiri/Refix@main` (or a specific version tag).
+      - name: Run Refix
+        uses: ./
         with:
           pr-number: ${{ steps.resolve-pr.outputs.pr-number }}
           gh-token: ${{ secrets.GH_TOKEN }}
