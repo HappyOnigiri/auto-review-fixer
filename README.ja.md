@@ -368,18 +368,21 @@ setup:
 
 ## GitHub Actions での実行方法
 
-このリポジトリには、`refix` を GitHub Actions で動かすためのワークフロー `.github/workflows/run-auto-review.yml` が含まれています。
+このリポジトリには、`refix` を GitHub Actions で動かすためのワークフローが含まれています。
+
+- `.github/workflows/run-refix.yml` — 単一 PR を処理するワークフロー
+- `.github/workflows/run-refix-batch.yml` — 複数リポジトリをまとめて処理するバッチワークフロー
 
 ### ワークフローが行うこと
 
-このワークフローは次の順で動作します。
+各ワークフローは `action.yml` の composite action を呼び出します。composite action が次の処理を行います。
 
 1. リポジトリを checkout する
 2. Python 3.12 と Python 依存関係をセットアップする
 3. Claude CLI をインストールする
-4. GitHub Actions 変数 `REFIX_CONFIG_YAML` から `.refix-batch.yaml` を生成する
+4. 環境変数 `REFIX_CONFIG_YAML` から設定ファイルを生成する
 5. push 用の Git 認証を設定する
-6. `cd src && python auto_fixer.py --config ../.refix-batch.yaml` を実行する
+6. `auto_fixer.py` を実行する
 
 ### 必要な GitHub Actions 設定
 
