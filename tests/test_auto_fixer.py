@@ -2000,15 +2000,15 @@ class TestResolvePrsFromSha:
 
         assert result == [42, 43]
 
-    def test_returns_empty_on_nonzero_returncode(self, mocker):
+    def test_raises_on_nonzero_returncode(self, mocker):
         mock_result = mocker.MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
+        mock_result.stderr = "Not Found"
         mocker.patch("auto_fixer.run_command", return_value=mock_result)
 
-        result = auto_fixer._resolve_prs_from_sha("owner/repo", "abc123")
-
-        assert result == []
+        with pytest.raises(RuntimeError, match="_resolve_prs_from_sha"):
+            auto_fixer._resolve_prs_from_sha("owner/repo", "abc123")
 
     def test_returns_empty_on_empty_output(self, mocker):
         mock_result = mocker.MagicMock()
@@ -2048,13 +2048,15 @@ class TestPrHasCiPendingLabel:
 
         assert auto_fixer._pr_has_ci_pending_label("owner/repo", 42) is False
 
-    def test_returns_false_on_nonzero_returncode(self, mocker):
+    def test_raises_on_nonzero_returncode(self, mocker):
         mock_result = mocker.MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
+        mock_result.stderr = "Not Found"
         mocker.patch("auto_fixer.run_command", return_value=mock_result)
 
-        assert auto_fixer._pr_has_ci_pending_label("owner/repo", 42) is False
+        with pytest.raises(RuntimeError, match="_pr_has_ci_pending_label"):
+            auto_fixer._pr_has_ci_pending_label("owner/repo", 42)
 
 
 class TestFetchCiPendingPrs:

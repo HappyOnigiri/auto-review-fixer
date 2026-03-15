@@ -2202,7 +2202,11 @@ def _resolve_prs_from_sha(repo: str, sha: str) -> list[int]:
     """コミット SHA から関連する PR 番号を取得する。"""
     cmd = ["gh", "api", f"repos/{repo}/commits/{sha}/pulls", "--jq", ".[].number"]
     result = run_command(cmd, check=False)
-    if result.returncode != 0 or not result.stdout.strip():
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"_resolve_prs_from_sha: gh api failed (exit {result.returncode}): {result.stderr}"
+        )
+    if not result.stdout.strip():
         return []
     return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
 
@@ -2222,7 +2226,12 @@ def _pr_has_ci_pending_label(repo: str, pr_number: int) -> bool:
         f'[.labels[].name] | any(. == "{REFIX_CI_PENDING_LABEL}")',
     ]
     result = run_command(cmd, check=False)
-    return result.returncode == 0 and result.stdout.strip() == "true"
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"_pr_has_ci_pending_label: gh pr view failed for PR #{pr_number} "
+            f"(exit {result.returncode}): {result.stderr}"
+        )
+    return result.stdout.strip() == "true"
 
 
 def _fetch_ci_pending_prs(repo: str) -> list[int]:
