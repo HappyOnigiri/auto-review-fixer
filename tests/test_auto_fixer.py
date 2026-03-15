@@ -2178,7 +2178,7 @@ class TestResolveActionTargets:
 
     def test_workflow_dispatch_event_returns_pr_number(self, mocker, tmp_path):
         event_file = tmp_path / "event.json"
-        event_file.write_text('{"inputs": {"pr": "42"}}')
+        event_file.write_text('{"inputs": {"pr-number": "42"}}')
         mocker.patch.dict(
             "os.environ",
             {
@@ -2195,7 +2195,7 @@ class TestResolveActionTargets:
         self, mocker, tmp_path
     ):
         event_file = tmp_path / "event.json"
-        event_file.write_text('{"inputs": {"pr": "abc"}}')
+        event_file.write_text('{"inputs": {"pr-number": "abc"}}')
         mocker.patch.dict(
             "os.environ",
             {

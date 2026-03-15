@@ -2288,8 +2288,15 @@ def _resolve_action_targets(repo: str) -> list[int]:
     if event_name == "schedule":
         return _fetch_ci_pending_prs(repo)
 
+    if event_name == "issue_comment":
+        issue = event.get("issue", {})
+        if issue.get("pull_request"):
+            pr_number = issue.get("number")
+            return [pr_number] if pr_number else []
+        return []
+
     if event_name == "workflow_dispatch":
-        pr_str = event.get("inputs", {}).get("pr")
+        pr_str = event.get("inputs", {}).get("pr-number")
         if pr_str and str(pr_str).strip().isdigit():
             return [int(pr_str)]
         return []
