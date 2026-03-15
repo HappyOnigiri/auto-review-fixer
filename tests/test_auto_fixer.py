@@ -2191,7 +2191,9 @@ class TestResolveActionTargets:
 
         assert result == [42]
 
-    def test_workflow_dispatch_event_with_invalid_pr_returns_empty(self, mocker, tmp_path):
+    def test_workflow_dispatch_event_with_invalid_pr_returns_empty(
+        self, mocker, tmp_path
+    ):
         event_file = tmp_path / "event.json"
         event_file.write_text('{"inputs": {"pr": "abc"}}')
         mocker.patch.dict(
