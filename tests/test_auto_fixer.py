@@ -1982,10 +1982,7 @@ class TestProcessRepoSinglePrMode:
 
         auto_fixer.process_repo(
             {"repo": "owner/repo", "user_name": None, "user_email": None},
-            config={
-                "auto_merge": True,
-                **{k: v for k, v in auto_fixer.DEFAULT_CONFIG.items()},
-            },
+            config={**auto_fixer.DEFAULT_CONFIG, "auto_merge": True},
             target_pr_number=99,
         )
 
