@@ -32,8 +32,8 @@ inputs:
     description: "Run without making changes"
     required: false
     default: "false"
-  config-path:
-    description: "Path to .refix.yaml in target repo (optional)"
+  config-yaml:
+    description: "YAML config content (optional; written to file internally)"
     required: false
     default: ""
   claude-code-version:
@@ -60,13 +60,20 @@ runs:
       run: pip install -r .refix-tool/requirements.txt
       shell: bash
 
+    - name: Generate config
+      if: inputs.config-yaml != ''
+      run: printf '%s\n' "$REFIX_CONFIG_YAML" > "$RUNNER_TEMP/.refix.yaml"
+      shell: bash
+      env:
+        REFIX_CONFIG_YAML: ${{ inputs.config-yaml }}
+
     - name: Filter event
       id: filter
       if: github.event_name == 'issue_comment'
       run: python .refix-tool/src/filter_event.py
       shell: bash
       env:
-        REFIX_CONFIG_PATH: ${{ inputs.config-path }}
+        REFIX_CONFIG_PATH: ${{ inputs.config-yaml != '' && format('{0}/.refix.yaml', runner.temp) || '' }}
 
     - name: Install Claude Code CLI
       if: steps.filter.outputs.skip != 'true'
@@ -93,7 +100,8 @@ runs:
           ARGS=("--action" "--repo" "${{ inputs.repo }}")
         fi
         if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS+=("--dry-run"); fi
-        if [ -n "${{ inputs.config-path }}" ]; then ARGS+=("--config" "${{ inputs.config-path }}"); fi
+        CONFIG_PATH="${{ inputs.config-yaml != '' && format('{0}/.refix.yaml', runner.temp) || '' }}"
+        if [ -n "$CONFIG_PATH" ]; then ARGS+=("--config" "$CONFIG_PATH"); fi
         python auto_fixer.py "${ARGS[@]}"
       shell: bash
       env:
