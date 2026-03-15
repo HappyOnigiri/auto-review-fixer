@@ -62,7 +62,7 @@ def _check_file(path: Path) -> list[str]:
         if tok.type != tokenize.NAME or tok.string not in ("dict", "Dict"):
             continue
         rest = tokens[i + 1 : i + 6]
-        if len(rest) < 6:
+        if len(rest) < 5:
             continue
         types = [t.type for t in rest]
         strings = [t.string for t in rest]
