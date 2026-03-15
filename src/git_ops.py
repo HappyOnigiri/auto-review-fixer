@@ -67,11 +67,10 @@ def prepare_repository(
 
     # セットアップ: batch_setup が指定されていればそちらを使用し、
     # なければ対象リポジトリの .refix.yaml の setup をフォールバックとして使用
-    project_cfg = load_project_config(works_dir)
     if batch_setup is not None:
         effective_setup_cfg: dict | None = {"setup": batch_setup}
     else:
-        effective_setup_cfg = project_cfg
+        effective_setup_cfg = load_project_config(works_dir)
     run_project_setup_from_config(
         effective_setup_cfg, works_dir, is_first_clone=is_first_clone
     )
