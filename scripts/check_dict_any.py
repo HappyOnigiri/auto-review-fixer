@@ -76,6 +76,8 @@ def main() -> None:
             continue
 
         for line_no, line in enumerate(text.splitlines(), start=1):
+            if "# dict-any: ok" in line:
+                continue
             for match in _PATTERN.finditer(line):
                 if not _is_comment_or_string(line, match.start()):
                     violations.append(
