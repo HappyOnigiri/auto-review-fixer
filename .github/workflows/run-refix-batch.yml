@@ -1,21 +1,10 @@
-name: Run Refix (Single PR)
+name: Run Refix (Batch)
 
 on:
-  check_suite:
-    types: [completed]
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-  issue_comment:
-    types: [created, edited]
   workflow_dispatch:
-    inputs:
-      pr-number:
-        description: 'PR number to process'
-        required: true
-        type: number
 
 concurrency:
-  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.issue.number || inputs.pr-number || 'dispatch' }}
+  group: run-refix-batch
   cancel-in-progress: false
 
 permissions:
@@ -23,7 +12,6 @@ permissions:
 
 jobs:
   run-refix:
-    if: github.event_name != 'check_suite' || github.event.check_suite.pull_requests[0].number != 0
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -36,8 +24,7 @@ jobs:
       - name: Run Refix
         uses: ./
         with:
+          batch: "true"
           gh-token: ${{ secrets.GH_TOKEN }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           config-yaml: ${{ vars.REFIX_CONFIG_YAML }}
-          # Use current branch code for self-testing; remove this line when copying to other repos.
-          ref: ${{ github.head_ref || github.ref_name }}

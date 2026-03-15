@@ -1,4 +1,4 @@
-"""対象リポジトリの .refix-project.yaml を読み込み、セットアップコマンドを実行するモジュール。"""
+"""対象リポジトリの .refix.yaml を読み込み、セットアップコマンドを実行するモジュール。"""
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ import yaml
 from errors import ProjectConfigError
 from subprocess_helpers import run_command
 
-CONFIG_FILENAME = ".refix-project.yaml"
+CONFIG_FILENAME = ".refix.yaml"
 SUPPORTED_VERSIONS = {1}
 SETUP_COMMAND_TIMEOUT = 300
 VALID_WHEN_VALUES = {"always", "clone_only"}
@@ -15,7 +15,7 @@ ALLOWED_GIT_KEYS = {"user_name", "user_email"}
 
 
 def load_project_config(repo_root: Path) -> dict | None:
-    """リポジトリルートの .refix-project.yaml を読み込む。
+    """リポジトリルートの .refix.yaml を読み込む。
 
     ファイルが存在しない場合は None を返す。
     パースエラーや検証エラーの場合は ProjectConfigError を送出する。
@@ -163,7 +163,7 @@ def run_project_setup_from_config(
 
 
 def run_project_setup(repo_root: Path, *, is_first_clone: bool) -> None:
-    """リポジトリルートの .refix-project.yaml に定義されたセットアップコマンドを実行する。
+    """リポジトリルートの .refix.yaml に定義されたセットアップコマンドを実行する。
 
     is_first_clone=True の場合は初回クローン直後、False の場合は既存リポジトリの更新後。
     setup.when が "clone_only" のときは is_first_clone=True のときのみ実行する。

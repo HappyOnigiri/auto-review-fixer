@@ -1,146 +1,44 @@
 # ==========================================
-# Refix Configuration File
+# Refix Project Configuration File
 # ==========================================
-
-# Model settings (Optional)
-# Specifies the models to use when executing the Claude CLI.
-# Options: "haiku", "sonnet", "opus", etc.
-models:
-  summarize: "haiku"
-  fix: "sonnet"
-
-ci_log_max_lines: 120
-
-# Whether to write Claude's stdout to the PR state comment as a collapsible log (Optional)
-# When enabled, each phase's stdout is embedded in the PR state comment under "Execution logs".
-# Default: true
-write_result_to_comment: true
-
-# Automatically merge PR when it reaches refix: done state (Optional)
-# When merge completes, refix: merged label is added.
-# Default: false
-auto_merge: false
-
-# PR merge strategy (Optional)
-# "auto": Automatically choose an allowed strategy from repo settings (merge > squash > rebase)
-# "merge" / "squash" / "rebase": Use only the specified strategy
-# Default: "auto"
-merge_method: "auto"
-
-# Base-branch update strategy (Optional)
-# "merge": Update by merging the base branch (default, creates a merge commit)
-# "rebase": Rebase onto the base branch (linear history, requires force-push)
-# Default: "merge"
-base_update_method: "merge"
-
-# Enable only selected Refix PR labels (Optional)
-# Allowed: running, done, merged, auto_merge_requested
-# Default: all labels enabled
-# Set [] to disable all Refix label operations
-enabled_pr_labels:
-  - running
-  - done
-  - merged
-  - auto_merge_requested
-
-# Automatically post `@coderabbitai resume` when CodeRabbit can be resumed
-# (after rate-limit wait expires, when a "Review failed" head-commit-changed status appears,
-# or when a skipped review should be re-requested) (Optional)
-# Default: false
-coderabbit_auto_resume: false
-
-# Enable/disable auto-trigger behavior per CodeRabbit skip reason (Optional)
-# rate_limit: retry rate-limited reviews
-# draft_detected: post `@coderabbitai review` after a draft PR becomes ready
-# Defaults: both true
-coderabbit_auto_resume_triggers:
-  rate_limit: true
-  draft_detected: true
-
-# Maximum number of CodeRabbit auto-trigger comments posted in a single run (Optional, min: 1)
-# The code enforces coderabbit_auto_resume_max_per_run >= 1.
-# Default: 1
-coderabbit_auto_resume_max_per_run: 1
-
-# Whether to process DRAFT PRs (Optional)
-# Default: false (skip DRAFT PRs)
-process_draft_prs: false
-
-# Whether to include fork repositories when expanding owner/* targets (Optional)
-# true: include both source repositories and forks
-# false: include only source repositories (exclude forks)
-# Default: true
-include_fork_repositories: true
-
-# State comment timestamp timezone (Optional)
-# Default: JST
-# e.g. JST, UTC, Asia/Tokyo
-state_comment_timezone: JST
-
-# Maximum number of PRs that may be modified in one run (0 = unlimited, Optional)
-# Includes all mutations such as label updates, comment posting, and state-comment updates
-# Default: 0
-max_modified_prs_per_run: 0
-
-# Maximum number of PRs that may receive new commits in one run (0 = unlimited, Optional)
-# Includes base-branch merges and pushes for CI/review fixes
-# Default: 2
-max_committed_prs_per_run: 2
-
-# Maximum number of PRs that may run Claude fixes in one run (0 = unlimited, Optional)
-# Includes CI fixes, conflict resolution, and review fixes
-# Default: 0
-max_claude_prs_per_run: 0
-
-# When CI checks are empty, treat as success if last commit is older than grace period (Optional)
-# ci_empty_as_success: true = apply grace rule; false = always treat empty as unavailable
-# ci_empty_grace_minutes: minutes since last commit to consider "no CI configured"
-# Default: ci_empty_as_success true, ci_empty_grace_minutes 5
-ci_empty_as_success: true
-ci_empty_grace_minutes: 5
-
-# Restrict Refix processing to PRs authored by specific users (Optional, fnmatch wildcards supported)
-# Default: [] (process all authors)
-# When set, only PRs whose author matches at least one pattern are processed.
-# PRs not matching are skipped entirely (no fix, no merge).
-# Supports fnmatch wildcards: * (any chars), ? (one char), [seq] (char class)
-# target_authors: ["my-user", "dep*"]
-
-# Restrict auto-merge to PRs authored by specific users (Optional, fnmatch wildcards supported)
-# Default: [] (merge all authors when auto_merge is enabled)
-# When set, auto-merge is disabled for PRs whose author does not match any pattern.
-# Fix processing still runs for the PR; only the merge step is skipped.
-# auto_merge_authors: ["dep*"]
-
-# Exclude PRs by author login pattern (Optional, fnmatch wildcards supported)
-# Default: [] (no exclusion)
-# Supports fnmatch wildcards: * (any chars), ? (one char), [seq] (char class)
-# Note: To match a literal "[" (e.g. GitHub bot logins like "dependabot[bot]"),
-#       use "[[]" in the pattern: "*[[]bot]" matches any login ending with "[bot]"
-# exclude_authors: ["*[[]bot]", "renovate-bot", "some-user"]
-
-# Exclude PRs by label name pattern (Optional, fnmatch wildcards supported)
-# Default: [] (no exclusion)
-# exclude_labels: ["autorelease: *", "do-not-merge"]
-
-# Filtering settings for issue_comment events (Optional)
-# Restrict which comment authors can re-trigger Refix via issue_comment events.
-# Authors can be updated here without changing the caller's workflow file.
-# Default when omitted: only "coderabbitai[bot]" is allowed.
-# Designed for future extension to other event types.
 #
-# Example: allow an additional bot alongside CodeRabbit
-# triggers:
-#   issue_comment:
-#     authors:
-#       - "coderabbitai[bot]"
-#       - "other-bot[bot]"
-triggers:
-  issue_comment:
-    authors:
-      - "coderabbitai[bot]"
+# Place this file as `.refix.yaml` in the root of the TARGET repository
+# (i.e., the repository being managed by Refix, not the Refix repository itself).
+#
+# Refix reads this file when it clones or updates the target repository and
+# runs the commands defined under `setup.commands`.
 
-# Target repository settings (Required)
-# List the target repositories and their corresponding git commit settings.
-repositories:
-  - repo: "owner/repo"
+# Schema version (Required)
+# Currently only version 1 is supported.
+version: 1
+
+# Git committer identity (Optional)
+# Override the git user.name and user.email used for commits.
+# In single-PR (action) mode, .refix-batch.yaml repository settings are not used,
+# so specify them here instead.
+git:
+  user_name: "your-name"
+  user_email: "your-email@example.com"
+
+# Setup commands (Optional)
+# Commands to run after cloning or updating the repository.
+setup:
+
+  # When to run setup commands (Optional)
+  # - "always"     : run on every clone AND every update (default)
+  # - "clone_only" : run only on the first clone, skip on subsequent updates
+  when: always
+
+  # List of shell commands to execute (Optional)
+  # Commands are executed with `sh -c` in the repository root.
+  # Each command has a 300-second timeout.
+  # If a command fails, subsequent commands are not executed.
+  commands:
+    - run: npm install
+      name: Install Node.js dependencies
+
+    - run: pip install -r requirements.txt
+      name: Install Python dependencies
+
+    # `name` is optional - you can omit it if the `run` command is self-explanatory.
+    - run: make generate

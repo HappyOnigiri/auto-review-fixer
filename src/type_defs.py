@@ -36,7 +36,7 @@ class _RepositoryEntryBase(TypedDict):
 
 
 class RepositoryEntry(_RepositoryEntryBase, total=False):
-    """リポジトリ設定エントリ（.refix.yaml の repositories[] 要素）。"""
+    """リポジトリ設定エントリ（.refix-batch.yaml の repositories[] 要素）。"""
 
     user_name: str | None
     user_email: str | None

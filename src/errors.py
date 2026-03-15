@@ -27,4 +27,4 @@ class GitError(SubprocessError):
 
 
 class ProjectConfigError(RefixError):
-    """プロジェクト設定ファイル（.refix-project.yaml）のエラー。"""
+    """プロジェクト設定ファイル（.refix.yaml）のエラー。"""

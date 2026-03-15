@@ -1,4 +1,4 @@
-"""設定ファイル（.refix.yaml）の読み込みと検証を行うモジュール。"""
+"""設定ファイル（.refix-batch.yaml）の読み込みと検証を行うモジュール。"""
 
 import os
 import tempfile

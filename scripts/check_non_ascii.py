@@ -12,7 +12,7 @@ ASCII_ENFORCED_FILES = {
     "README.md",
     ".env.sample",
     ".refix.sample.yaml",
-    ".refix-project.sample.yaml",
+    ".refix-batch.sample.yaml",
 }
 
 

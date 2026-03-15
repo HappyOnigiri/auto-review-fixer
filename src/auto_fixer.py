@@ -2330,11 +2330,11 @@ def main():
         action="store_true",
         help="Show claude command without executing",
     )
-    _default_config = Path(__file__).resolve().parents[1] / ".refix.yaml"
+    _default_config = Path(__file__).resolve().parents[1] / ".refix-batch.yaml"
     parser.add_argument(
         "--config",
         default=str(_default_config),
-        help="Path to YAML config file (default: <repo_root>/.refix.yaml)",
+        help="Path to YAML config file (default: <repo_root>/.refix-batch.yaml)",
     )
     parser.add_argument(
         "--silent",
@@ -2544,7 +2544,7 @@ def main():
             sys.exit(1)
         return
 
-    # multi-repo モード（既存の処理）
+    # batch モード（既存の処理）
     try:
         config = load_config(args.config)
         repos = expand_repositories(

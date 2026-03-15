@@ -25,7 +25,7 @@ help:
 	@echo "    要約のみ実行して結果を表示（修正モデル実行・状態コメント更新なし）"
 	@echo ""
 	@echo "  make setup"
-	@echo "    依存パッケージをインストールし、.env および .refix.yaml テンプレートを作成"
+	@echo "    依存パッケージをインストールし、.env および .refix-batch.yaml テンプレートを作成"
 
 help-en:
 	@echo "Refix - Makefile targets:"
@@ -45,7 +45,7 @@ help-en:
 	@echo "    Does not run fix model or update the PR state comment. (for verification)"
 	@echo ""
 	@echo "  make setup"
-	@echo "    Install dependencies and create .env and .refix.yaml templates."
+	@echo "    Install dependencies and create .env and .refix-batch.yaml templates."
 
 setup:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -54,10 +54,10 @@ setup:
 	else \
 		echo ".env already exists, skipping."; \
 	fi
-	@if [ ! -f .refix.yaml ]; then \
-		cp .refix.sample.yaml .refix.yaml && echo ".refix.yaml created from sample"; \
+	@if [ ! -f .refix-batch.yaml ]; then \
+		cp .refix-batch.sample.yaml .refix-batch.yaml && echo ".refix-batch.yaml created from sample"; \
 	else \
-		echo ".refix.yaml already exists, skipping."; \
+		echo ".refix-batch.yaml already exists, skipping."; \
 	fi
 
 run:

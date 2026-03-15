@@ -40,7 +40,7 @@ When a pull request has failing GitHub Actions checks, `refix` fetches failed lo
 
 If a PR branch is behind the base branch, `refix` can merge the latest base branch into it and continue the repair flow. Merge conflicts are also routed through the Claude-based fixing flow.
 
-### Multi-repository targeting
+### Batch mode (multi-repository)
 
 You can target a single repository such as `owner/repo`, or expand all repositories under an owner with `owner/*`.
 
@@ -51,12 +51,12 @@ You can target a specific pull request directly with `--repo` and `--pr`, withou
 ```bash
 python auto_fixer.py --repo owner/repo --pr 42
 python auto_fixer.py --repo owner/repo --pr 42 --dry-run
-python auto_fixer.py --repo owner/repo --pr 42 --config .refix.yaml
+python auto_fixer.py --repo owner/repo --pr 42 --config .refix-batch.yaml
 ```
 
 In single PR mode:
 
-- The `repositories` field in `.refix.yaml` is not required.
+- The `repositories` field in `.refix-batch.yaml` is not required.
 - If `--config` points to a file that exists, top-level settings (such as `models`, `ci_log_max_lines`, etc.) are loaded from it, but `repositories` is ignored.
 - If no config file exists, built-in defaults are used.
 - Both `--repo` and `--pr` must be specified together.
@@ -70,7 +70,7 @@ Processed review items are recorded back to the pull request, which prevents the
 - Python 3.12
 - `gh` CLI authenticated against GitHub
 - Claude CLI authentication for actual fix runs
-- A `.refix.yaml` configuration file
+- A `.refix-batch.yaml` configuration file (for batch mode)
 - Optional `.env` file for local environment variables
 
 ## Quick start
@@ -81,7 +81,7 @@ Processed review items are recorded back to the pull request, which prevents the
 
    `make setup`
 
-2. Edit `.refix.yaml` based on `.refix.sample.yaml`.
+2. Edit `.refix-batch.yaml` based on `.refix-batch.sample.yaml`.
 
 3. Authenticate the required CLIs:
 
@@ -97,7 +97,7 @@ Processed review items are recorded back to the pull request, which prevents the
 
 ## YAML configuration reference
 
-`refix` reads configuration from `.refix.yaml` in the repository root, or from a path passed with `--config`.
+`refix` reads batch configuration from `.refix-batch.yaml` in the repository root, or from a path passed with `--config`.
 
 ### Full schema
 
@@ -372,7 +372,7 @@ If omitted, `refix` falls back to the effective Git identity available in the ex
 
 ## Per-repository project configuration
 
-You can place a `.refix-project.yaml` file in the root of the **target repository** (the one being managed by Refix) to define setup commands that Refix runs after cloning or updating that repository.
+You can place a `.refix.yaml` file in the root of the **target repository** (the one being managed by Refix) to define setup commands that Refix runs after cloning or updating that repository.
 
 ### Schema
 
@@ -402,7 +402,7 @@ setup:
 - Each command has a **300-second timeout**.
 - If a command fails, subsequent commands are **not** executed.
 
-A template with comments is available at `.refix-project.sample.yaml` in this repository.
+A template with comments is available at `.refix.sample.yaml` in this repository.
 
 ## Running in CI with GitHub Actions
 
@@ -415,9 +415,9 @@ The workflow:
 1. checks out the repository,
 2. installs Python 3.12 and Python dependencies,
 3. installs the Claude CLI,
-4. writes `.refix.yaml` from the GitHub Actions variable `REFIX_CONFIG_YAML`,
+4. writes `.refix-batch.yaml` from the GitHub Actions variable `REFIX_CONFIG_YAML`,
 5. configures Git authentication for push operations, and
-6. changes to the `src` directory and runs `python auto_fixer.py --config ../.refix.yaml`.
+6. changes to the `src` directory and runs `python auto_fixer.py --config ../.refix-batch.yaml`.
 
 ### Required GitHub Actions configuration
 
@@ -427,7 +427,7 @@ Set the following values in the target repository or organization:
 
 - `REFIX_CONFIG_YAML`
   - The full YAML configuration text for `refix`.
-  - Store the same content that you would place in a local `.refix.yaml` file.
+  - Store the same content that you would place in a local `.refix-batch.yaml` file.
 
 #### Repository or organization secrets
 

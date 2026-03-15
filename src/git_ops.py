@@ -68,14 +68,14 @@ def prepare_repository(
         git_cfg = project_cfg["git"]
         if not user_name and git_cfg["user_name"]:
             print(
-                f"Setting git user.name from .refix-project.yaml to '{git_cfg['user_name']}'..."
+                f"Setting git user.name from .refix.yaml to '{git_cfg['user_name']}'..."
             )
             run_git(
                 "config", "user.name", git_cfg["user_name"], cwd=works_dir, timeout=10
             )
         if not user_email and git_cfg["user_email"]:
             print(
-                f"Setting git user.email from .refix-project.yaml to '{git_cfg['user_email']}'..."
+                f"Setting git user.email from .refix.yaml to '{git_cfg['user_email']}'..."
             )
             run_git(
                 "config", "user.email", git_cfg["user_email"], cwd=works_dir, timeout=10
@@ -104,7 +104,7 @@ def prepare_repository(
         msg = (
             f"Setup commands left tracked files dirty:\n{dirty_files}"
             f"{diff_output}\n"
-            "Fix the setup commands in .refix-project.yaml so they do not modify tracked files."
+            "Fix the setup commands in .refix.yaml so they do not modify tracked files."
         )
         print(f"Error: {msg}", file=sys.stderr)
         raise RuntimeError(msg)
