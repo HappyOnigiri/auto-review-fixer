@@ -38,6 +38,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "ci_empty_grace_minutes": 5,
     "exclude_authors": [],
     "exclude_labels": [],
+    "target_authors": [],
+    "auto_merge_authors": [],
     "repositories": [],
 }
 
@@ -63,6 +65,8 @@ ALLOWED_CONFIG_TOP_LEVEL_KEYS = {
     "ci_empty_grace_minutes",
     "exclude_authors",
     "exclude_labels",
+    "target_authors",
+    "auto_merge_authors",
     "repositories",
 }
 ALLOWED_MERGE_METHODS = ("auto", "merge", "squash", "rebase")
@@ -257,6 +261,8 @@ def load_config(filepath: str) -> dict[str, Any]:
         "ci_empty_grace_minutes": DEFAULT_CONFIG["ci_empty_grace_minutes"],
         "exclude_authors": [],
         "exclude_labels": [],
+        "target_authors": [],
+        "auto_merge_authors": [],
         "repositories": [],
     }
 
@@ -393,7 +399,12 @@ def load_config(filepath: str) -> dict[str, Any]:
             raise ConfigError("ci_empty_grace_minutes must be a non-negative integer.")
         config["ci_empty_grace_minutes"] = grace_int
 
-    for _list_key in ("exclude_authors", "exclude_labels"):
+    for _list_key in (
+        "exclude_authors",
+        "exclude_labels",
+        "target_authors",
+        "auto_merge_authors",
+    ):
         _list_value = parsed.get(_list_key)
         if _list_value is not None:
             if not isinstance(_list_value, list):

@@ -99,6 +99,19 @@ max_claude_prs_per_run: 0
 ci_empty_as_success: true
 ci_empty_grace_minutes: 5
 
+# Restrict Refix processing to PRs authored by specific users (Optional, fnmatch wildcards supported)
+# Default: [] (process all authors)
+# When set, only PRs whose author matches at least one pattern are processed.
+# PRs not matching are skipped entirely (no fix, no merge).
+# Supports fnmatch wildcards: * (any chars), ? (one char), [seq] (char class)
+# target_authors: ["my-user", "dep*"]
+
+# Restrict auto-merge to PRs authored by specific users (Optional, fnmatch wildcards supported)
+# Default: [] (merge all authors when auto_merge is enabled)
+# When set, auto-merge is disabled for PRs whose author does not match any pattern.
+# Fix processing still runs for the PR; only the merge step is skipped.
+# auto_merge_authors: ["dep*"]
+
 # Exclude PRs by author login pattern (Optional, fnmatch wildcards supported)
 # Default: [] (no exclusion)
 # Supports fnmatch wildcards: * (any chars), ? (one char), [seq] (char class)
