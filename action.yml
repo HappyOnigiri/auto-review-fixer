@@ -44,11 +44,23 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Refix
+      id: checkout-refix
+      continue-on-error: true
+      uses: actions/checkout@v4
       with:
         repository: HappyOnigiri/Refix
         path: .refix-tool
         ref: ${{ inputs.ref }}
+        token: ${{ inputs.gh-token }}
+
+    - name: Checkout Refix (fallback to main)
+      if: steps.checkout-refix.outcome == 'failure'
+      uses: actions/checkout@v4
+      with:
+        repository: HappyOnigiri/Refix
+        path: .refix-tool
+        ref: main
         token: ${{ inputs.gh-token }}
 
     - uses: actions/setup-python@v5
