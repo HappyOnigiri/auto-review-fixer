@@ -2288,3 +2288,82 @@ class TestMainActionMode:
         call_kwargs = mock_edit_label.call_args.kwargs
         assert call_kwargs["add"] is False
         assert call_kwargs["label"] == auto_fixer.REFIX_RUNNING_LABEL
+
+    def test_action_mode_cleans_up_running_label_on_claude_command_failed(self, mocker):
+        """action モード: ClaudeCommandFailedError → running 除去 + sys.exit(1)"""
+        cfg = self._default_cfg()
+        mocker.patch.object(
+            sys, "argv", ["auto_fixer.py", "--action", "--repo", "owner/repo"]
+        )
+        mocker.patch("auto_fixer.load_dotenv")
+        mocker.patch("auto_fixer.load_config_for_action", return_value=cfg)
+        mocker.patch("auto_fixer._resolve_action_targets", return_value=[42])
+        mocker.patch(
+            "auto_fixer.process_repo",
+            side_effect=ClaudeCommandFailedError(
+                phase="review_fix", returncode=1, stdout="out", stderr="err"
+            ),
+        )
+        mock_edit_label = mocker.patch("auto_fixer.edit_pr_label")
+
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        mock_edit_label.assert_called_once()
+        call_kwargs = mock_edit_label.call_args.kwargs
+        assert call_kwargs["add"] is False
+        assert call_kwargs["label"] == auto_fixer.REFIX_RUNNING_LABEL
+
+    def test_single_pr_mode_cleans_up_running_label_on_claude_command_failed(
+        self, mocker
+    ):
+        """single-PR モード: ClaudeCommandFailedError → running 除去 + sys.exit(1)"""
+        cfg = self._default_cfg()
+        mocker.patch.object(
+            sys, "argv", ["auto_fixer.py", "--repo", "owner/repo", "--pr", "42"]
+        )
+        mocker.patch("auto_fixer.load_dotenv")
+        mocker.patch("auto_fixer.load_config_for_action", return_value=cfg)
+        mocker.patch(
+            "auto_fixer.process_repo",
+            side_effect=ClaudeCommandFailedError(
+                phase="review_fix", returncode=1, stdout="out", stderr="err"
+            ),
+        )
+        mock_edit_label = mocker.patch("auto_fixer.edit_pr_label")
+
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        mock_edit_label.assert_called_once()
+        call_kwargs = mock_edit_label.call_args.kwargs
+        assert call_kwargs["add"] is False
+        assert call_kwargs["label"] == auto_fixer.REFIX_RUNNING_LABEL
+
+    def test_action_mode_shares_counters_across_prs(self, mocker):
+        """action モード: 複数 PR で同一カウンターセットが process_repo に渡される"""
+        cfg = self._default_cfg()
+        mocker.patch.object(
+            sys, "argv", ["auto_fixer.py", "--action", "--repo", "owner/repo"]
+        )
+        mocker.patch("auto_fixer.load_dotenv")
+        mocker.patch("auto_fixer.load_config_for_action", return_value=cfg)
+        mocker.patch("auto_fixer._resolve_action_targets", return_value=[10, 20])
+        mock_process_repo = mocker.patch("auto_fixer.process_repo", return_value=[])
+
+        auto_fixer.main()
+
+        assert mock_process_repo.call_count == 2
+        call1_kwargs = mock_process_repo.call_args_list[0].kwargs
+        call2_kwargs = mock_process_repo.call_args_list[1].kwargs
+        for key in (
+            "global_modified_prs",
+            "global_committed_prs",
+            "global_claude_prs",
+            "global_coderabbit_resumed_prs",
+        ):
+            assert call1_kwargs[key] is call2_kwargs[key], (
+                f"{key} は同一オブジェクトであるべき"
+            )
