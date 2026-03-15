@@ -67,13 +67,13 @@ runs:
       run: |
         cd .refix-tool/src
         if [ -n "${{ inputs.pr-number }}" ]; then
-          ARGS="--repo ${{ inputs.repo }} --pr ${{ inputs.pr-number }}"
+          ARGS=("--repo" "${{ inputs.repo }}" "--pr" "${{ inputs.pr-number }}")
         else
-          ARGS="--action --repo ${{ inputs.repo }}"
+          ARGS=("--action" "--repo" "${{ inputs.repo }}")
         fi
-        if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
-        if [ -n "${{ inputs.config-path }}" ]; then ARGS="$ARGS --config ${{ inputs.config-path }}"; fi
-        python auto_fixer.py $ARGS
+        if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS+=("--dry-run"); fi
+        if [ -n "${{ inputs.config-path }}" ]; then ARGS+=("--config" "${{ inputs.config-path }}"); fi
+        python auto_fixer.py "${ARGS[@]}"
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.gh-token }}
