@@ -49,6 +49,7 @@ runs:
         repository: HappyOnigiri/Refix
         path: .refix-tool
         ref: ${{ inputs.ref }}
+        token: ${{ inputs.gh-token }}
 
     - uses: actions/setup-python@v5
       with:
