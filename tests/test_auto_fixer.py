@@ -2074,7 +2074,9 @@ class TestFetchCiPendingPrs:
         mock_result.stdout = ""
         mocker.patch("auto_fixer.run_command", return_value=mock_result)
 
-        with pytest.raises(RuntimeError, match="_fetch_ci_pending_prs: gh pr list failed"):
+        with pytest.raises(
+            RuntimeError, match="_fetch_ci_pending_prs: gh pr list failed"
+        ):
             auto_fixer._fetch_ci_pending_prs("owner/repo")
 
 
