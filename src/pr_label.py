@@ -17,12 +17,14 @@ REFIX_RUNNING_LABEL = "refix: running"
 REFIX_DONE_LABEL = "refix: done"
 REFIX_MERGED_LABEL = "refix: merged"
 REFIX_AUTO_MERGE_REQUESTED_LABEL = "refix: auto-merge-requested"
+REFIX_CI_PENDING_LABEL = "refix: ci-pending"
 
 PR_LABEL_KEY_TO_NAME: dict[str, str] = {
     "running": REFIX_RUNNING_LABEL,
     "done": REFIX_DONE_LABEL,
     "merged": REFIX_MERGED_LABEL,
     "auto_merge_requested": REFIX_AUTO_MERGE_REQUESTED_LABEL,
+    "ci_pending": REFIX_CI_PENDING_LABEL,
 }
 PR_LABEL_NAME_TO_KEY: dict[str, str] = {
     label_name: label_key for label_key, label_name in PR_LABEL_KEY_TO_NAME.items()
@@ -34,6 +36,7 @@ REFIX_RUNNING_LABEL_COLOR = "FBCA04"
 REFIX_DONE_LABEL_COLOR = "0E8A16"
 REFIX_MERGED_LABEL_COLOR = "5319E7"
 REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR = "C2E0C6"
+REFIX_CI_PENDING_LABEL_COLOR = "D4C5F9"  # 薄紫
 
 
 def _pr_ref(repo: str, pr_number: int) -> str:
@@ -159,6 +162,14 @@ def _ensure_refix_labels(
             REFIX_AUTO_MERGE_REQUESTED_LABEL,
             color=REFIX_AUTO_MERGE_REQUESTED_LABEL_COLOR,
             description="Refix has requested auto-merge for this PR.",
+            error_collector=error_collector,
+        )
+    if "ci_pending" in enabled:
+        _ensure_repo_label_exists(
+            repo,
+            REFIX_CI_PENDING_LABEL,
+            color=REFIX_CI_PENDING_LABEL_COLOR,
+            description="Refix is waiting for CI checks to complete.",
             error_collector=error_collector,
         )
 
@@ -835,6 +846,7 @@ def update_done_label_if_completed(
             block_reasons.append("CodeRabbit review skipped")
 
     ci_grace_pending = False
+    ci_is_blocking = False
     if is_completed:
         ci_check_result = are_all_ci_checks_successful(
             repo,
@@ -846,9 +858,11 @@ def update_done_label_if_completed(
         if ci_check_result is None:
             ci_grace_pending = True
             is_completed = False
+            ci_is_blocking = True
             block_reasons.append("CI checks unavailable")
         elif not ci_check_result:
             is_completed = False
+            ci_is_blocking = True
             block_reasons.append("CI checks not all successful")
 
     if is_completed:
@@ -902,6 +916,15 @@ def update_done_label_if_completed(
                         error_collector=error_collector,
                     )
             merge_triggered = label_modified
+        # 完了時: ci-pending ラベルを除去
+        edit_pr_label(
+            repo,
+            pr_number,
+            add=False,
+            label=REFIX_CI_PENDING_LABEL,
+            enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
+        )
         return done_changed or merge_triggered, ci_grace_pending
 
     if block_reasons:
@@ -915,17 +938,26 @@ def update_done_label_if_completed(
             f"{_pr_ref(repo, pr_number)} is not completed yet; "
             f"switching label to {REFIX_RUNNING_LABEL}."
         )
+    # set_pr_running_label は内部で _ensure_refix_labels を呼び出す（ci-pending 含む）
     if enabled_pr_label_keys is None:
-        return set_pr_running_label(
+        running_changed = set_pr_running_label(
             repo, pr_number, pr_data=pr_data, error_collector=error_collector
-        ), ci_grace_pending
-    return (
-        set_pr_running_label(
+        )
+    else:
+        running_changed = set_pr_running_label(
             repo,
             pr_number,
             pr_data=pr_data,
             enabled_pr_label_keys=enabled_pr_label_keys,
             error_collector=error_collector,
-        ),
-        ci_grace_pending,
+        )
+    # CI ブロック時: ci-pending を付与、非 CI ブロック時: ci-pending を除去
+    edit_pr_label(
+        repo,
+        pr_number,
+        add=ci_is_blocking,
+        label=REFIX_CI_PENDING_LABEL,
+        enabled_pr_label_keys=enabled_pr_label_keys,
+        error_collector=error_collector,
     )
+    return running_changed, ci_grace_pending

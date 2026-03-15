@@ -20,7 +20,13 @@ DEFAULT_CONFIG: AppConfig = {
     "ci_log_max_lines": 120,
     "write_result_to_comment": True,
     "auto_merge": False,
-    "enabled_pr_labels": ["running", "done", "merged", "auto_merge_requested"],
+    "enabled_pr_labels": [
+        "running",
+        "done",
+        "merged",
+        "auto_merge_requested",
+        "ci_pending",
+    ],
     "coderabbit_auto_resume": False,
     "coderabbit_auto_resume_triggers": {
         "rate_limit": True,
@@ -77,7 +83,7 @@ ALLOWED_REPOSITORY_KEYS = {"repo", "user_name", "user_email"}
 ALLOWED_CODERABBIT_AUTO_RESUME_TRIGGER_KEYS = {"rate_limit", "draft_detected"}
 
 # --- PR ラベルキー定義（config 用） ---
-PR_LABEL_KEYS = ("running", "done", "merged", "auto_merge_requested")
+PR_LABEL_KEYS = ("running", "done", "merged", "auto_merge_requested", "ci_pending")
 
 
 @dataclass
