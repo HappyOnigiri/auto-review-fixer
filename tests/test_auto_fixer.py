@@ -1829,16 +1829,18 @@ class TestSaveResultLog:
         assert ec.has_errors
         assert any("failed to save execution result" in r.message for r in ec._errors)
 
-    def test_falls_back_on_load_failure(self, mocker):
+    def test_returns_false_on_load_failure(self, mocker):
         fallback = self._make_state_comment("fallback log")
         mocker.patch(
             "auto_fixer.load_state_comment",
             side_effect=RuntimeError("load failed"),
         )
         mock_upsert = mocker.patch("auto_fixer.upsert_state_comment")
+        ec = ErrorCollector()
 
-        result = auto_fixer._save_result_log("owner/repo", 1, ["block1"], fallback)
+        result = auto_fixer._save_result_log("owner/repo", 1, ["block1"], fallback, ec)
 
-        assert result is True
-        call_kwargs = mock_upsert.call_args
-        assert call_kwargs.kwargs["_preloaded_state"] is fallback
+        assert result is False
+        mock_upsert.assert_not_called()
+        assert ec.has_errors
+        assert any("failed to reload state comment" in r.message for r in ec._errors)

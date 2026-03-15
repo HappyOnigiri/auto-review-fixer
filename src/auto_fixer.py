@@ -182,8 +182,13 @@ def _save_result_log(
             f"{_pr_ref(repo, pr_number)}: {e}",
             file=sys.stderr,
         )
-        fresh = state_comment
-        preloaded_state = state_comment
+        if error_collector:
+            error_collector.add_pr_error(
+                repo,
+                pr_number,
+                f"failed to reload state comment: {e}",
+            )
+        return False
     merged = merge_result_log_body(fresh.result_log_body, result_blocks)
     try:
         upsert_state_comment(
