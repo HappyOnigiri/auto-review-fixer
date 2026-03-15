@@ -1,5 +1,18 @@
 user_name: "HappyOnigiri"
 user_email: "253838257+NodeMeld@users.noreply.github.com"
+models:
+  summarize: "haiku"
+  fix: "sonnet"
+ci_log_max_lines: 120
+process_draft_prs: false
+auto_merge: true
+merge_method: "rebase"
+base_update_method: "rebase"
+coderabbit_auto_resume: true
+exclude_authors: ["*[[]bot]", "app/*"]
+exclude_labels: ["autorelease: *"]
+target_authors: ["HappyOnigiri"]
+auto_merge_authors: ["HappyOnigiri"]
 setup:
   commands:
     - run: pip install -r requirements.txt
