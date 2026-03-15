@@ -955,11 +955,23 @@ def update_done_label_if_completed(
             enabled_pr_label_keys=enabled_pr_label_keys,
             error_collector=error_collector,
         )
-    # CI ブロック時: ci-pending を付与、非 CI ブロック時: ci-pending を除去
+    # commits のみがブロック理由の場合も ci-pending を付与する。
+    # push 後に CI が再実行されるため、check_suite: completed で拾えるようにするため。
+    commits_only_blocking = (
+        not is_completed
+        and bool(commits_by_phase)
+        and not review_fix_failed
+        and state_saved
+        and not (
+            has_review_targets and (not review_fix_started or review_fix_added_commits)
+        )
+    )
+    # CI ブロック時 または commits のみがブロック理由の場合: ci-pending を付与
+    # それ以外: ci-pending を除去
     edit_pr_label(
         repo,
         pr_number,
-        add=ci_is_blocking,
+        add=ci_is_blocking or commits_only_blocking,
         label=REFIX_CI_PENDING_LABEL,
         enabled_pr_label_keys=enabled_pr_label_keys,
         error_collector=error_collector,
