@@ -183,7 +183,7 @@ def _save_result_log(
             file=sys.stderr,
         )
         fresh = state_comment
-        preloaded_state = None
+        preloaded_state = state_comment
     merged = merge_result_log_body(fresh.result_log_body, result_blocks)
     try:
         upsert_state_comment(
