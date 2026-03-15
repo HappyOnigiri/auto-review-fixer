@@ -40,4 +40,4 @@ jobs:
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           config-yaml: ${{ vars.REFIX_CONFIG_YAML }}
           # Use current branch code for self-testing; remove this line when copying to other repos.
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ github.event_name != 'check_suite' && github.head_ref || github.ref_name }}
