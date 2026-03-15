@@ -790,7 +790,12 @@ class TestCiPendingLabel:
         mocker.patch("pr_label.set_pr_running_label", return_value=True)
         mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
 
-        # review_fix_failed=True → non-CI block
+        # review_fix_failed=True → non-CI block; pr_data has ci-pending label already
+        pr_data_with_label = {
+            "reviews": [],
+            "comments": [],
+            "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
+        }
         pr_label.update_done_label_if_completed(
             repo="owner/repo",
             pr_number=6,
@@ -800,14 +805,14 @@ class TestCiPendingLabel:
             review_fix_failed=True,
             state_saved=True,
             commits_by_phase=[],
-            pr_data={"reviews": [], "comments": []},
+            pr_data=pr_data_with_label,
             review_comments=[],
             issue_comments=[],
             dry_run=False,
             summarize_only=False,
         )
 
-        # ci-pending should be removed (add=False) when non-CI is blocking
+        # ci-pending should be removed (add=False) when non-CI is blocking and label is present
         ci_pending_calls = [
             c
             for c in mock_edit.call_args_list
@@ -870,6 +875,11 @@ class TestCiPendingLabel:
             mocker,
             commits_by_phase=[("review", "abc123")],
             review_fix_failed=True,
+            pr_data={
+                "reviews": [],
+                "comments": [],
+                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
+            },
         )
 
         ci_pending_calls = [
@@ -894,6 +904,11 @@ class TestCiPendingLabel:
             commits_by_phase=[("review", "abc123")],
             has_review_targets=True,
             review_fix_started=False,
+            pr_data={
+                "reviews": [],
+                "comments": [],
+                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
+            },
         )
 
         ci_pending_calls = [
@@ -917,6 +932,11 @@ class TestCiPendingLabel:
             mocker,
             commits_by_phase=[("review", "abc123")],
             state_saved=False,
+            pr_data={
+                "reviews": [],
+                "comments": [],
+                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
+            },
         )
 
         ci_pending_calls = [
@@ -967,7 +987,11 @@ class TestCiPendingLabel:
             review_fix_failed=False,
             state_saved=True,
             commits_by_phase=[],
-            pr_data={"reviews": [], "comments": []},
+            pr_data={
+                "reviews": [],
+                "comments": [],
+                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
+            },
             review_comments=[],
             issue_comments=[],
             dry_run=False,
