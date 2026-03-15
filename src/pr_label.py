@@ -921,7 +921,7 @@ def update_done_label_if_completed(
                     )
             merge_triggered = label_modified
         # 完了時: ci-pending ラベルを除去
-        edit_pr_label(
+        ci_pending_changed = edit_pr_label(
             repo,
             pr_number,
             add=False,
@@ -929,7 +929,7 @@ def update_done_label_if_completed(
             enabled_pr_label_keys=enabled_pr_label_keys,
             error_collector=error_collector,
         )
-        return done_changed or merge_triggered, ci_grace_pending
+        return done_changed or merge_triggered or ci_pending_changed, ci_grace_pending
 
     if block_reasons:
         print(
@@ -968,7 +968,7 @@ def update_done_label_if_completed(
     )
     # CI ブロック時 または commits のみがブロック理由の場合: ci-pending を付与
     # それ以外: ci-pending を除去
-    edit_pr_label(
+    ci_pending_changed = edit_pr_label(
         repo,
         pr_number,
         add=ci_is_blocking or commits_only_blocking,
@@ -976,4 +976,4 @@ def update_done_label_if_completed(
         enabled_pr_label_keys=enabled_pr_label_keys,
         error_collector=error_collector,
     )
-    return running_changed, ci_grace_pending
+    return running_changed or ci_pending_changed, ci_grace_pending
