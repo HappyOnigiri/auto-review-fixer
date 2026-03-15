@@ -406,18 +406,21 @@ A template with comments is available at `.refix.sample.yaml` in this repository
 
 ## Running in CI with GitHub Actions
 
-This repository already includes the workflow used to run `refix` in GitHub Actions: `.github/workflows/run-auto-review.yml`.
+This repository already includes the workflows used to run `refix` in GitHub Actions:
+
+- `.github/workflows/run-refix.yml` — processes a single pull request
+- `.github/workflows/run-refix-batch.yml` — processes multiple repositories in batch mode
 
 ### What the workflow does
 
-The workflow:
+Each workflow invokes the composite action defined in `action.yml`, which:
 
 1. checks out the repository,
 2. installs Python 3.12 and Python dependencies,
 3. installs the Claude CLI,
-4. writes `.refix-batch.yaml` from the GitHub Actions variable `REFIX_CONFIG_YAML`,
+4. writes the config file from the `REFIX_CONFIG_YAML` environment variable,
 5. configures Git authentication for push operations, and
-6. changes to the `src` directory and runs `python auto_fixer.py --config ../.refix-batch.yaml`.
+6. runs `auto_fixer.py`.
 
 ### Required GitHub Actions configuration
 
