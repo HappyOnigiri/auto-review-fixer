@@ -2176,6 +2176,51 @@ class TestResolveActionTargets:
 
         assert result == []
 
+    def test_workflow_dispatch_event_returns_pr_number(self, mocker, tmp_path):
+        event_file = tmp_path / "event.json"
+        event_file.write_text('{"inputs": {"pr": "42"}}')
+        mocker.patch.dict(
+            "os.environ",
+            {
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_EVENT_PATH": str(event_file),
+            },
+        )
+
+        result = auto_fixer._resolve_action_targets("owner/repo")
+
+        assert result == [42]
+
+    def test_workflow_dispatch_event_with_invalid_pr_returns_empty(self, mocker, tmp_path):
+        event_file = tmp_path / "event.json"
+        event_file.write_text('{"inputs": {"pr": "abc"}}')
+        mocker.patch.dict(
+            "os.environ",
+            {
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_EVENT_PATH": str(event_file),
+            },
+        )
+
+        result = auto_fixer._resolve_action_targets("owner/repo")
+
+        assert result == []
+
+    def test_workflow_dispatch_event_without_pr_returns_empty(self, mocker, tmp_path):
+        event_file = tmp_path / "event.json"
+        event_file.write_text('{"inputs": {}}')
+        mocker.patch.dict(
+            "os.environ",
+            {
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_EVENT_PATH": str(event_file),
+            },
+        )
+
+        result = auto_fixer._resolve_action_targets("owner/repo")
+
+        assert result == []
+
     def test_missing_env_vars_exits(self, mocker):
         mocker.patch.dict("os.environ", {}, clear=True)
         # GITHUB_EVENT_NAME/PATH が設定されていない場合は sys.exit(1)
