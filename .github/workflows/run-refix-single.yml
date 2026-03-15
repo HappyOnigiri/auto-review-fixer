@@ -1,10 +1,19 @@
-name: Run Refix (Multi-repo)
+name: Run Refix (Single PR)
 
 on:
+  check_suite:
+    types: [completed]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+    inputs:
+      pr-number:
+        description: 'PR number to process'
+        required: false
+        type: number
 
 concurrency:
-  group: run-refix-multi
+  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || inputs.pr-number || 'dispatch' }}
   cancel-in-progress: false
 
 permissions:
@@ -29,7 +38,7 @@ jobs:
 
       - uses: ./
         with:
-          multi-repo: 'true'
+          pr-number: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || inputs.pr-number }}
           gh-token: ${{ secrets.GH_TOKEN }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           config-path: ${{ github.workspace }}/.refix.yaml
