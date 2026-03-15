@@ -9,6 +9,7 @@ auto_merge: true
 merge_method: "rebase"
 base_update_method: "rebase"
 coderabbit_auto_resume: true
+# "*[[]bot]" は [[]] でリテラルな角括弧をエスケープし、"[bot]" を含む著者（例: dependabot[bot]）にマッチする glob パターン
 exclude_authors: ["*[[]bot]", "app/*"]
 exclude_labels: ["autorelease: *"]
 target_authors: ["HappyOnigiri"]
