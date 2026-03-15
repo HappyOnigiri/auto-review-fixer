@@ -142,5 +142,6 @@ reviews:
     auto_incremental_review: true
     auto_pause_after_reviewed_commits: 0
     # Release Please が生成する PR をレビュー対象外にする
-    labels:
-    - "!autorelease: pending"
+    ignore_title_keywords:
+      - "chore(main): release"
+      - "chore: release"
