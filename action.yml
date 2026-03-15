@@ -20,6 +20,10 @@ inputs:
   claude-code-oauth-token:
     description: 'Claude Code OAuth token'
     required: true
+  multi-repo:
+    description: 'Run in multi-repo batch mode (scans all repos from config)'
+    required: false
+    default: 'false'
   dry-run:
     description: 'Run without making changes'
     required: false
@@ -66,7 +70,9 @@ runs:
     - name: Run Refix
       run: |
         cd .refix-tool/src
-        if [ -n "${{ inputs.pr-number }}" ]; then
+        if [ "${{ inputs.multi-repo }}" = "true" ]; then
+          ARGS=()
+        elif [ -n "${{ inputs.pr-number }}" ]; then
           ARGS=("--repo" "${{ inputs.repo }}" "--pr" "${{ inputs.pr-number }}")
         else
           ARGS=("--action" "--repo" "${{ inputs.repo }}")
