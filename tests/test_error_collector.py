@@ -1,7 +1,5 @@
 """Unit tests for error_collector module."""
 
-from unittest.mock import patch
-
 import ci_log
 from error_collector import ErrorCollector
 
@@ -41,13 +39,13 @@ def test_print_summary_empty(capsys):
     assert captured.out == ""
 
 
-def test_print_summary_with_errors(capsys):
+def test_print_summary_with_errors(capsys, mocker):
     collector = ErrorCollector()
     collector.add_repo_error("owner/repo", "fetch failed")
     collector.add_pr_error("owner/repo", 7, "pr error")
 
-    with patch.object(ci_log, "_IS_CI", False):
-        collector.print_summary()
+    mocker.patch.object(ci_log, "_IS_CI", False)
+    collector.print_summary()
 
     captured = capsys.readouterr()
     assert "Error summary (2 error(s))" in captured.out

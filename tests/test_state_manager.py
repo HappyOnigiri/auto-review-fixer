@@ -1,7 +1,6 @@
 """Unit tests for state_manager."""
 
 import json
-from unittest.mock import Mock, patch
 
 import pytest
 
@@ -154,7 +153,9 @@ def test_create_state_entry_uses_requested_timezone():
     assert entry.processed_at.endswith("UTC")
 
 
-def test_load_state_comment_extracts_latest_marker_comment_and_ids():
+def test_load_state_comment_extracts_latest_marker_comment_and_ids(
+    mocker, make_cmd_result
+):
     state_body = state_manager.render_state_comment(
         [
             state_manager.StateEntry(
@@ -165,24 +166,19 @@ def test_load_state_comment_extracts_latest_marker_comment_and_ids():
         ],
         result_log_body="#### レビュー修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
     )
-    result = Mock(
-        returncode=0,
-        stdout=json.dumps(
+    stdout = json.dumps(
+        [
             [
-                [
-                    {"id": 1, "body": "hello"},
-                    {"id": 2, "body": state_body, "user": {"login": "test-bot"}},
-                ]
+                {"id": 1, "body": "hello"},
+                {"id": 2, "body": state_body, "user": {"login": "test-bot"}},
             ]
-        ),
-        stderr="",
+        ]
     )
-
-    with (
-        patch("state_manager.run_command", return_value=result),
-        patch("state_manager._get_authenticated_github_user", return_value="test-bot"),
-    ):
-        comment = state_manager.load_state_comment("owner/repo", 1)
+    mocker.patch("state_manager.run_command", return_value=make_cmd_result(stdout))
+    mocker.patch(
+        "state_manager._get_authenticated_github_user", return_value="test-bot"
+    )
+    comment = state_manager.load_state_comment("owner/repo", 1)
 
     assert comment.github_comment_id == 2
     assert comment.processed_ids == {"r123"}
@@ -205,41 +201,39 @@ def test_parse_processed_ids_ignores_report_section_content():
     assert state_manager.parse_processed_ids(text) == []
 
 
-def test_upsert_state_comment_creates_when_missing():
-    with (
-        patch(
-            "state_manager.load_state_comment",
-            return_value=state_manager.StateComment(
-                github_comment_id=None,
-                body="",
-                entries=[],
-                processed_ids=set(),
-                archived_ids=set(),
-            ),
+def test_upsert_state_comment_creates_when_missing(mocker, make_cmd_result):
+    mocker.patch(
+        "state_manager.load_state_comment",
+        return_value=state_manager.StateComment(
+            github_comment_id=None,
+            body="",
+            entries=[],
+            processed_ids=set(),
+            archived_ids=set(),
         ),
-        patch(
-            "state_manager.run_command",
-            return_value=Mock(returncode=0, stdout="", stderr=""),
-        ) as mock_run,
-    ):
-        state_manager.upsert_state_comment(
-            "owner/repo",
-            7,
-            [
-                state_manager.StateEntry(
-                    comment_id="r123",
-                    url="https://github.com/owner/repo/pull/7#discussion_r123",
-                    processed_at="2026-03-11 12:00:00",
-                )
-            ],
-        )
+    )
+    mock_run = mocker.patch(
+        "state_manager.run_command",
+        return_value=make_cmd_result(""),
+    )
+    state_manager.upsert_state_comment(
+        "owner/repo",
+        7,
+        [
+            state_manager.StateEntry(
+                comment_id="r123",
+                url="https://github.com/owner/repo/pull/7#discussion_r123",
+                processed_at="2026-03-11 12:00:00",
+            )
+        ],
+    )
 
     cmd = mock_run.call_args.args[0]
     assert cmd[:5] == ["gh", "pr", "comment", "7", "--repo"]
     assert "owner/repo" in cmd
 
 
-def test_upsert_state_comment_updates_when_existing():
+def test_upsert_state_comment_updates_when_existing(mocker, make_cmd_result):
     existing = state_manager.StateComment(
         github_comment_id=99,
         body="old",
@@ -254,24 +248,22 @@ def test_upsert_state_comment_updates_when_existing():
         archived_ids=set(),
     )
 
-    with (
-        patch("state_manager.load_state_comment", return_value=existing),
-        patch(
-            "state_manager.run_command",
-            return_value=Mock(returncode=0, stdout="", stderr=""),
-        ) as mock_run,
-    ):
-        state_manager.upsert_state_comment(
-            "owner/repo",
-            7,
-            [
-                state_manager.StateEntry(
-                    comment_id="discussion_r456",
-                    url="https://github.com/owner/repo/pull/7#discussion_r456",
-                    processed_at="2026-03-11 12:05:00",
-                )
-            ],
-        )
+    mocker.patch("state_manager.load_state_comment", return_value=existing)
+    mock_run = mocker.patch(
+        "state_manager.run_command",
+        return_value=make_cmd_result(""),
+    )
+    state_manager.upsert_state_comment(
+        "owner/repo",
+        7,
+        [
+            state_manager.StateEntry(
+                comment_id="discussion_r456",
+                url="https://github.com/owner/repo/pull/7#discussion_r456",
+                processed_at="2026-03-11 12:05:00",
+            )
+        ],
+    )
 
     cmd = mock_run.call_args.args[0]
     assert cmd[:4] == ["gh", "api", "repos/owner/repo/issues/comments/99", "-X"]
@@ -279,30 +271,30 @@ def test_upsert_state_comment_updates_when_existing():
     assert any(arg.startswith("body=") for arg in cmd)
 
 
-def test_upsert_state_comment_writes_result_log_body_without_new_entries():
-    with (
-        patch(
-            "state_manager.load_state_comment",
-            return_value=state_manager.StateComment(
-                github_comment_id=None,
-                body="",
-                entries=[],
-                processed_ids=set(),
-                archived_ids=set(),
-                result_log_body="",
-            ),
+def test_upsert_state_comment_writes_result_log_body_without_new_entries(
+    mocker, make_cmd_result
+):
+    mocker.patch(
+        "state_manager.load_state_comment",
+        return_value=state_manager.StateComment(
+            github_comment_id=None,
+            body="",
+            entries=[],
+            processed_ids=set(),
+            archived_ids=set(),
+            result_log_body="",
         ),
-        patch(
-            "state_manager.run_command",
-            return_value=Mock(returncode=0, stdout="", stderr=""),
-        ) as mock_run,
-    ):
-        state_manager.upsert_state_comment(
-            "owner/repo",
-            7,
-            [],
-            result_log_body="#### CI 修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
-        )
+    )
+    mock_run = mocker.patch(
+        "state_manager.run_command",
+        return_value=make_cmd_result(""),
+    )
+    state_manager.upsert_state_comment(
+        "owner/repo",
+        7,
+        [],
+        result_log_body="#### CI 修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
+    )
 
     cmd = mock_run.call_args.args[0]
     assert cmd[:5] == ["gh", "pr", "comment", "7", "--repo"]

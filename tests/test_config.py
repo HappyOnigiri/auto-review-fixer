@@ -1,7 +1,5 @@
 """Unit tests for config loading and repository expansion."""
 
-from unittest.mock import Mock, patch
-
 import pytest
 
 import auto_fixer
@@ -456,12 +454,13 @@ class TestExpandRepositories:
         expanded = auto_fixer.expand_repositories(repos)
         assert expanded == repos
 
-    def test_expand_wildcard(self):
+    def test_expand_wildcard(self, mocker, make_cmd_result):
         repos: list[RepositoryEntry] = [{"repo": "owner/*", "user_name": "bot"}]
-        mock_stdout = "owner/repo1\nowner/repo2\n"
-        with patch("config.run_command") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout=mock_stdout, stderr="")
-            expanded = auto_fixer.expand_repositories(repos)
+        mock_run = mocker.patch(
+            "config.run_command",
+            return_value=make_cmd_result("owner/repo1\nowner/repo2\n"),
+        )
+        expanded = auto_fixer.expand_repositories(repos)
 
         assert len(expanded) == 2
         assert expanded[0] == {"repo": "owner/repo1", "user_name": "bot"}
@@ -482,32 +481,33 @@ class TestExpandRepositories:
             check=False,
         )
 
-    def test_expand_wildcard_fail_aborts(self):
+    def test_expand_wildcard_fail_aborts(self, mocker, make_cmd_result):
         repos: list[RepositoryEntry] = [{"repo": "owner/*"}]
-        with patch("config.run_command") as mock_run:
-            mock_run.return_value = Mock(returncode=1, stdout="", stderr="error")
-            with pytest.raises(ConfigError) as excinfo:
-                auto_fixer.expand_repositories(repos)
+        mocker.patch(
+            "config.run_command",
+            return_value=make_cmd_result("", returncode=1, stderr="error"),
+        )
+        with pytest.raises(ConfigError) as excinfo:
+            auto_fixer.expand_repositories(repos)
 
         assert "failed to expand owner/*" in str(excinfo.value)
 
-    def test_expand_wildcard_empty_results_aborts(self):
+    def test_expand_wildcard_empty_results_aborts(self, mocker, make_cmd_result):
         repos: list[RepositoryEntry] = [{"repo": "owner/*"}]
-        with patch("config.run_command") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
-            with pytest.raises(ConfigError) as excinfo:
-                auto_fixer.expand_repositories(repos)
+        mocker.patch("config.run_command", return_value=make_cmd_result(""))
+        with pytest.raises(ConfigError) as excinfo:
+            auto_fixer.expand_repositories(repos)
 
         assert "no repositories found for owner/*" in str(excinfo.value)
 
-    def test_expand_wildcard_with_include_forks_off(self):
+    def test_expand_wildcard_with_include_forks_off(self, mocker, make_cmd_result):
         repos: list[RepositoryEntry] = [{"repo": "owner/*"}]
-        mock_stdout = "owner/repo1\n"
-        with patch("config.run_command") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout=mock_stdout, stderr="")
-            expanded = auto_fixer.expand_repositories(
-                repos, include_fork_repositories=False
-            )
+        mock_run = mocker.patch(
+            "config.run_command", return_value=make_cmd_result("owner/repo1\n")
+        )
+        expanded = auto_fixer.expand_repositories(
+            repos, include_fork_repositories=False
+        )
 
         assert expanded == [{"repo": "owner/repo1"}]
         mock_run.assert_called_once_with(

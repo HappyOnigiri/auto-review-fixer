@@ -1,8 +1,6 @@
 """Unit tests for ci_check helpers and are_all_ci_checks_successful."""
 
 import json
-from unittest.mock import Mock, patch
-
 
 import auto_fixer
 import ci_check
@@ -141,7 +139,9 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
         )
         assert "line1" in prompt
 
-    def test_collect_ci_failure_materials_fetches_unique_run_logs(self):
+    def test_collect_ci_failure_materials_fetches_unique_run_logs(
+        self, mocker, make_cmd_result
+    ):
         failing_contexts = [
             {
                 "name": "lint",
@@ -165,15 +165,15 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
             ]
         )
 
-        with patch(
+        mock_run = mocker.patch(
             "ci_check.run_command",
-            return_value=Mock(returncode=0, stdout=log_text, stderr=""),
-        ) as mock_run:
-            materials = auto_fixer.collect_ci_failure_materials(
-                "owner/repo",
-                failing_contexts,
-                max_lines=120,
-            )
+            return_value=make_cmd_result(log_text),
+        )
+        materials = auto_fixer.collect_ci_failure_materials(
+            "owner/repo",
+            failing_contexts,
+            max_lines=120,
+        )
 
         assert len(materials) == 1
         assert materials[0]["run_id"] == "12345"
@@ -188,211 +188,215 @@ test\tRun tests\t1 failed, 74 passed in 0.67s
 class TestAreAllCiChecksSuccessful:
     """Tests for _are_all_ci_checks_successful with ci_empty_as_success / ci_empty_grace_minutes."""
 
-    def test_empty_checks_ci_empty_as_success_false_returns_false(self):
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo", 1, ci_empty_as_success=False
-            )
+    def test_empty_checks_ci_empty_as_success_false_returns_false(
+        self, mocker, make_cmd_result
+    ):
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("[]"),  # check-runs (empty)
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo", 1, ci_empty_as_success=False
+        )
         assert result is False
-        assert mock_run.call_count == 2
 
-    def test_empty_checks_commit_old_treats_as_success(self):
+    def test_empty_checks_commit_old_treats_as_success(self, mocker, make_cmd_result):
         from datetime import datetime, timezone, timedelta
 
         old_date = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
-                Mock(returncode=0, stdout=f'"{old_date}"', stderr=""),  # commit date
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=True,
-                ci_empty_grace_minutes=5,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("[]"),  # check-runs (empty)
+                make_cmd_result(f'"{old_date}"'),  # commit date
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=True,
+            ci_empty_grace_minutes=5,
+        )
         assert result is True
-        assert mock_run.call_count == 3
 
-    def test_empty_checks_commit_recent_returns_false(self):
+    def test_empty_checks_commit_recent_returns_false(self, mocker, make_cmd_result):
         from datetime import datetime, timezone, timedelta
 
         recent_date = (datetime.now(timezone.utc) - timedelta(minutes=2)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=0, stdout="[]", stderr=""),  # check-runs (empty)
-                Mock(returncode=0, stdout=f'"{recent_date}"', stderr=""),  # commit date
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=True,
-                ci_empty_grace_minutes=5,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("[]"),  # check-runs (empty)
+                make_cmd_result(f'"{recent_date}"'),  # commit date
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=True,
+            ci_empty_grace_minutes=5,
+        )
         assert result is None  # grace period: returns None so callers skip caching
-        assert mock_run.call_count == 3
 
-    def test_non_empty_checks_all_success_returns_true(self):
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(
-                    returncode=0,
-                    stdout='[{"check_runs": [{"name": "build", "status": "completed", "conclusion": "success"}]}]',
-                    stderr="",
-                ),  # check-runs (non-empty, all success)
-            ]
-            result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
+    def test_non_empty_checks_all_success_returns_true(self, mocker, make_cmd_result):
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result(
+                    '[{"check_runs": [{"name": "build", "status": "completed", "conclusion": "success"}]}]'
+                ),
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
         assert result is True
-        assert mock_run.call_count == 2
 
-    def test_check_runs_403_no_classic_old_commit_returns_true(self):
+    def test_check_runs_403_no_classic_old_commit_returns_true(
+        self, mocker, make_cmd_result
+    ):
         """check-runs 403 + classic なし + 古いコミット → ci_empty_as_success=True で True"""
         from datetime import datetime, timezone, timedelta
 
         old_date = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-                Mock(returncode=0, stdout=f'"{old_date}"', stderr=""),  # commit date
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=True,
-                ci_empty_grace_minutes=5,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+                make_cmd_result(f'"{old_date}"'),  # commit date
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=True,
+            ci_empty_grace_minutes=5,
+        )
         assert result is True
 
-    def test_check_runs_403_no_classic_recent_commit_returns_none(self):
+    def test_check_runs_403_no_classic_recent_commit_returns_none(
+        self, mocker, make_cmd_result
+    ):
         """check-runs 403 + classic なし + 新しいコミット → グレースピリオド内で None"""
         from datetime import datetime, timezone, timedelta
 
         recent_date = (datetime.now(timezone.utc) - timedelta(minutes=2)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-                Mock(returncode=0, stdout=f'"{recent_date}"', stderr=""),  # commit date
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=True,
-                ci_empty_grace_minutes=5,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+                make_cmd_result(f'"{recent_date}"'),  # commit date
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=True,
+            ci_empty_grace_minutes=5,
+        )
         assert result is None
 
-    def test_check_runs_403_classic_success_returns_true(self):
+    def test_check_runs_403_classic_success_returns_true(self, mocker, make_cmd_result):
         """check-runs 403 + classic SUCCESS → classic で True と判定"""
         classic_response = '{"state": "success", "statuses": [{"context": "ci/build", "state": "success", "target_url": "https://ci.example.com/build/1"}]}'
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout=classic_response, stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=True,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result(classic_response),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=True,
+        )
         assert result is True
 
-    def test_check_runs_403_ci_empty_as_success_false_returns_false(self):
+    def test_check_runs_403_ci_empty_as_success_false_returns_false(
+        self, mocker, make_cmd_result
+    ):
         """check-runs 403 + ci_empty_as_success=False → 空を失敗扱いで False"""
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=False,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=False,
+        )
         assert result is False
 
-    def test_check_runs_403_info_log_includes_repo_name(self, capsys):
+    def test_check_runs_403_info_log_includes_repo_name(
+        self, capsys, mocker, make_cmd_result
+    ):
         """CI 未設定の正常系ログに owner/repo が含まれることを確認。"""
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                1,
-                ci_empty_as_success=False,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            1,
+            ci_empty_as_success=False,
+        )
         assert result is False
         out = capsys.readouterr().out
         assert "owner/repo PR #1" in out
@@ -400,86 +404,94 @@ class TestAreAllCiChecksSuccessful:
 
 
 class TestErrorCollectorIntegration:
-    def test_collect_ci_failure_materials_subprocess_error_adds_pr_error(self):
+    def test_collect_ci_failure_materials_subprocess_error_adds_pr_error(self, mocker):
         ec = ErrorCollector()
         failing_contexts = [{"name": "lint", "status": "FAILURE", "run_id": "12345"}]
-        with patch(
+        mocker.patch(
             "ci_check.run_command", side_effect=SubprocessError("network error")
-        ):
-            materials = ci_check.collect_ci_failure_materials(
-                "owner/repo",
-                failing_contexts,
-                max_lines=120,
-                error_collector=ec,
-                pr_number=5,
-            )
+        )
+        materials = ci_check.collect_ci_failure_materials(
+            "owner/repo",
+            failing_contexts,
+            max_lines=120,
+            error_collector=ec,
+            pr_number=5,
+        )
         assert materials == []
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#5"
         assert "failed to fetch CI logs" in ec._errors[0].message
 
-    def test_collect_ci_failure_materials_nonzero_exit_adds_repo_error(self):
+    def test_collect_ci_failure_materials_nonzero_exit_adds_repo_error(
+        self, mocker, make_cmd_result
+    ):
         ec = ErrorCollector()
         failing_contexts = [{"name": "lint", "status": "FAILURE", "run_id": "12345"}]
-        with patch(
+        mocker.patch(
             "ci_check.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="not found"),
-        ):
-            materials = ci_check.collect_ci_failure_materials(
-                "owner/repo",
-                failing_contexts,
-                max_lines=120,
-                error_collector=ec,
-            )
+            return_value=make_cmd_result("", returncode=1, stderr="not found"),
+        )
+        materials = ci_check.collect_ci_failure_materials(
+            "owner/repo",
+            failing_contexts,
+            max_lines=120,
+            error_collector=ec,
+        )
         assert materials == []
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo"
         assert "failed to fetch failed CI logs" in ec._errors[0].message
 
-    def test_are_all_ci_checks_successful_head_sha_failure_adds_pr_error(self):
+    def test_are_all_ci_checks_successful_head_sha_failure_adds_pr_error(
+        self, mocker, make_cmd_result
+    ):
         ec = ErrorCollector()
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=1, stdout="", stderr="error"),  # head SHA fails
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo", 3, error_collector=ec
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result("", returncode=1, stderr="error"),  # head SHA fails
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo", 3, error_collector=ec
+        )
         assert result is None  # head SHA 取得失敗は None を返す
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#3"
 
-    def test_are_all_ci_checks_successful_check_runs_403_no_error(self):
+    def test_are_all_ci_checks_successful_check_runs_403_no_error(
+        self, mocker, make_cmd_result
+    ):
         # CI が設定されていないリポジトリでは 403 が返るが、これは想定内の挙動のため
         # error_collector にエラーを追加せず、warning ログのみ出力する。
         ec = ErrorCollector()
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch(
-                "pr_reviewer.run_command",
-                return_value=Mock(returncode=0, stdout="{}", stderr=""),
-            ),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=1, stdout="", stderr="HTTP 403"),  # check-runs 403
-            ]
-            result = ci_check.are_all_ci_checks_successful(
-                "owner/repo",
-                3,
-                ci_empty_as_success=False,
-                error_collector=ec,
-            )
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result("", returncode=1, stderr="HTTP 403"),  # check-runs 403
+            ],
+        )
+        mocker.patch(
+            "pr_reviewer.run_command",
+            return_value=make_cmd_result("{}"),
+        )
+        result = ci_check.are_all_ci_checks_successful(
+            "owner/repo",
+            3,
+            ci_empty_as_success=False,
+            error_collector=ec,
+        )
         assert result is False
         assert not ec.has_errors  # 403 はエラーとして記録しない
 
-    def test_are_all_ci_checks_successful_filters_workflow_dispatch(self):
+    def test_are_all_ci_checks_successful_filters_workflow_dispatch(
+        self, mocker, make_cmd_result
+    ):
         """workflow_dispatch の failure check run はフィルタされ、残りの成功 run で True を返す"""
         check_runs_response = json.dumps(
             [
@@ -504,23 +516,24 @@ class TestErrorCollectorIntegration:
             ]
         )
 
+        mocker.patch(
+            "ci_check.run_command",
+            side_effect=[
+                make_cmd_result('"abc123"'),  # head SHA
+                make_cmd_result(check_runs_response),  # check-runs
+            ],
+        )
+
         def pr_run_command(cmd, **kwargs):
             url = cmd[2] if len(cmd) > 2 else ""
             if "actions/runs/999" in url:
-                return Mock(returncode=0, stdout="workflow_dispatch", stderr="")
+                return make_cmd_result("workflow_dispatch")
             if "actions/runs/888" in url:
-                return Mock(returncode=0, stdout="push", stderr="")
+                return make_cmd_result("push")
             # classic statuses
-            return Mock(returncode=0, stdout='{"statuses": []}', stderr="")
+            return make_cmd_result('{"statuses": []}')
 
-        with (
-            patch("ci_check.run_command") as mock_run,
-            patch("pr_reviewer.run_command", side_effect=pr_run_command),
-        ):
-            mock_run.side_effect = [
-                Mock(returncode=0, stdout='"abc123"', stderr=""),  # head SHA
-                Mock(returncode=0, stdout=check_runs_response, stderr=""),  # check-runs
-            ]
-            result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
+        mocker.patch("pr_reviewer.run_command", side_effect=pr_run_command)
+        result = ci_check.are_all_ci_checks_successful("owner/repo", 1)
 
         assert result is True
