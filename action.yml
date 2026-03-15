@@ -44,7 +44,7 @@ runs:
       with:
         repository: HappyOnigiri/Refix
         path: .refix-tool
-        ref: ${{ github.action_ref || 'main' }}
+        ref: main
 
     - uses: actions/setup-python@v5
       with:
