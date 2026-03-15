@@ -2237,13 +2237,19 @@ def _fetch_ci_pending_prs(repo: str) -> list[int]:
         REFIX_CI_PENDING_LABEL,
         "--state",
         "open",
+        "--limit",
+        "1000",
         "--json",
         "number",
         "--jq",
         ".[].number",
     ]
     result = run_command(cmd, check=False)
-    if result.returncode != 0 or not result.stdout.strip():
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"_fetch_ci_pending_prs: gh pr list failed (exit {result.returncode}): {result.stderr}"
+        )
+    if not result.stdout.strip():
         return []
     return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
 
