@@ -816,6 +816,138 @@ class TestCiPendingLabel:
         assert len(ci_pending_calls) == 1
         assert ci_pending_calls[0].kwargs["add"] is False
 
+    def _call_update_done_label(self, mocker, **overrides):
+        """update_done_label_if_completed のデフォルト引数ヘルパー。"""
+        defaults = dict(
+            repo="owner/repo",
+            pr_number=10,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
+        defaults.update(overrides)
+        return pr_label.update_done_label_if_completed(**defaults)  # type: ignore[arg-type]
+
+    def test_ci_pending_added_when_commits_only_blocking(self, mocker):
+        """commits_by_phase 非空 + 他ブロックなし → ci-pending 付与"""
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mocker.patch("pr_label._trigger_pr_auto_merge")
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+
+        self._call_update_done_label(mocker, commits_by_phase=[("review", "abc123")])
+
+        ci_pending_calls = [
+            c
+            for c in mock_edit.call_args_list
+            if c.kwargs.get("label") == pr_label.REFIX_CI_PENDING_LABEL
+        ]
+        assert len(ci_pending_calls) == 1
+        assert ci_pending_calls[0].kwargs["add"] is True
+
+    def test_ci_pending_not_added_when_commits_and_review_fix_failed(self, mocker):
+        """commits_by_phase 非空 + review_fix_failed=True → ci-pending 除去"""
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+
+        self._call_update_done_label(
+            mocker,
+            commits_by_phase=[("review", "abc123")],
+            review_fix_failed=True,
+        )
+
+        ci_pending_calls = [
+            c
+            for c in mock_edit.call_args_list
+            if c.kwargs.get("label") == pr_label.REFIX_CI_PENDING_LABEL
+        ]
+        assert len(ci_pending_calls) == 1
+        assert ci_pending_calls[0].kwargs["add"] is False
+
+    def test_ci_pending_not_added_when_commits_and_unstarted_review(self, mocker):
+        """commits_by_phase 非空 + has_review_targets=True, review_fix_started=False → ci-pending 除去"""
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+
+        self._call_update_done_label(
+            mocker,
+            commits_by_phase=[("review", "abc123")],
+            has_review_targets=True,
+            review_fix_started=False,
+        )
+
+        ci_pending_calls = [
+            c
+            for c in mock_edit.call_args_list
+            if c.kwargs.get("label") == pr_label.REFIX_CI_PENDING_LABEL
+        ]
+        assert len(ci_pending_calls) == 1
+        assert ci_pending_calls[0].kwargs["add"] is False
+
+    def test_ci_pending_not_added_when_commits_and_state_not_saved(self, mocker):
+        """commits_by_phase 非空 + state_saved=False → ci-pending 除去"""
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+
+        self._call_update_done_label(
+            mocker,
+            commits_by_phase=[("review", "abc123")],
+            state_saved=False,
+        )
+
+        ci_pending_calls = [
+            c
+            for c in mock_edit.call_args_list
+            if c.kwargs.get("label") == pr_label.REFIX_CI_PENDING_LABEL
+        ]
+        assert len(ci_pending_calls) == 1
+        assert ci_pending_calls[0].kwargs["add"] is False
+
+    def test_ci_pending_added_when_ci_grace_pending(self, mocker):
+        """are_all_ci_checks_successful → None → ci_is_blocking=True, ci_grace_pending=True"""
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=None)
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+
+        _, ci_grace_pending = self._call_update_done_label(mocker)
+
+        assert ci_grace_pending is True
+        ci_pending_calls = [
+            c
+            for c in mock_edit.call_args_list
+            if c.kwargs.get("label") == pr_label.REFIX_CI_PENDING_LABEL
+        ]
+        assert len(ci_pending_calls) == 1
+        assert ci_pending_calls[0].kwargs["add"] is True
+
     def test_update_done_label_removes_ci_pending_when_completed(self, mocker):
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
