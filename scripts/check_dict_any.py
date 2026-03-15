@@ -66,10 +66,13 @@ def _check_file(path: Path) -> list[str]:
             continue
         types = [t.type for t in rest]
         strings = [t.string for t in rest]
-        if (
-            types == [tokenize.OP, tokenize.NAME, tokenize.OP, tokenize.NAME, tokenize.OP]
-            and strings == ["[", "str", ",", "Any", "]"]
-        ):
+        if types == [
+            tokenize.OP,
+            tokenize.NAME,
+            tokenize.OP,
+            tokenize.NAME,
+            tokenize.OP,
+        ] and strings == ["[", "str", ",", "Any", "]"]:
             line_no = tok.start[0]
             if line_no not in ok_lines:
                 matched = tok.string + "".join(strings)
