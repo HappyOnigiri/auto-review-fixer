@@ -1586,15 +1586,30 @@ class TestTargetAuthorsFilter:
 
     def test_wildcard_pattern_matches(self, capsys):
         prs = [self._make_pr(1, author_login="dep-bot")]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
         with (
             patch("auto_fixer.fetch_open_prs", return_value=prs),
-            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
         ):
             auto_fixer.process_repo(
-                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+                {"repo": "owner/repo"}, config=self._base_cfg(["dep-?ot"])
             )
 
-        mock_fetch.assert_not_called()
+        mock_fetch.assert_called_once()
 
     def test_wildcard_pattern_matches_prefix(self, capsys):
         prs = [self._make_pr(1, author_login="dep-xyz")]
