@@ -1770,3 +1770,75 @@ class TestErrorCollectorInProcessSinglePr:
         assert ec.has_errors
         assert any("owner/repo#1" == r.scope for r in ec._errors)
         assert any("Failed to fetch issue comments" in r.message for r in ec._errors)
+
+
+class TestSaveResultLog:
+    """Tests for the _save_result_log helper function."""
+
+    def _make_state_comment(self, result_log_body: str = "") -> StateComment:
+        return StateComment(
+            github_comment_id=None,
+            body="",
+            entries=[],
+            processed_ids=set(),
+            archived_ids=set(),
+            result_log_body=result_log_body,
+        )
+
+    def test_returns_false_when_no_blocks(self, mocker):
+        mock_upsert = mocker.patch("auto_fixer.upsert_state_comment")
+        mock_load = mocker.patch("auto_fixer.load_state_comment")
+
+        result = auto_fixer._save_result_log(
+            "owner/repo", 1, [], self._make_state_comment()
+        )
+
+        assert result is False
+        mock_load.assert_not_called()
+        mock_upsert.assert_not_called()
+
+    def test_returns_true_on_success(self, mocker):
+        fresh = self._make_state_comment("existing log")
+        mocker.patch("auto_fixer.load_state_comment", return_value=fresh)
+        mock_upsert = mocker.patch("auto_fixer.upsert_state_comment")
+
+        result = auto_fixer._save_result_log(
+            "owner/repo", 1, ["block1"], self._make_state_comment()
+        )
+
+        assert result is True
+        call_kwargs = mock_upsert.call_args
+        assert call_kwargs.kwargs["_preloaded_state"] is fresh
+
+    def test_returns_false_on_upsert_failure(self, mocker):
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=self._make_state_comment(),
+        )
+        mocker.patch(
+            "auto_fixer.upsert_state_comment",
+            side_effect=RuntimeError("upsert failed"),
+        )
+        ec = ErrorCollector()
+
+        result = auto_fixer._save_result_log(
+            "owner/repo", 1, ["block1"], self._make_state_comment(), ec
+        )
+
+        assert result is False
+        assert ec.has_errors
+        assert any("failed to save execution result" in r.message for r in ec._errors)
+
+    def test_falls_back_on_load_failure(self, mocker):
+        fallback = self._make_state_comment("fallback log")
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=RuntimeError("load failed"),
+        )
+        mock_upsert = mocker.patch("auto_fixer.upsert_state_comment")
+
+        result = auto_fixer._save_result_log("owner/repo", 1, ["block1"], fallback)
+
+        assert result is True
+        call_kwargs = mock_upsert.call_args
+        assert call_kwargs.kwargs["_preloaded_state"] is fallback

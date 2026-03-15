@@ -299,3 +299,30 @@ def test_upsert_state_comment_writes_result_log_body_without_new_entries(
     cmd = mock_run.call_args.args[0]
     assert cmd[:5] == ["gh", "pr", "comment", "7", "--repo"]
     assert "#### CI 修正" in cmd[-1]
+
+
+def test_upsert_state_comment_skips_load_with_preloaded_state(mocker, make_cmd_result):
+    preloaded = state_manager.StateComment(
+        github_comment_id=None,
+        body="",
+        entries=[],
+        processed_ids=set(),
+        archived_ids=set(),
+        result_log_body="",
+    )
+    mock_load = mocker.patch("state_manager.load_state_comment")
+    mock_run = mocker.patch(
+        "state_manager.run_command",
+        return_value=make_cmd_result(""),
+    )
+    state_manager.upsert_state_comment(
+        "owner/repo",
+        7,
+        [],
+        result_log_body="#### CI 修正\n\n**実行日時:** 2026-03-12 10:00:00 JST",
+        _preloaded_state=preloaded,
+    )
+
+    mock_load.assert_not_called()
+    cmd = mock_run.call_args.args[0]
+    assert cmd[:5] == ["gh", "pr", "comment", "7", "--repo"]

@@ -160,6 +160,53 @@ def _pr_ref(repo: str, pr_number: int) -> str:
     return f"{repo} PR #{pr_number}"
 
 
+def _save_result_log(
+    repo: str,
+    pr_number: int,
+    result_blocks: list[str],
+    state_comment: StateComment,
+    error_collector: ErrorCollector | None = None,
+) -> bool:
+    """result_log_body のみを state comment に保存する。
+
+    Returns True if saved successfully, False if skipped or failed.
+    """
+    if not result_blocks:
+        return False
+    try:
+        fresh = load_state_comment(repo, pr_number)
+    except Exception as e:
+        print(
+            f"Warning: failed to reload state comment for "
+            f"{_pr_ref(repo, pr_number)}: {e}",
+            file=sys.stderr,
+        )
+        fresh = state_comment
+    merged = merge_result_log_body(fresh.result_log_body, result_blocks)
+    try:
+        upsert_state_comment(
+            repo,
+            pr_number,
+            [],
+            result_log_body=merged,
+            _preloaded_state=fresh,
+        )
+        return True
+    except Exception as e:
+        print(
+            f"Warning: failed to save execution result for "
+            f"{_pr_ref(repo, pr_number)}: {e}",
+            file=sys.stderr,
+        )
+        if error_collector:
+            error_collector.add_pr_error(
+                repo,
+                pr_number,
+                f"failed to save execution result: {e}",
+            )
+        return False
+
+
 def _fetch_pr_context(
     ctx: PRContext,
     pr_data: PRData,
@@ -451,24 +498,7 @@ def _run_ci_fix_phase(
                         "ci-fix", e.stdout, ctx.state_comment_timezone
                     )
                 )
-            if result_blocks:
-                try:
-                    _fresh = load_state_comment(repo, pr_number)
-                except Exception as e:
-                    print(
-                        f"Warning: failed to reload state comment for {_pr_ref(repo, pr_number)}: {e}",
-                        file=sys.stderr,
-                    )
-                    _fresh = state_comment
-                _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
-                try:
-                    upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
-                except Exception as _save_err:
-                    print(
-                        "Warning: failed to save execution result for "
-                        f"{_pr_ref(repo, pr_number)}: {_save_err}",
-                        file=sys.stderr,
-                    )
+            _save_result_log(repo, pr_number, result_blocks, state_comment)
         raise
     if ctx.write_result_to_comment and stdout:
         result_blocks.append(
@@ -630,24 +660,7 @@ def _run_merge_phase_merge(
                             ctx.state_comment_timezone,
                         )
                     )
-                if result_blocks:
-                    try:
-                        _fresh = load_state_comment(repo, pr_number)
-                    except Exception:
-                        _fresh = state_comment
-                    _merged = merge_result_log_body(
-                        _fresh.result_log_body, result_blocks
-                    )
-                    try:
-                        upsert_state_comment(
-                            repo, pr_number, [], result_log_body=_merged
-                        )
-                    except Exception as _save_err:
-                        print(
-                            "Warning: failed to save execution result for "
-                            f"{_pr_ref(repo, pr_number)}: {_save_err}",
-                            file=sys.stderr,
-                        )
+                _save_result_log(repo, pr_number, result_blocks, state_comment)
             raise
         if ctx.write_result_to_comment and stdout:
             result_blocks.append(
@@ -757,24 +770,7 @@ def _run_merge_phase_rebase(
                                 ctx.state_comment_timezone,
                             )
                         )
-                    if result_blocks:
-                        try:
-                            _fresh = load_state_comment(repo, pr_number)
-                        except Exception:
-                            _fresh = state_comment
-                        _merged_body = merge_result_log_body(
-                            _fresh.result_log_body, result_blocks
-                        )
-                        try:
-                            upsert_state_comment(
-                                repo, pr_number, [], result_log_body=_merged_body
-                            )
-                        except Exception as _save_err:
-                            print(
-                                "Warning: failed to save execution result for "
-                                f"{_pr_ref(repo, pr_number)}: {_save_err}",
-                                file=sys.stderr,
-                            )
+                    _save_result_log(repo, pr_number, result_blocks, state_comment)
                 abort_rebase(works_dir)
                 raise
             if ctx.write_result_to_comment and stdout:
@@ -1128,6 +1124,7 @@ def _run_review_fix_phase(
                         pr_number,
                         state_entries,
                         result_log_body=result_log_body_to_save,
+                        _preloaded_state=_latest,
                     )
                     state_saved = True
                 except Exception as e:
@@ -1151,26 +1148,9 @@ def _run_review_fix_phase(
                         "review-fix", e.stdout, ctx.state_comment_timezone
                     )
                 )
-            if result_blocks:
-                try:
-                    _fresh = load_state_comment(repo, pr_number)
-                except Exception:
-                    _fresh = state_comment
-                _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
-                try:
-                    upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
-                except Exception as _save_err:
-                    print(
-                        "Warning: failed to save execution result for "
-                        f"{_pr_ref(repo, pr_number)}: {_save_err}",
-                        file=sys.stderr,
-                    )
-                    if error_collector:
-                        error_collector.add_pr_error(
-                            repo,
-                            pr_number,
-                            f"failed to save execution result: {_save_err}",
-                        )
+            _save_result_log(
+                repo, pr_number, result_blocks, state_comment, error_collector
+            )
         raise
     except subprocess.CalledProcessError as e:
         review_fix_failed = True
@@ -1183,24 +1163,10 @@ def _run_review_fix_phase(
             error_collector.add_pr_error(
                 repo, pr_number, f"Claude execution failed: {e}"
             )
-        if ctx.write_result_to_comment and result_blocks:
-            try:
-                _fresh = load_state_comment(repo, pr_number)
-            except Exception:
-                _fresh = state_comment
-            _merged = merge_result_log_body(_fresh.result_log_body, result_blocks)
-            try:
-                upsert_state_comment(repo, pr_number, [], result_log_body=_merged)
-            except Exception as _save_err:
-                print(
-                    "Warning: failed to save execution result for "
-                    f"{_pr_ref(repo, pr_number)}: {_save_err}",
-                    file=sys.stderr,
-                )
-                if error_collector:
-                    error_collector.add_pr_error(
-                        repo, pr_number, f"failed to save execution result: {_save_err}"
-                    )
+        if ctx.write_result_to_comment:
+            _save_result_log(
+                repo, pr_number, result_blocks, state_comment, error_collector
+            )
     finally:
         if _remove_running_on_exit:
             edit_pr_label(
@@ -1693,28 +1659,9 @@ def _process_single_pr(
 
     if not has_review_targets:
         if ctx.write_result_to_comment and result_blocks:
-            state_saved = False
-            try:
-                _latest = load_state_comment(repo, pr_number)
-            except Exception:
-                _latest = state_comment
-            merged_result_log_body = merge_result_log_body(
-                _latest.result_log_body, result_blocks
+            state_saved = _save_result_log(
+                repo, pr_number, result_blocks, state_comment, error_collector
             )
-            try:
-                upsert_state_comment(
-                    repo, pr_number, [], result_log_body=merged_result_log_body
-                )
-                state_saved = True
-            except Exception as e:
-                print(
-                    f"Warning: failed to update result log section for {_pr_ref(repo, pr_number)}: {e}",
-                    file=sys.stderr,
-                )
-                if error_collector:
-                    error_collector.add_pr_error(
-                        repo, pr_number, f"failed to update result log section: {e}"
-                    )
         else:
             state_saved = True
         if ci_commits and not is_behind:
@@ -1802,27 +1749,9 @@ def _process_single_pr(
 
     if skip_review_fix:
         if ctx.write_result_to_comment and result_blocks:
-            try:
-                _latest = load_state_comment(repo, pr_number)
-            except Exception:
-                _latest = state_comment
-            merged_result_log_body = merge_result_log_body(
-                _latest.result_log_body, result_blocks
+            state_saved = _save_result_log(
+                repo, pr_number, result_blocks, state_comment, error_collector
             )
-            try:
-                upsert_state_comment(
-                    repo, pr_number, [], result_log_body=merged_result_log_body
-                )
-                state_saved = True
-            except Exception as e:
-                print(
-                    f"Warning: failed to update result log section for {_pr_ref(repo, pr_number)}: {e}",
-                    file=sys.stderr,
-                )
-                if error_collector:
-                    error_collector.add_pr_error(
-                        repo, pr_number, f"failed to update result log section: {e}"
-                    )
         print(
             f"Skipping review-fix for {_pr_ref(repo, pr_number)} "
             f"because {skip_review_fix_reason}; "

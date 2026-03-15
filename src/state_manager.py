@@ -413,9 +413,14 @@ def upsert_state_comment(
     pr_number: int,
     new_entries: list[StateEntry],
     result_log_body: str | None = None,
+    _preloaded_state: StateComment | None = None,
 ) -> None:
     """Create or update the state comment for a PR."""
-    state = load_state_comment(repo, pr_number)
+    state = (
+        _preloaded_state
+        if _preloaded_state is not None
+        else load_state_comment(repo, pr_number)
+    )
     merged_entries = list(state.entries)
     seen_ids = set(state.processed_ids)
     for entry in new_entries:
