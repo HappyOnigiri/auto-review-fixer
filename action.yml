@@ -1,48 +1,48 @@
-name: 'Refix'
-description: 'Automatically fix CodeRabbit review comments using Claude'
+name: "Refix"
+description: "Automatically fix CodeRabbit review comments using Claude"
 
 inputs:
   version:
-    description: 'Refix action version (for tracking)'
+    description: "Refix action version (for tracking)"
     required: false
-    default: '1'
+    default: "1"
   pr-number:
-    description: 'PR number (optional; auto-detected from event if omitted)'
+    description: "PR number (optional; auto-detected from event if omitted)"
     required: false
-    default: ''
+    default: ""
   repo:
-    description: 'Repository (owner/repo)'
+    description: "Repository (owner/repo)"
     required: false
-    default: '${{ github.repository }}'
+    default: "${{ github.repository }}"
   gh-token:
-    description: 'GitHub token with write access to the target repository'
+    description: "GitHub token with write access to the target repository"
     required: true
   claude-code-oauth-token:
-    description: 'Claude Code OAuth token'
+    description: "Claude Code OAuth token"
     required: true
   multi-repo:
-    description: 'Run in multi-repo batch mode (scans all repos from config)'
+    description: "Run in multi-repo batch mode (scans all repos from config)"
     required: false
-    default: 'false'
+    default: "false"
   ref:
-    description: 'Ref (tag, branch, or SHA) of HappyOnigiri/Refix to check out'
+    description: "Ref (tag, branch, or SHA) of HappyOnigiri/Refix to check out"
     required: false
-    default: 'main'
+    default: "main"
   dry-run:
-    description: 'Run without making changes'
+    description: "Run without making changes"
     required: false
-    default: 'false'
+    default: "false"
   config-path:
-    description: 'Path to .refix.yaml in target repo (optional)'
+    description: "Path to .refix.yaml in target repo (optional)"
     required: false
-    default: ''
+    default: ""
   claude-code-version:
-    description: 'Claude Code CLI version'
+    description: "Claude Code CLI version"
     required: false
-    default: '2.1.58'
+    default: "2.1.58"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - uses: actions/checkout@v4
       with:
@@ -50,57 +50,23 @@ runs:
         path: .refix-tool
         ref: ${{ inputs.ref }}
 
-    # issue_comment イベントのみフィルタリングを実施。
-    # config 駆動で許可 authors を制御することで、ユーザー側ワークフロー変更なしに
-    # 将来他のボット/ユーザーへの拡張にも対応できる。
-    - name: Filter event
-      id: filter
-      if: env.GITHUB_EVENT_NAME == 'issue_comment'
-      run: |
-        # PR コメントかチェック（issue コメントはスキップ）
-        IS_PR=$(jq -r '.issue.pull_request // empty' "$GITHUB_EVENT_PATH")
-        if [ -z "$IS_PR" ]; then
-          echo "skip=true" >> "$GITHUB_OUTPUT"
-          echo "Skipping: comment is not on a PR"
-          exit 0
-        fi
-
-        # config から許可 authors を取得（設定なしなら coderabbitai[bot] をデフォルト）
-        CONFIG="${{ inputs.config-path }}"
-        AUTHOR=$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")
-        if [ -n "$CONFIG" ] && [ -f "$CONFIG" ]; then
-          ALLOWED=$(yq '.triggers.issue_comment.authors // []' "$CONFIG")
-          if [ "$ALLOWED" != "[]" ]; then
-            if echo "$ALLOWED" | yq '.[]' | grep -qx "$AUTHOR"; then
-              echo "skip=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "Skipping: $AUTHOR not in allowed authors"
-            fi
-            exit 0
-          fi
-        fi
-
-        # config に triggers 設定がない場合のデフォルト: coderabbitai[bot] のみ許可
-        if [ "$AUTHOR" = "coderabbitai[bot]" ]; then
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "skip=true" >> "$GITHUB_OUTPUT"
-          echo "Skipping: $AUTHOR (default: only coderabbitai[bot])"
-        fi
-      shell: bash
-
     - uses: actions/setup-python@v5
-      if: steps.filter.outputs.skip != 'true'
       with:
-        python-version: '3.12'
+        python-version: "3.12"
         cache: pip
         cache-dependency-path: .refix-tool/requirements.txt
 
     - name: Install Python dependencies
-      if: steps.filter.outputs.skip != 'true'
       run: pip install -r .refix-tool/requirements.txt
       shell: bash
+
+    - name: Filter event
+      id: filter
+      if: env.GITHUB_EVENT_NAME == 'issue_comment'
+      run: python .refix-tool/src/filter_event.py
+      shell: bash
+      env:
+        REFIX_CONFIG_PATH: ${{ inputs.config-path }}
 
     - name: Install Claude Code CLI
       if: steps.filter.outputs.skip != 'true'
