@@ -2375,6 +2375,10 @@ def main():
 
         auto_resume_run_state = normalize_auto_resume_state(config, DEFAULT_CONFIG)
         error_collector = ErrorCollector()
+        global_modified_prs: set[tuple[str, int]] = set()
+        global_committed_prs: set[tuple[str, int]] = set()
+        global_claude_prs: set[tuple[str, int]] = set()
+        global_coderabbit_resumed_prs: set[tuple[str, int]] = set()
         for pr_number in targets:
             print(f"Processing PR: {repo} #{pr_number}")
             try:
@@ -2384,6 +2388,10 @@ def main():
                     silent=args.silent,
                     summarize_only=args.summarize_only,
                     config=config,
+                    global_modified_prs=global_modified_prs,
+                    global_committed_prs=global_committed_prs,
+                    global_claude_prs=global_claude_prs,
+                    global_coderabbit_resumed_prs=global_coderabbit_resumed_prs,
                     auto_resume_run_state=auto_resume_run_state,
                     error_collector=error_collector,
                     target_pr_number=pr_number,
@@ -2397,6 +2405,18 @@ def main():
                     print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
                 if e.stderr.strip():
                     print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+                try:
+                    edit_pr_label(
+                        repo,
+                        pr_number,
+                        add=False,
+                        label=REFIX_RUNNING_LABEL,
+                        enabled_pr_label_keys=get_enabled_pr_label_keys(
+                            config, DEFAULT_CONFIG
+                        ),
+                    )
+                except Exception:
+                    pass
                 sys.exit(1)
             except Exception as e:
                 print(f"Error processing {repo} PR #{pr_number}: {e}", file=sys.stderr)
@@ -2461,6 +2481,18 @@ def main():
                 print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
             if e.stderr.strip():
                 print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+            try:
+                edit_pr_label(
+                    args.repo,
+                    args.pr,
+                    add=False,
+                    label=REFIX_RUNNING_LABEL,
+                    enabled_pr_label_keys=get_enabled_pr_label_keys(
+                        config, DEFAULT_CONFIG
+                    ),
+                )
+            except Exception:
+                pass
             sys.exit(1)
         except Exception as e:
             print(f"Error processing {args.repo} PR #{args.pr}: {e}", file=sys.stderr)
