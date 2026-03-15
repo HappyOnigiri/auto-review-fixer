@@ -1497,6 +1497,268 @@ class TestExcludeFilters:
         mock_fetch.assert_called_once()
 
 
+class TestTargetAuthorsFilter:
+    """target_authors によるスキップ動作テスト。"""
+
+    def _make_pr(self, number, author_login=""):
+        return {
+            "number": number,
+            "title": f"PR #{number}",
+            "isDraft": False,
+            "author": {"login": author_login},
+            "labels": [],
+        }
+
+    def _base_cfg(self, target_authors):
+        return {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "target_authors": target_authors,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+
+    def test_empty_target_authors_processes_all(self, capsys):
+        prs = [self._make_pr(1, author_login="any-user")]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=self._base_cfg([]))
+
+        mock_fetch.assert_called_once()
+
+    def test_matching_author_is_processed(self, capsys):
+        prs = [self._make_pr(1, author_login="user-a")]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+            )
+
+        mock_fetch.assert_called_once()
+
+    def test_non_matching_author_skips_pr(self, capsys):
+        prs = [self._make_pr(1, author_login="other-user")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+            )
+
+        mock_fetch.assert_not_called()
+        assert "target_authors" in capsys.readouterr().out
+
+    def test_wildcard_pattern_matches(self, capsys):
+        prs = [self._make_pr(1, author_login="dep-bot")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details") as mock_fetch,
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+            )
+
+        mock_fetch.assert_not_called()
+
+    def test_wildcard_pattern_matches_prefix(self, capsys):
+        prs = [self._make_pr(1, author_login="dep-xyz")]
+        pr_data = {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=pr_data) as mock_fetch,
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["dep*"])
+            )
+
+        mock_fetch.assert_called_once()
+
+
+class TestAutoMergeAuthorsFilter:
+    """auto_merge_authors による自動マージ制御テスト。"""
+
+    def _make_pr(self, number, author_login=""):
+        return {
+            "number": number,
+            "title": f"PR #{number}",
+            "isDraft": False,
+            "author": {"login": author_login},
+            "labels": [],
+        }
+
+    def _base_cfg(self, auto_merge_authors, auto_merge=True):
+        return {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "auto_merge": auto_merge,
+            "auto_merge_authors": auto_merge_authors,
+            "repositories": [
+                {"repo": "owner/repo", "user_name": None, "user_email": None}
+            ],
+        }
+
+    def _pr_data(self):
+        return {
+            "headRefName": "feature",
+            "baseRefName": "main",
+            "title": "PR #1",
+            "reviews": [],
+            "comments": [],
+        }
+
+    def test_empty_auto_merge_authors_merges_all(self, capsys):
+        prs = [self._make_pr(1, author_login="any-user")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=self._pr_data()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo({"repo": "owner/repo"}, config=self._base_cfg([]))
+
+        out = capsys.readouterr().out
+        assert "auto_merge_authors" not in out
+
+    def test_matching_author_merge_enabled(self, capsys):
+        prs = [self._make_pr(1, author_login="user-a")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=self._pr_data()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+            )
+
+        out = capsys.readouterr().out
+        assert "auto_merge_authors" not in out
+
+    def test_non_matching_author_disables_merge(self, capsys):
+        prs = [self._make_pr(1, author_login="other-user")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=self._pr_data()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["user-a"])
+            )
+
+        assert "auto_merge_authors" in capsys.readouterr().out
+
+    def test_non_matching_author_but_auto_merge_disabled(self, capsys):
+        """auto_merge=False の場合は auto_merge_authors チェック自体が実行されない。"""
+        prs = [self._make_pr(1, author_login="other-user")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=self._pr_data()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"},
+                config=self._base_cfg(["user-a"], auto_merge=False),
+            )
+
+        assert "auto_merge_authors" not in capsys.readouterr().out
+
+    def test_wildcard_pattern_disables_merge_for_non_match(self, capsys):
+        prs = [self._make_pr(1, author_login="normal-user")]
+        with (
+            patch("auto_fixer.fetch_open_prs", return_value=prs),
+            patch("auto_fixer.fetch_pr_details", return_value=self._pr_data()),
+            patch("auto_fixer.fetch_pr_review_comments", return_value=[]),
+            patch("auto_fixer.fetch_review_threads", return_value={}),
+            patch("auto_fixer.fetch_issue_comments", return_value=[]),
+            patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0)),
+            patch("auto_fixer.load_state_comment", return_value=make_state_comment()),
+            patch(
+                "auto_fixer.update_done_label_if_completed", return_value=(False, False)
+            ),
+        ):
+            auto_fixer.process_repo(
+                {"repo": "owner/repo"}, config=self._base_cfg(["dep*"])
+            )
+
+        assert "auto_merge_authors" in capsys.readouterr().out
+
+
 class TestErrorCollectorInProcessSinglePr:
     """_process_single_pr 内の各エラー箇所で ErrorCollector にエラーが記録されることを確認するテスト。"""
 
