@@ -261,7 +261,13 @@ class TestProcessRepo:
         mock_backfill.assert_called_once_with(
             "owner/repo",
             limit=100,
-            enabled_pr_label_keys={"running", "done", "merged", "auto_merge_requested"},
+            enabled_pr_label_keys={
+                "running",
+                "done",
+                "merged",
+                "auto_merge_requested",
+                "ci_pending",
+            },
             error_collector=None,
         )
 
@@ -1071,7 +1077,13 @@ class TestProcessRepo:
             "owner/repo",
             1,
             pr_data=pr_data,
-            enabled_pr_label_keys={"running", "done", "merged", "auto_merge_requested"},
+            enabled_pr_label_keys={
+                "running",
+                "done",
+                "merged",
+                "auto_merge_requested",
+                "ci_pending",
+            },
         )
 
     def test_process_repo_passes_state_comment_timezone_to_create_state_entry(
@@ -1844,3 +1856,137 @@ class TestSaveResultLog:
         mock_upsert.assert_not_called()
         assert ec.has_errors
         assert any("failed to reload state comment" in r.message for r in ec._errors)
+
+
+class TestMainSinglePrMode:
+    def _default_cfg(self):
+        return {
+            "models": {"summarize": "haiku", "fix": "sonnet"},
+            "ci_log_max_lines": 120,
+            "enabled_pr_labels": [
+                "running",
+                "done",
+                "merged",
+                "auto_merge_requested",
+                "ci_pending",
+            ],
+            "repositories": [],
+        }
+
+    def test_single_pr_mode_calls_process_repo_with_target_pr(self, mocker, tmp_path):
+        cfg = self._default_cfg()
+        mocker.patch.object(
+            sys, "argv", ["auto_fixer.py", "--repo", "owner/repo", "--pr", "42"]
+        )
+        mocker.patch("auto_fixer.load_dotenv")
+        mocker.patch("auto_fixer.load_config_for_action", return_value=cfg)
+        mock_process_repo = mocker.patch("auto_fixer.process_repo", return_value=[])
+
+        auto_fixer.main()
+
+        mock_process_repo.assert_called_once()
+        call_kwargs = mock_process_repo.call_args.kwargs
+        assert call_kwargs["target_pr_number"] == 42
+        call_args = mock_process_repo.call_args.args
+        assert call_args[0]["repo"] == "owner/repo"
+
+    def test_single_pr_mode_passes_dry_run(self, mocker):
+        cfg = self._default_cfg()
+        mocker.patch.object(
+            sys,
+            "argv",
+            ["auto_fixer.py", "--repo", "owner/repo", "--pr", "42", "--dry-run"],
+        )
+        mocker.patch("auto_fixer.load_dotenv")
+        mocker.patch("auto_fixer.load_config_for_action", return_value=cfg)
+        mock_process_repo = mocker.patch("auto_fixer.process_repo", return_value=[])
+
+        auto_fixer.main()
+
+        assert mock_process_repo.call_args.kwargs["dry_run"] is True
+
+    def test_repo_without_pr_exits_with_error(self, mocker, capsys):
+        mocker.patch.object(sys, "argv", ["auto_fixer.py", "--repo", "owner/repo"])
+        mocker.patch("auto_fixer.load_dotenv")
+
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        assert "--repo and --pr must be specified together" in capsys.readouterr().err
+
+    def test_pr_without_repo_exits_with_error(self, mocker, capsys):
+        mocker.patch.object(sys, "argv", ["auto_fixer.py", "--pr", "42"])
+        mocker.patch("auto_fixer.load_dotenv")
+
+        with pytest.raises(SystemExit) as exc_info:
+            auto_fixer.main()
+
+        assert exc_info.value.code == 1
+        assert "--repo and --pr must be specified together" in capsys.readouterr().err
+
+
+class TestProcessRepoSinglePrMode:
+    def test_process_repo_fetches_single_pr_when_target_specified(self, mocker):
+        pr_data = {
+            "number": 42,
+            "title": "Test PR",
+            "isDraft": False,
+            "author": {"login": "user"},
+            "labels": [],
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z",
+        }
+        mock_fetch_single = mocker.patch(
+            "auto_fixer.fetch_single_pr", return_value=pr_data
+        )
+        mock_fetch_open = mocker.patch("auto_fixer.fetch_open_prs")
+        mocker.patch(
+            "auto_fixer._process_single_pr", return_value=(False, False, None, None)
+        )
+
+        auto_fixer.process_repo(
+            {"repo": "owner/repo", "user_name": None, "user_email": None},
+            target_pr_number=42,
+        )
+
+        mock_fetch_single.assert_called_once_with("owner/repo", 42)
+        mock_fetch_open.assert_not_called()
+
+    def test_process_repo_fetches_open_prs_when_no_target(self, mocker):
+        mock_fetch_single = mocker.patch("auto_fixer.fetch_single_pr")
+        mock_fetch_open = mocker.patch("auto_fixer.fetch_open_prs", return_value=[])
+
+        auto_fixer.process_repo(
+            {"repo": "owner/repo", "user_name": None, "user_email": None},
+        )
+
+        mock_fetch_open.assert_called_once_with("owner/repo", limit=1000)
+        mock_fetch_single.assert_not_called()
+
+    def test_process_repo_skips_backfill_in_single_pr_mode(self, mocker):
+        pr_data = {
+            "number": 99,
+            "title": "PR",
+            "isDraft": False,
+            "author": {"login": "user"},
+            "labels": [],
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z",
+        }
+        mocker.patch("auto_fixer.fetch_single_pr", return_value=pr_data)
+        mocker.patch(
+            "auto_fixer._process_single_pr", return_value=(False, False, None, None)
+        )
+        mock_backfill = mocker.patch("auto_fixer.backfill_merged_labels")
+
+        auto_fixer.process_repo(
+            {"repo": "owner/repo", "user_name": None, "user_email": None},
+            config={
+                "auto_merge": True,
+                **{k: v for k, v in auto_fixer.DEFAULT_CONFIG.items()},
+            },
+            target_pr_number=99,
+        )
+
+        mock_backfill.assert_not_called()

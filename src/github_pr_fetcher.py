@@ -6,6 +6,7 @@ Fetches open PRs from a GitHub repository.
 
 import json
 import sys
+from typing import cast
 
 from subprocess_helpers import run_command
 from type_defs import PRData
@@ -48,6 +49,44 @@ def fetch_open_prs(repo: str, limit: int = 1000) -> list[PRData]:
     if not isinstance(data, list):
         raise RuntimeError(f"Unexpected PR list response for '{repo}'")
     return data
+
+
+def fetch_single_pr(repo: str, pr_number: int) -> PRData:
+    """
+    Fetch a single PR from a GitHub repository.
+
+    Args:
+        repo: Repository in format 'owner/repo'
+        pr_number: PR number to fetch
+
+    Returns:
+        PR data dictionary (same format as fetch_open_prs items)
+    """
+    cmd = [
+        "gh",
+        "pr",
+        "view",
+        str(pr_number),
+        "--repo",
+        repo,
+        "--json",
+        "number,title,author,createdAt,updatedAt,labels,isDraft",
+    ]
+
+    result = run_command(cmd, check=False)
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Error fetching PR #{pr_number} for '{repo}': {result.stderr.strip()}"
+        )
+
+    try:
+        data = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Failed to parse PR #{pr_number} for '{repo}'") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Unexpected PR response for '{repo}' PR #{pr_number}")
+    return cast(PRData, data)
 
 
 def format_pr_output(prs: list[PRData]) -> str:

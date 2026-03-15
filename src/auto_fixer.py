@@ -57,6 +57,7 @@ from config import (
     get_enabled_pr_label_keys,
     get_process_draft_prs,
     load_config,
+    load_config_for_action,
     normalize_auto_resume_state,
 )
 from constants import SEPARATOR_LEN
@@ -71,7 +72,7 @@ from git_ops import (
     needs_base_merge,
     prepare_repository,
 )
-from github_pr_fetcher import fetch_open_prs
+from github_pr_fetcher import fetch_open_prs, fetch_single_pr
 from pr_label import (
     REFIX_RUNNING_LABEL,
     backfill_merged_labels,
@@ -1923,6 +1924,7 @@ def process_repo(
     auto_resume_run_state: dict[str, int] | None = None,
     global_backfilled_count: list[int] | None = None,
     error_collector: ErrorCollector | None = None,
+    target_pr_number: int | None = None,
 ) -> list[tuple[str, int, str]]:
     """Process a single repository for PR fixes.
 
@@ -2046,17 +2048,38 @@ def process_repo(
     fetch_failed = False
     pr_fetch_failed = False
 
-    # Fetch open PRs
-    try:
-        prs = fetch_open_prs(repo, limit=1000)
-    except Exception as e:
-        print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
-        fetch_failed = True
-        if error_collector:
-            error_collector.add_repo_error(repo, f"Failed to fetch PRs: {e}")
-        return []
+    # Fetch PR(s)
+    if target_pr_number is not None:
+        # single-PR モード: 指定された PR のみ取得
+        try:
+            prs = [fetch_single_pr(repo, target_pr_number)]
+        except Exception as e:
+            print(
+                f"Error fetching PR #{target_pr_number} for {repo}: {e}",
+                file=sys.stderr,
+            )
+            fetch_failed = True
+            if error_collector:
+                error_collector.add_repo_error(
+                    repo, f"Failed to fetch PR #{target_pr_number}: {e}"
+                )
+            return []
+    else:
+        try:
+            prs = fetch_open_prs(repo, limit=1000)
+        except Exception as e:
+            print(f"Error fetching PRs for {repo}: {e}", file=sys.stderr)
+            fetch_failed = True
+            if error_collector:
+                error_collector.add_repo_error(repo, f"Failed to fetch PRs: {e}")
+            return []
     backfilled_count = 0
-    if auto_merge_enabled and not dry_run and not summarize_only:
+    if (
+        auto_merge_enabled
+        and not dry_run
+        and not summarize_only
+        and target_pr_number is None
+    ):
         prev_total = len(modified_prs) + (
             global_backfilled_count[0] if global_backfilled_count is not None else 0
         )
@@ -2146,7 +2169,12 @@ def process_repo(
 
     if processed_count == 0 and not fetch_failed and not pr_fetch_failed:
         print(f"No unresolved reviews or behind PRs found in {repo}")
-    if auto_merge_enabled and not dry_run and not summarize_only:
+    if (
+        auto_merge_enabled
+        and not dry_run
+        and not summarize_only
+        and target_pr_number is None
+    ):
         if max_modified_prs > 0:
             remaining = max_modified_prs - len(modified_prs) - total_backfilled
             if remaining > 0:
@@ -2208,10 +2236,80 @@ def main():
         action="store_true",
         help="Run summarization only, print results, then exit without running fix model or updating the PR state comment",
     )
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="Target repository in 'owner/repo' format for single-PR mode (requires --pr)",
+    )
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="PR number for single-PR mode (requires --repo)",
+    )
 
     args = parser.parse_args()
 
+    # --repo と --pr の相互依存チェック
+    if (args.repo is None) != (args.pr is None):
+        print("Error: --repo and --pr must be specified together.", file=sys.stderr)
+        sys.exit(1)
+
     load_dotenv()
+
+    if args.repo is not None and args.pr is not None:
+        # single-PR モード: --repo と --pr が両方指定された場合
+        config_path = args.config if Path(args.config).exists() else None
+        try:
+            config = load_config_for_action(config_path)
+        except ConfigError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        config["repositories"] = [
+            {"repo": args.repo, "user_name": None, "user_email": None}
+        ]
+        repos: list[RepositoryEntry] = config["repositories"]  # type: ignore[assignment]
+
+        print(f"Processing single PR: {args.repo} #{args.pr}")
+        if args.dry_run:
+            print("[DRY RUN MODE]")
+        if args.summarize_only:
+            print("[SUMMARIZE ONLY MODE]")
+
+        auto_resume_run_state = normalize_auto_resume_state(config, DEFAULT_CONFIG)
+        error_collector = ErrorCollector()
+        try:
+            process_repo(
+                repos[0],
+                dry_run=args.dry_run,
+                silent=args.silent,
+                summarize_only=args.summarize_only,
+                config=config,
+                auto_resume_run_state=auto_resume_run_state,
+                error_collector=error_collector,
+                target_pr_number=args.pr,
+            )
+        except KeyboardInterrupt:
+            print("\nInterrupted by user")
+            sys.exit(0)
+        except ClaudeCommandFailedError as e:
+            print(f"Error: {e}. Failing CI immediately.", file=sys.stderr)
+            if e.stdout.strip():
+                print(f"  stdout: {e.stdout.strip()}", file=sys.stderr)
+            if e.stderr.strip():
+                print(f"  stderr: {e.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error processing {args.repo} PR #{args.pr}: {e}", file=sys.stderr)
+            error_collector.add_repo_error(args.repo, str(e))
+
+        print("\nDone!")
+        if error_collector.has_errors:
+            error_collector.print_summary()
+            sys.exit(1)
+        return
+
+    # multi-repo モード（既存の処理）
     try:
         config = load_config(args.config)
         repos = expand_repositories(

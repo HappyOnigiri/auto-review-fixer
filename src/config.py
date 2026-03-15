@@ -1,5 +1,7 @@
 """設定ファイル（.refix.yaml）の読み込みと検証を行うモジュール。"""
 
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -549,3 +551,82 @@ def expand_repositories(
         else:
             expanded.append(repo_info)
     return expanded
+
+
+def load_config_for_action(config_path: str | None) -> AppConfig:
+    """Action モード（single-PR）用の設定ロード。repositories フィールドは不要。
+
+    config_path が指定され存在すれば読み込む（repositories フィールドは無視）。
+    存在しなければ DEFAULT_CONFIG をベースにする。
+    repositories は呼び出し側で --repo 引数から注入する。
+    """
+    if not config_path or not Path(config_path).exists():
+        return {
+            "models": dict(DEFAULT_CONFIG["models"]),
+            "ci_log_max_lines": DEFAULT_CONFIG["ci_log_max_lines"],
+            "write_result_to_comment": DEFAULT_CONFIG["write_result_to_comment"],
+            "auto_merge": DEFAULT_CONFIG["auto_merge"],
+            "enabled_pr_labels": list(DEFAULT_CONFIG["enabled_pr_labels"]),
+            "coderabbit_auto_resume": DEFAULT_CONFIG["coderabbit_auto_resume"],
+            "coderabbit_auto_resume_triggers": dict(
+                DEFAULT_CONFIG["coderabbit_auto_resume_triggers"]
+            ),
+            "coderabbit_auto_resume_max_per_run": DEFAULT_CONFIG[
+                "coderabbit_auto_resume_max_per_run"
+            ],
+            "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
+            "include_fork_repositories": DEFAULT_CONFIG["include_fork_repositories"],
+            "state_comment_timezone": DEFAULT_CONFIG["state_comment_timezone"],
+            "merge_method": DEFAULT_CONFIG["merge_method"],
+            "base_update_method": DEFAULT_CONFIG["base_update_method"],
+            "max_modified_prs_per_run": DEFAULT_CONFIG["max_modified_prs_per_run"],
+            "max_committed_prs_per_run": DEFAULT_CONFIG["max_committed_prs_per_run"],
+            "max_claude_prs_per_run": DEFAULT_CONFIG["max_claude_prs_per_run"],
+            "ci_empty_as_success": DEFAULT_CONFIG["ci_empty_as_success"],
+            "ci_empty_grace_minutes": DEFAULT_CONFIG["ci_empty_grace_minutes"],
+            "exclude_authors": [],
+            "exclude_labels": [],
+            "target_authors": [],
+            "auto_merge_authors": [],
+            "repositories": [],
+        }
+
+    # repositories は必須でないため、ダミーを挿入して既存の load_config を使用し、
+    # バリデーションを通過後に repositories を空にする。
+    try:
+        text = Path(config_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"failed to read config file '{config_path}': {exc}") from exc
+
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(
+            f"failed to parse YAML config '{config_path}': {exc}"
+        ) from exc
+
+    if parsed is None:
+        parsed = {}
+    if not isinstance(parsed, dict):
+        raise ConfigError("config root must be a mapping/object.")
+
+    # repositories キーを除いた辞書にダミーの repositories を追加
+    patched = {k: v for k, v in parsed.items() if k != "repositories"}
+    patched["repositories"] = [{"repo": "placeholder/placeholder"}]
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+    ) as f:
+        yaml.dump(patched, f)
+        tmp_path = f.name
+
+    try:
+        cfg = load_config(tmp_path)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    cfg["repositories"] = []
+    return cfg

@@ -48,6 +48,7 @@ repositories:
                 "done",
                 "merged",
                 "auto_merge_requested",
+                "ci_pending",
             ],
             "coderabbit_auto_resume": True,
             "coderabbit_auto_resume_triggers": {
@@ -103,6 +104,7 @@ repositories:
             "done",
             "merged",
             "auto_merge_requested",
+            "ci_pending",
         ]
         assert cfg["coderabbit_auto_resume"] is False
         assert cfg["coderabbit_auto_resume_triggers"] == {
@@ -758,3 +760,57 @@ class TestBaseUpdateMethodConfig:
             ConfigError, match="base_update_method must be a non-empty string"
         ):
             config.load_config(str(config_file))
+
+
+class TestLoadConfigForAction:
+    def test_returns_default_config_when_path_is_none(self):
+        cfg = config.load_config_for_action(None)
+        assert cfg["repositories"] == []
+        assert cfg["models"]["summarize"] == "haiku"
+        assert cfg["models"]["fix"] == "sonnet"
+        assert "ci_pending" in cfg["enabled_pr_labels"]
+
+    def test_returns_default_config_when_path_does_not_exist(self, tmp_path):
+        cfg = config.load_config_for_action(str(tmp_path / "nonexistent.yaml"))
+        assert cfg["repositories"] == []
+        assert cfg["models"]["summarize"] == "haiku"
+
+    def test_loads_settings_from_existing_file(self, tmp_path):
+        config_file = tmp_path / ".refix.yaml"
+        config_file.write_text(
+            """
+models:
+  summarize: claude-haiku-custom
+  fix: claude-sonnet-custom
+auto_merge: true
+""".strip()
+        )
+        cfg = config.load_config_for_action(str(config_file))
+        assert cfg["repositories"] == []
+        assert cfg["models"]["summarize"] == "claude-haiku-custom"
+        assert cfg["models"]["fix"] == "claude-sonnet-custom"
+        assert cfg["auto_merge"] is True
+
+    def test_ignores_repositories_in_file(self, tmp_path):
+        config_file = tmp_path / ".refix.yaml"
+        config_file.write_text(
+            """
+repositories:
+  - repo: owner/other-repo
+""".strip()
+        )
+        cfg = config.load_config_for_action(str(config_file))
+        # repositories should be cleared (caller injects --repo value)
+        assert cfg["repositories"] == []
+
+    def test_raises_on_invalid_yaml(self, tmp_path):
+        config_file = tmp_path / ".refix.yaml"
+        config_file.write_text("{bad: yaml: syntax:")
+        with pytest.raises(ConfigError):
+            config.load_config_for_action(str(config_file))
+
+    def test_raises_on_invalid_field_value(self, tmp_path):
+        config_file = tmp_path / ".refix.yaml"
+        config_file.write_text("auto_merge: not-a-bool\n")
+        with pytest.raises(ConfigError):
+            config.load_config_for_action(str(config_file))

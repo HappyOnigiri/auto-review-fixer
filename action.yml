@@ -1,0 +1,75 @@
+name: 'Refix'
+description: 'Automatically fix CodeRabbit review comments using Claude'
+
+inputs:
+  version:
+    description: 'Refix action version (for tracking)'
+    required: false
+    default: '1'
+  pr-number:
+    description: 'PR number to process'
+    required: true
+  repo:
+    description: 'Repository (owner/repo)'
+    required: false
+    default: '${{ github.repository }}'
+  gh-token:
+    description: 'GitHub token with write access to the target repository'
+    required: true
+  claude-code-oauth-token:
+    description: 'Claude Code OAuth token'
+    required: true
+  dry-run:
+    description: 'Run without making changes'
+    required: false
+    default: 'false'
+  config-path:
+    description: 'Path to .refix.yaml in target repo (optional)'
+    required: false
+    default: ''
+  claude-code-version:
+    description: 'Claude Code CLI version'
+    required: false
+    default: '2.1.58'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: HappyOnigiri/Refix
+        path: .refix-tool
+        ref: ${{ github.action_ref || 'main' }}
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: pip
+        cache-dependency-path: .refix-tool/requirements.txt
+
+    - name: Install Python dependencies
+      run: pip install -r .refix-tool/requirements.txt
+      shell: bash
+
+    - name: Install Claude Code CLI
+      run: npm install -g @anthropic-ai/claude-code@${{ inputs.claude-code-version }}
+      shell: bash
+
+    - name: Configure git to use token
+      run: |
+        git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+
+    - name: Run Refix
+      run: |
+        cd .refix-tool/src
+        ARGS="--repo ${{ inputs.repo }} --pr ${{ inputs.pr-number }}"
+        if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+        if [ -n "${{ inputs.config-path }}" ]; then ARGS="$ARGS --config ${{ inputs.config-path }}"; fi
+        python auto_fixer.py $ARGS
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
