@@ -1372,7 +1372,7 @@ def _process_single_pr(
 
     # Filter inline review comments (discussion_r<id>) not yet processed
     # Also skip threads already resolved on GitHub
-    review_comments_raw: list[dict[str, Any]]  # dict-any: ok
+    review_comments_raw: list[GitHubComment]
     try:
         review_comments_raw = fetch_pr_review_comments(repo, pr_number)
     except Exception as e:
@@ -1391,7 +1391,7 @@ def _process_single_pr(
                 repo, pr_number, f"Failed to fetch review threads: {e}"
             )
         return True, False, None, False
-    issue_comments_raw: list[dict[str, Any]]  # dict-any: ok
+    issue_comments_raw: list[GitHubComment]
     try:
         issue_comments_raw = fetch_issue_comments(repo, pr_number)
     except RuntimeError as e:
@@ -1408,8 +1408,8 @@ def _process_single_pr(
                 repo, pr_number, f"Failed to fetch issue comments: {e}"
             )
         return True, False, None, False
-    gc_review_comments = cast(list[GitHubComment], review_comments_raw)
-    gc_issue_comments = cast(list[GitHubComment], issue_comments_raw)
+    gc_review_comments = review_comments_raw
+    gc_issue_comments = issue_comments_raw
 
     unresolved_thread_ids = set(thread_map.keys())
     unresolved_comments: list[InlineCommentData] = []
@@ -1422,7 +1422,7 @@ def _process_single_pr(
         comment_item: InlineCommentData = cast(InlineCommentData, dict(raw_c))
         comment_item["_state_comment_id"] = rid
         processed = rid in processed_ids
-        in_thread = raw_c["id"] in unresolved_thread_ids
+        in_thread = raw_c.get("id") in unresolved_thread_ids
         if not silent:
             print(
                 f"  [State] comment {rid}: {'processed' if processed else 'NOT processed'}, "

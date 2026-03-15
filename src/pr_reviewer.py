@@ -293,9 +293,7 @@ def fetch_pr_reviews(repo: str, pr_number: int) -> list[NormalizedReview]:
     return normalized_reviews
 
 
-def fetch_pr_review_comments(
-    repo: str, pr_number: int
-) -> list[dict[str, Any]]:  # dict-any: ok
+def fetch_pr_review_comments(repo: str, pr_number: int) -> list[GitHubComment]:
     """Fetch inline review comments (discussion_r<id> format) via REST API."""
     cmd = [
         "gh",
@@ -320,12 +318,10 @@ def fetch_pr_review_comments(
         raise RuntimeError(
             f"Failed to parse review comments response for {repo}#{pr_number}"
         ) from exc
-    return _flatten_paginated_response(data)
+    return cast(list[GitHubComment], _flatten_paginated_response(data))
 
 
-def fetch_issue_comments(
-    repo: str, pr_number: int
-) -> list[dict[str, Any]]:  # dict-any: ok
+def fetch_issue_comments(repo: str, pr_number: int) -> list[GitHubComment]:
     """Fetch issue comments for a pull request via REST API."""
     cmd = [
         "gh",
@@ -341,7 +337,7 @@ def fetch_issue_comments(
         data = json.loads(result.stdout) if result.stdout else []
     except json.JSONDecodeError as e:
         raise RuntimeError(f"failed to parse issue comments response: {e}") from e
-    return _flatten_paginated_response(data)
+    return cast(list[GitHubComment], _flatten_paginated_response(data))
 
 
 def fetch_review_threads(repo: str, pr_number: int) -> dict[int, str]:
