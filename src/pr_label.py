@@ -924,15 +924,17 @@ def update_done_label_if_completed(
                         error_collector=error_collector,
                     )
             merge_triggered = label_modified
-        # 完了時: ci-pending ラベルを除去
-        ci_pending_changed = edit_pr_label(
-            repo,
-            pr_number,
-            add=False,
-            label=REFIX_CI_PENDING_LABEL,
-            enabled_pr_label_keys=enabled_pr_label_keys,
-            error_collector=error_collector,
-        )
+        # 完了時: ci-pending ラベルを除去（付いている場合のみ）
+        ci_pending_changed = False
+        if _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL):
+            ci_pending_changed = edit_pr_label(
+                repo,
+                pr_number,
+                add=False,
+                label=REFIX_CI_PENDING_LABEL,
+                enabled_pr_label_keys=enabled_pr_label_keys,
+                error_collector=error_collector,
+            )
         return done_changed or merge_triggered or ci_pending_changed, ci_grace_pending
 
     if block_reasons:
@@ -971,13 +973,16 @@ def update_done_label_if_completed(
         )
     )
     # CI ブロック時 または commits のみがブロック理由の場合: ci-pending を付与
-    # それ以外: ci-pending を除去
-    ci_pending_changed = edit_pr_label(
-        repo,
-        pr_number,
-        add=ci_is_blocking or commits_only_blocking,
-        label=REFIX_CI_PENDING_LABEL,
-        enabled_pr_label_keys=enabled_pr_label_keys,
-        error_collector=error_collector,
-    )
+    # それ以外: ci-pending を除去（状態が変わる場合のみ呼び出す）
+    target_add = ci_is_blocking or commits_only_blocking
+    ci_pending_changed = False
+    if target_add != _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL):
+        ci_pending_changed = edit_pr_label(
+            repo,
+            pr_number,
+            add=target_add,
+            label=REFIX_CI_PENDING_LABEL,
+            enabled_pr_label_keys=enabled_pr_label_keys,
+            error_collector=error_collector,
+        )
     return running_changed or ci_pending_changed, ci_grace_pending
