@@ -68,6 +68,8 @@ repositories:
             "ci_empty_grace_minutes": 5,
             "exclude_authors": [],
             "exclude_labels": [],
+            "target_authors": [],
+            "auto_merge_authors": [],
             "repositories": [
                 {
                     "repo": "owner/repo1",
@@ -653,21 +655,30 @@ repositories:
         cfg = config.load_config(str(config_file))
         assert cfg["exclude_labels"] == []
 
-    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    @pytest.mark.parametrize(
+        "key",
+        ["exclude_authors", "exclude_labels", "target_authors", "auto_merge_authors"],
+    )
     def test_invalid_type_string_raises(self, tmp_path, key):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(self._base_yaml(f'{key}: "not-a-list"'))
         with pytest.raises(ConfigError):
             config.load_config(str(config_file))
 
-    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    @pytest.mark.parametrize(
+        "key",
+        ["exclude_authors", "exclude_labels", "target_authors", "auto_merge_authors"],
+    )
     def test_invalid_type_int_raises(self, tmp_path, key):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(self._base_yaml(f"{key}: 123"))
         with pytest.raises(ConfigError):
             config.load_config(str(config_file))
 
-    @pytest.mark.parametrize("key", ["exclude_authors", "exclude_labels"])
+    @pytest.mark.parametrize(
+        "key",
+        ["exclude_authors", "exclude_labels", "target_authors", "auto_merge_authors"],
+    )
     def test_invalid_list_of_int_raises(self, tmp_path, key):
         config_file = tmp_path / "config.yaml"
         config_file.write_text(self._base_yaml(f"{key}: [1, 2, 3]"))
