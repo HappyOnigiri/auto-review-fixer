@@ -1,8 +1,6 @@
 """Unit tests for git_ops module."""
 
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
@@ -10,23 +8,21 @@ import git_ops
 from errors import ProjectConfigError
 
 
-def _make_result(returncode=0, stdout="", stderr=""):
-    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
-
-
 # ---------------------------------------------------------------------------
 # get_branch_compare_status
 # ---------------------------------------------------------------------------
 
 
-def test_get_branch_compare_status_returns_status_and_behind_by():
+def test_get_branch_compare_status_returns_status_and_behind_by(
+    mocker, make_cmd_result
+):
     payload = '{"status": "diverged", "behind_by": 3}'
-    with patch.object(
-        git_ops, "run_command", return_value=_make_result(stdout=payload)
-    ) as mock_run:
-        status, behind_by = git_ops.get_branch_compare_status(
-            "owner/repo", "main", "feature"
-        )
+    mock_run = mocker.patch.object(
+        git_ops, "run_command", return_value=make_cmd_result(payload)
+    )
+    status, behind_by = git_ops.get_branch_compare_status(
+        "owner/repo", "main", "feature"
+    )
 
     assert status == "diverged"
     assert behind_by == 3
@@ -35,39 +31,39 @@ def test_get_branch_compare_status_returns_status_and_behind_by():
     assert "repos/owner/repo/compare/main...feature" in args[-1]
 
 
-def test_get_branch_compare_status_raises_on_nonzero_returncode():
-    with patch.object(
+def test_get_branch_compare_status_raises_on_nonzero_returncode(
+    mocker, make_cmd_result
+):
+    mocker.patch.object(
         git_ops,
         "run_command",
-        return_value=_make_result(returncode=1, stderr="not found"),
-    ):
-        with pytest.raises(RuntimeError, match="Error fetching compare status"):
-            git_ops.get_branch_compare_status("owner/repo", "main", "feature")
+        return_value=make_cmd_result("", returncode=1, stderr="not found"),
+    )
+    with pytest.raises(RuntimeError, match="Error fetching compare status"):
+        git_ops.get_branch_compare_status("owner/repo", "main", "feature")
 
 
-def test_get_branch_compare_status_raises_on_invalid_json():
-    with patch.object(
-        git_ops, "run_command", return_value=_make_result(stdout="not-json")
-    ):
-        with pytest.raises(RuntimeError, match="Failed to parse compare status"):
-            git_ops.get_branch_compare_status("owner/repo", "main", "feature")
+def test_get_branch_compare_status_raises_on_invalid_json(mocker, make_cmd_result):
+    mocker.patch.object(
+        git_ops, "run_command", return_value=make_cmd_result("not-json")
+    )
+    with pytest.raises(RuntimeError, match="Failed to parse compare status"):
+        git_ops.get_branch_compare_status("owner/repo", "main", "feature")
 
 
-def test_get_branch_compare_status_raises_on_missing_fields():
+def test_get_branch_compare_status_raises_on_missing_fields(mocker, make_cmd_result):
     payload = '{"status": "ahead"}'  # behind_by missing
-    with patch.object(
-        git_ops, "run_command", return_value=_make_result(stdout=payload)
-    ):
-        with pytest.raises(RuntimeError, match="Unexpected compare payload"):
-            git_ops.get_branch_compare_status("owner/repo", "main", "feature")
+    mocker.patch.object(git_ops, "run_command", return_value=make_cmd_result(payload))
+    with pytest.raises(RuntimeError, match="Unexpected compare payload"):
+        git_ops.get_branch_compare_status("owner/repo", "main", "feature")
 
 
-def test_get_branch_compare_status_url_encodes_branch_names():
+def test_get_branch_compare_status_url_encodes_branch_names(mocker, make_cmd_result):
     payload = '{"status": "identical", "behind_by": 0}'
-    with patch.object(
-        git_ops, "run_command", return_value=_make_result(stdout=payload)
-    ) as mock_run:
-        git_ops.get_branch_compare_status("owner/repo", "main", "feature/my branch")
+    mock_run = mocker.patch.object(
+        git_ops, "run_command", return_value=make_cmd_result(payload)
+    )
+    git_ops.get_branch_compare_status("owner/repo", "main", "feature/my branch")
 
     args = mock_run.call_args[0][0]
     assert "feature%2Fmy%20branch" in args[-1]
@@ -98,24 +94,26 @@ def test_needs_base_merge(compare_status, behind_by, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_has_merge_conflicts_returns_true_when_unmerged_files():
-    with patch.object(
-        git_ops, "run_git", return_value=_make_result(stdout="conflict.py\n")
-    ):
-        assert git_ops.has_merge_conflicts(Path("/some/repo")) is True
+def test_has_merge_conflicts_returns_true_when_unmerged_files(mocker, make_cmd_result):
+    mocker.patch.object(
+        git_ops, "run_git", return_value=make_cmd_result("conflict.py\n")
+    )
+    assert git_ops.has_merge_conflicts(Path("/some/repo")) is True
 
 
-def test_has_merge_conflicts_returns_false_when_no_unmerged_files():
-    with patch.object(git_ops, "run_git", return_value=_make_result(stdout="")):
-        assert git_ops.has_merge_conflicts(Path("/some/repo")) is False
+def test_has_merge_conflicts_returns_false_when_no_unmerged_files(
+    mocker, make_cmd_result
+):
+    mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result(""))
+    assert git_ops.has_merge_conflicts(Path("/some/repo")) is False
 
 
-def test_has_merge_conflicts_raises_on_nonzero_returncode():
-    with patch.object(
-        git_ops, "run_git", return_value=_make_result(returncode=1, stdout="")
-    ):
-        with pytest.raises(RuntimeError, match="failed to detect merge conflicts"):
-            git_ops.has_merge_conflicts(Path("/some/repo"))
+def test_has_merge_conflicts_raises_on_nonzero_returncode(mocker, make_cmd_result):
+    mocker.patch.object(
+        git_ops, "run_git", return_value=make_cmd_result("", returncode=1)
+    )
+    with pytest.raises(RuntimeError, match="failed to detect merge conflicts"):
+        git_ops.has_merge_conflicts(Path("/some/repo"))
 
 
 # ---------------------------------------------------------------------------
@@ -123,65 +121,75 @@ def test_has_merge_conflicts_raises_on_nonzero_returncode():
 # ---------------------------------------------------------------------------
 
 
-def test_merge_base_branch_returns_merged_changes_true_when_head_changed():
+def test_merge_base_branch_returns_merged_changes_true_when_head_changed(
+    mocker, make_cmd_result
+):
     works_dir = Path("/some/repo")
-    fetch_result = _make_result()
-    rev_parse_pre = _make_result(stdout="abc123\n")
-    merge_result = _make_result()
-    rev_parse_post = _make_result(stdout="def456\n")
-
-    side_effects = [fetch_result, rev_parse_pre, merge_result, rev_parse_post]
-    with patch.object(git_ops, "run_git", side_effect=side_effects):
-        merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
+    side_effects = [
+        make_cmd_result(),
+        # fetch
+        make_cmd_result("abc123\n"),
+        # rev-parse HEAD before
+        make_cmd_result(),
+        # merge (success)
+        make_cmd_result("def456\n"),
+        # rev-parse HEAD after
+    ]
+    mocker.patch.object(git_ops, "run_git", side_effect=side_effects)
+    merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
 
     assert merged_changes is True
     assert has_conflicts is False
 
 
-def test_merge_base_branch_returns_merged_changes_false_when_head_unchanged():
+def test_merge_base_branch_returns_merged_changes_false_when_head_unchanged(
+    mocker, make_cmd_result
+):
     works_dir = Path("/some/repo")
     same_sha = "abc123"
     side_effects = [
-        _make_result(),  # fetch
-        _make_result(stdout=f"{same_sha}\n"),  # rev-parse HEAD before
-        _make_result(),  # merge (success)
-        _make_result(stdout=f"{same_sha}\n"),  # rev-parse HEAD after
+        make_cmd_result(),  # fetch
+        make_cmd_result(f"{same_sha}\n"),  # rev-parse HEAD before
+        make_cmd_result(),  # merge (success)
+        make_cmd_result(f"{same_sha}\n"),  # rev-parse HEAD after
     ]
-    with patch.object(git_ops, "run_git", side_effect=side_effects):
-        merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
+    mocker.patch.object(git_ops, "run_git", side_effect=side_effects)
+    merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
 
     assert merged_changes is False
     assert has_conflicts is False
 
 
-def test_merge_base_branch_returns_has_conflicts_true_when_merge_fails_with_conflicts():
+def test_merge_base_branch_returns_has_conflicts_true_when_merge_fails_with_conflicts(
+    mocker, make_cmd_result
+):
     works_dir = Path("/some/repo")
     side_effects = [
-        _make_result(),  # fetch
-        _make_result(stdout="abc123\n"),  # rev-parse HEAD before
-        _make_result(returncode=1),  # merge fails
-        _make_result(stdout="file.py\n"),  # has_merge_conflicts -> run_git diff
+        make_cmd_result(),  # fetch
+        make_cmd_result("abc123\n"),  # rev-parse HEAD before
+        make_cmd_result("", returncode=1),  # merge fails
+        make_cmd_result("file.py\n"),  # has_merge_conflicts -> run_git diff
     ]
-    with patch.object(git_ops, "run_git", side_effect=side_effects):
-        merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
+    mocker.patch.object(git_ops, "run_git", side_effect=side_effects)
+    merged_changes, has_conflicts = git_ops.merge_base_branch(works_dir, "main")
 
     assert merged_changes is False
     assert has_conflicts is True
 
 
-def test_merge_base_branch_raises_when_merge_fails_without_conflicts():
+def test_merge_base_branch_raises_when_merge_fails_without_conflicts(
+    mocker, make_cmd_result
+):
     works_dir = Path("/some/repo")
     side_effects = [
-        _make_result(),  # fetch
-        _make_result(stdout="abc123\n"),  # rev-parse HEAD before
-        _make_result(returncode=1, stderr="some other error"),  # merge fails
-        _make_result(stdout=""),  # has_merge_conflicts -> no conflicts
+        make_cmd_result(),  # fetch
+        make_cmd_result("abc123\n"),  # rev-parse HEAD before
+        make_cmd_result("", returncode=1, stderr="some other error"),  # merge fails
+        make_cmd_result(""),  # has_merge_conflicts -> no conflicts
     ]
-    with patch.object(git_ops, "run_git", side_effect=side_effects):
-        with pytest.raises(
-            RuntimeError, match="git merge failed without conflict markers"
-        ):
-            git_ops.merge_base_branch(works_dir, "main")
+    mocker.patch.object(git_ops, "run_git", side_effect=side_effects)
+    with pytest.raises(RuntimeError, match="git merge failed without conflict markers"):
+        git_ops.merge_base_branch(works_dir, "main")
 
 
 # ---------------------------------------------------------------------------
@@ -189,41 +197,41 @@ def test_merge_base_branch_raises_when_merge_fails_without_conflicts():
 # ---------------------------------------------------------------------------
 
 
-def test_prepare_repository_calls_run_project_setup_with_is_first_clone_false(tmp_path):
-    with (
-        patch.object(git_ops, "run_git", return_value=_make_result()),
-        patch.object(git_ops, "setup_claude_settings"),
-        patch.object(git_ops, "run_project_setup") as mock_setup,
-        patch.object(Path, "exists", return_value=True),
-        patch.object(Path, "mkdir"),
-    ):
-        result = git_ops.prepare_repository("owner/repo", "main")
+def test_prepare_repository_calls_run_project_setup_with_is_first_clone_false(
+    tmp_path, mocker, make_cmd_result
+):
+    mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
+    mocker.patch.object(git_ops, "setup_claude_settings")
+    mock_setup = mocker.patch.object(git_ops, "run_project_setup")
+    mocker.patch.object(Path, "exists", return_value=True)
+    mocker.patch.object(Path, "mkdir")
+    result = git_ops.prepare_repository("owner/repo", "main")
 
     mock_setup.assert_called_once_with(result, is_first_clone=False)
 
 
-def test_prepare_repository_calls_run_project_setup_with_is_first_clone_true(tmp_path):
-    with (
-        patch.object(git_ops, "run_git", return_value=_make_result()),
-        patch.object(git_ops, "setup_claude_settings"),
-        patch.object(git_ops, "run_project_setup") as mock_setup,
-        patch.object(Path, "exists", return_value=False),
-        patch.object(Path, "mkdir"),
-    ):
-        result = git_ops.prepare_repository("owner/repo", "main")
+def test_prepare_repository_calls_run_project_setup_with_is_first_clone_true(
+    tmp_path, mocker, make_cmd_result
+):
+    mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
+    mocker.patch.object(git_ops, "setup_claude_settings")
+    mock_setup = mocker.patch.object(git_ops, "run_project_setup")
+    mocker.patch.object(Path, "exists", return_value=False)
+    mocker.patch.object(Path, "mkdir")
+    result = git_ops.prepare_repository("owner/repo", "main")
 
     mock_setup.assert_called_once_with(result, is_first_clone=True)
 
 
-def test_prepare_repository_propagates_project_config_error(tmp_path):
-    with (
-        patch.object(git_ops, "run_git", return_value=_make_result()),
-        patch.object(git_ops, "setup_claude_settings"),
-        patch.object(
-            git_ops, "run_project_setup", side_effect=ProjectConfigError("bad config")
-        ),
-        patch.object(Path, "exists", return_value=True),
-        patch.object(Path, "mkdir"),
-    ):
-        with pytest.raises(ProjectConfigError, match="bad config"):
-            git_ops.prepare_repository("owner/repo", "main")
+def test_prepare_repository_propagates_project_config_error(
+    tmp_path, mocker, make_cmd_result
+):
+    mocker.patch.object(git_ops, "run_git", return_value=make_cmd_result())
+    mocker.patch.object(git_ops, "setup_claude_settings")
+    mocker.patch.object(
+        git_ops, "run_project_setup", side_effect=ProjectConfigError("bad config")
+    )
+    mocker.patch.object(Path, "exists", return_value=True)
+    mocker.patch.object(Path, "mkdir")
+    with pytest.raises(ProjectConfigError, match="bad config"):
+        git_ops.prepare_repository("owner/repo", "main")

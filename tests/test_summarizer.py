@@ -1,7 +1,5 @@
 """Unit tests for summarizer module."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 import summarizer
@@ -11,46 +9,42 @@ from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
 class TestSummarizeReviews:
     """Tests for summarize_reviews(). subprocess is always mocked."""
 
-    def test_empty_input_returns_empty_dict_no_subprocess(self):
+    def test_empty_input_returns_empty_dict_no_subprocess(self, mocker):
         """Zero items returns {} without calling claude."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            result = summarizer.summarize_reviews([], [])
-            assert result == {}
-            mock_run.assert_not_called()
+        mock_run = mocker.patch("summarizer.subprocess.run")
+        result = summarizer.summarize_reviews([], [])
+        assert result == {}
+        mock_run.assert_not_called()
 
-    def test_valid_json_array_success(self):
+    def test_valid_json_array_success(self, mocker, make_cmd_result):
         """Pure JSON array parses correctly."""
         fake_stdout = (
             '[{"id": "r1", "summary": "s1"}, {"id": "discussion_r2", "summary": "s2"}]'
         )
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [{"id": 2, "body": "y"}],
-            )
-            assert result == {"r1": "s1", "discussion_r2": "s2"}
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [{"id": 2, "body": "y"}],
+        )
+        assert result == {"r1": "s1", "discussion_r2": "s2"}
 
-    def test_prefixed_text_extracts_first_json_array(self):
+    def test_prefixed_text_extracts_first_json_array(self, mocker, make_cmd_result):
         """Text before JSON array is skipped, first [..] is parsed."""
         fake_stdout = 'Here is the result:\n[{"id": "a", "summary": "b"}]'
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "a", "body": "x"}],
-                [],
-            )
-            assert result == {"a": "b"}
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "a", "body": "x"}],
+            [],
+        )
+        assert result == {"a": "b"}
 
-    def test_markdown_code_block_with_first_to_last_bracket_extraction(self):
+    def test_markdown_code_block_with_first_to_last_bracket_extraction(
+        self, mocker, make_cmd_result
+    ):
         """JSON wrapped in ```json block and/or with prefix/suffix messages parses via first [ to last ]."""
         fake_stdout = """Here is the summarized result:
 
@@ -62,36 +56,31 @@ class TestSummarizeReviews:
 ```
 
 Hope this helps!"""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}, {"id": "r2", "body": "y"}],
-                [],
-            )
-            assert result == {"r1": "summary one", "r2": "summary two"}
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}, {"id": "r2", "body": "y"}],
+            [],
+        )
+        assert result == {"r1": "summary one", "r2": "summary two"}
 
-    def test_success_logs_raw_output_in_foldable_group(self, capsys):
+    def test_success_logs_raw_output_in_foldable_group(
+        self, capsys, mocker, make_cmd_result
+    ):
         """Successful summarization also prints raw output in group logs."""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'
-        with (
-            patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer.log_group") as mock_group,
-            patch("summarizer.log_endgroup") as mock_endgroup,
-        ):
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="raw-stderr",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-                silent=False,
-            )
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result(fake_stdout, stderr="raw-stderr"),
+        )
+        mock_group = mocker.patch("summarizer.log_group")
+        mock_endgroup = mocker.patch("summarizer.log_endgroup")
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+            silent=False,
+        )
 
         assert result == {"r1": "s1"}
         mock_group.assert_any_call("Summarizer raw output (exit 0)")
@@ -102,25 +91,23 @@ Hope this helps!"""
         assert "--- stderr ---" in out
         assert "raw-stderr" in out
 
-    def test_raw_output_preserves_leading_trailing_whitespace(self, capsys):
+    def test_raw_output_preserves_leading_trailing_whitespace(
+        self, capsys, mocker, make_cmd_result
+    ):
         """Raw output preserves leading/trailing whitespace without stripping."""
         fake_stdout = '\n  [{"id": "r1", "summary": "s1"}]  \n'
         fake_stderr = "\nerr\n"
-        with (
-            patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer.log_group"),
-            patch("summarizer.log_endgroup"),
-        ):
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr=fake_stderr,
-            )
-            summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-                silent=False,
-            )
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result(fake_stdout, stderr=fake_stderr),
+        )
+        mocker.patch("summarizer.log_group")
+        mocker.patch("summarizer.log_endgroup")
+        summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+            silent=False,
+        )
         out = capsys.readouterr().out
         stdout_marker = "  --- stdout ---\n"
         stderr_marker = "  --- stderr ---\n"
@@ -133,95 +120,86 @@ Hope this helps!"""
             == fake_stderr
         )
 
-    def test_success_silent_does_not_log_raw_output(self):
+    def test_success_silent_does_not_log_raw_output(self, mocker, make_cmd_result):
         """Silent mode suppresses raw output logs even on success."""
         fake_stdout = '[{"id": "r1", "summary": "s1"}]'
-        with (
-            patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer.log_group") as mock_group,
-            patch("summarizer.log_endgroup") as mock_endgroup,
-        ):
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="raw-stderr",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-                silent=True,
-            )
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result(fake_stdout, stderr="raw-stderr"),
+        )
+        mock_group = mocker.patch("summarizer.log_group")
+        mock_endgroup = mocker.patch("summarizer.log_endgroup")
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+            silent=True,
+        )
 
         assert result == {"r1": "s1"}
         mock_group.assert_called_once_with("Summarizer command details")
         mock_endgroup.assert_called_once()
 
-    def test_returncode_nonzero_raises(self):
+    def test_returncode_nonzero_raises(self, mocker, make_cmd_result):
         """Failed subprocess must fail fast."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="",
-                stderr="error",
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result("", returncode=1, stderr="error"),
+        )
+        with pytest.raises(ClaudeCommandFailedError):
+            summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
             )
-            with pytest.raises(ClaudeCommandFailedError):
-                summarizer.summarize_reviews(
-                    [{"id": "r1", "body": "x"}],
-                    [],
-                )
 
-    def test_usage_limit_nonzero_raises(self):
+    def test_usage_limit_nonzero_raises(self, mocker, make_cmd_result):
         """Usage limit must fail fast instead of fallback."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="You've hit your limit · resets Mar 13, 4pm (UTC)",
-                stderr="",
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result(
+                "You've hit your limit · resets Mar 13, 4pm (UTC)", returncode=1
+            ),
+        )
+        with pytest.raises(ClaudeUsageLimitError):
+            summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
             )
-            with pytest.raises(ClaudeUsageLimitError):
-                summarizer.summarize_reviews(
-                    [{"id": "r1", "body": "x"}],
-                    [],
-                )
 
-    def test_usage_limit_phrase_in_success_output_does_not_raise(self):
+    def test_usage_limit_phrase_in_success_output_does_not_raise(
+        self, mocker, make_cmd_result
+    ):
         """Success output containing marker phrase should not be misclassified."""
         fake_stdout = (
             "note: claude usage limit reached is one of known markers\n"
             '[{"id": "r1", "summary": "ok"}]'
         )
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-            )
-            assert result == {"r1": "ok"}
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+        )
+        assert result == {"r1": "ok"}
 
-    def test_failure_logs_raw_output_in_foldable_group(self, capsys):
+    def test_failure_logs_raw_output_in_foldable_group(
+        self, capsys, mocker, make_cmd_result
+    ):
         """Failed summarization (returncode=1) prints raw output then raises."""
         fake_stdout = "some partial output"
         fake_stderr = "raw-stderr-error"
-        with (
-            patch("summarizer.subprocess.run") as mock_run,
-            patch("summarizer.log_group") as mock_group,
-            patch("summarizer.log_endgroup") as mock_endgroup,
-        ):
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout=fake_stdout,
-                stderr=fake_stderr,
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result(fake_stdout, returncode=1, stderr=fake_stderr),
+        )
+        mock_group = mocker.patch("summarizer.log_group")
+        mock_endgroup = mocker.patch("summarizer.log_endgroup")
+        with pytest.raises(ClaudeCommandFailedError):
+            summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+                silent=False,
             )
-            with pytest.raises(ClaudeCommandFailedError):
-                summarizer.summarize_reviews(
-                    [{"id": "r1", "body": "x"}],
-                    [],
-                    silent=False,
-                )
 
         mock_group.assert_any_call("Summarizer raw output (exit 1)")
         mock_endgroup.assert_called()
@@ -229,56 +207,57 @@ Hope this helps!"""
         assert "--- stderr ---" in out
         assert fake_stderr in out
 
-    def test_invalid_json_returns_empty_dict(self):
+    def test_invalid_json_returns_empty_dict(self, mocker, make_cmd_result):
         """Malformed JSON falls back to {}."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="not valid json at all {{{",
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
+        mocker.patch(
+            "summarizer.subprocess.run",
+            return_value=make_cmd_result("not valid json at all {{{"),
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+        )
+        assert result == {}
+
+    def test_subprocess_exception_raises(self, mocker):
+        """subprocess.run raising an exception fails fast."""
+        mocker.patch(
+            "summarizer.subprocess.run",
+            side_effect=FileNotFoundError("claude not found"),
+        )
+        with pytest.raises(ClaudeCommandFailedError):
+            summarizer.summarize_reviews(
                 [{"id": "r1", "body": "x"}],
                 [],
             )
-            assert result == {}
 
-    def test_subprocess_exception_raises(self):
-        """subprocess.run raising an exception fails fast."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("claude not found")
-            with pytest.raises(ClaudeCommandFailedError):
-                summarizer.summarize_reviews(
-                    [{"id": "r1", "body": "x"}],
-                    [],
-                )
-
-    def test_subprocess_timeout_raises(self):
+    def test_subprocess_timeout_raises(self, mocker):
         """subprocess.run raising TimeoutError fails fast."""
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.side_effect = TimeoutError("timed out")
-            with pytest.raises(ClaudeCommandFailedError):
-                summarizer.summarize_reviews(
-                    [{"id": "r1", "body": "x"}],
-                    [],
-                )
+        mocker.patch(
+            "summarizer.subprocess.run",
+            side_effect=TimeoutError("timed out"),
+        )
+        with pytest.raises(ClaudeCommandFailedError):
+            summarizer.summarize_reviews(
+                [{"id": "r1", "body": "x"}],
+                [],
+            )
 
-    def test_comment_id_normalized_to_discussion_r(self):
+    def test_comment_id_normalized_to_discussion_r(self, mocker, make_cmd_result):
         """Inline comment id becomes discussion_r<id>."""
         fake_stdout = '[{"id": "discussion_r99", "summary": "ok"}]'
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [],
-                [{"id": 99, "body": "comment"}],
-            )
-            assert result == {"discussion_r99": "ok"}
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [],
+            [{"id": 99, "body": "comment"}],
+        )
+        assert result == {"discussion_r99": "ok"}
 
-    def _capture_prompt(self, fake_stdout: str, reviews, comments, **kwargs):
+    def _capture_prompt(
+        self, mocker, make_cmd_result, fake_stdout: str, reviews, comments, **kwargs
+    ):
         """Helper: capture the prompt file contents written by summarize_reviews."""
         import pathlib
         import re
@@ -292,15 +271,17 @@ Hope this helps!"""
                     written_prompts.append(
                         pathlib.Path(m.group(1)).read_text(encoding="utf-8")
                     )
-            return MagicMock(returncode=0, stdout=fake_stdout, stderr="")
+            return make_cmd_result(fake_stdout)
 
-        with patch("summarizer.subprocess.run", side_effect=fake_run):
-            result = summarizer.summarize_reviews(reviews, comments, **kwargs)
+        mocker.patch("summarizer.subprocess.run", side_effect=fake_run)
+        result = summarizer.summarize_reviews(reviews, comments, **kwargs)
         return result, written_prompts
 
-    def test_pr_body_included_in_prompt(self):
+    def test_pr_body_included_in_prompt(self, mocker, make_cmd_result):
         """pr_body is included in the summarization prompt."""
         result, written_prompts = self._capture_prompt(
+            mocker,
+            make_cmd_result,
             '[{"id": "r1", "summary": "s1"}]',
             [{"id": "r1", "body": "x"}],
             [],
@@ -313,10 +294,12 @@ Hope this helps!"""
         assert "<<<PR_BODY>>>" not in written_prompts[0]
         assert "<<<END_PR_BODY>>>" not in written_prompts[0]
 
-    def test_pr_body_truncated_to_2000_chars(self):
+    def test_pr_body_truncated_to_2000_chars(self, mocker, make_cmd_result):
         """pr_body longer than 2000 chars is truncated."""
         long_body = "x" * 3000
         _, written_prompts = self._capture_prompt(
+            mocker,
+            make_cmd_result,
             '[{"id": "r1", "summary": "s1"}]',
             [{"id": "r1", "body": "x"}],
             [],
@@ -326,9 +309,11 @@ Hope this helps!"""
         assert "x" * 3000 not in written_prompts[0]
         assert "x" * 2000 in written_prompts[0]
 
-    def test_pr_body_empty_not_included_in_prompt(self):
+    def test_pr_body_empty_not_included_in_prompt(self, mocker, make_cmd_result):
         """Empty pr_body does not add PR概要 section to prompt."""
         _, written_prompts = self._capture_prompt(
+            mocker,
+            make_cmd_result,
             '[{"id": "r1", "summary": "s1"}]',
             [{"id": "r1", "body": "x"}],
             [],
@@ -337,9 +322,13 @@ Hope this helps!"""
         assert written_prompts
         assert "PR概要データ（以下は参考情報" not in written_prompts[0]
 
-    def test_pr_body_empty_omits_pr_body_output_rule_and_format(self):
+    def test_pr_body_empty_omits_pr_body_output_rule_and_format(
+        self, mocker, make_cmd_result
+    ):
         """Empty pr_body omits _pr_body instruction and format example from prompt."""
         _, written_prompts = self._capture_prompt(
+            mocker,
+            make_cmd_result,
             '[{"id": "r1", "summary": "s1"}]',
             [{"id": "r1", "body": "x"}],
             [],
@@ -348,18 +337,15 @@ Hope this helps!"""
         assert written_prompts
         assert "_pr_body" not in written_prompts[0]
 
-    def test_pr_body_summary_returned_as_pr_body_key(self):
+    def test_pr_body_summary_returned_as_pr_body_key(self, mocker, make_cmd_result):
         """_pr_body key in JSON response is included in returned dict."""
         fake_stdout = '[{"id": "_pr_body", "summary": "PR概要の要約"}, {"id": "r1", "summary": "s1"}]'
-        with patch("summarizer.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_stdout,
-                stderr="",
-            )
-            result = summarizer.summarize_reviews(
-                [{"id": "r1", "body": "x"}],
-                [],
-                pr_body="some body",
-            )
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+            pr_body="some body",
+        )
         assert result == {"_pr_body": "PR概要の要約", "r1": "s1"}

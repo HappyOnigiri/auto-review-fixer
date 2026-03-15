@@ -1,7 +1,6 @@
 """Unit tests for result_report module."""
 
 import result_report
-from unittest.mock import patch
 
 
 class TestFormatPhaseResultBlock:
@@ -77,27 +76,27 @@ class TestMergeResultLogBody:
 
 
 class TestBuildPhaseResultEntry:
-    def test_generates_block_with_timestamp(self):
-        with patch(
+    def test_generates_block_with_timestamp(self, mocker):
+        mocker.patch(
             "result_report.current_timestamp", return_value="2026-03-13 15:30:00 JST"
-        ):
-            entry = result_report.build_phase_result_entry(
-                phase_label="ci-fix",
-                stdout_text="output text",
-                timezone_name="JST",
-            )
+        )
+        entry = result_report.build_phase_result_entry(
+            phase_label="ci-fix",
+            stdout_text="output text",
+            timezone_name="JST",
+        )
         assert "2026-03-13 15:30:00 JST" in entry
         assert "#### CI 修正" in entry
         assert "output text" in entry
 
-    def test_passes_comment_urls_for_review_fix(self):
-        with patch(
+    def test_passes_comment_urls_for_review_fix(self, mocker):
+        mocker.patch(
             "result_report.current_timestamp", return_value="2026-03-13 10:00:00 JST"
-        ):
-            entry = result_report.build_phase_result_entry(
-                phase_label="review-fix",
-                stdout_text="fixed",
-                timezone_name="JST",
-                comment_urls=["https://github.com/owner/repo/pull/1#r123"],
-            )
+        )
+        entry = result_report.build_phase_result_entry(
+            phase_label="review-fix",
+            stdout_text="fixed",
+            timezone_name="JST",
+            comment_urls=["https://github.com/owner/repo/pull/1#r123"],
+        )
         assert "**対象コメント:**" in entry

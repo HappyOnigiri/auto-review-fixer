@@ -1,7 +1,7 @@
 """Unit tests for PR labeling helpers."""
 
 import json
-from unittest.mock import Mock, call, patch
+from unittest.mock import call
 
 
 import coderabbit
@@ -12,20 +12,22 @@ from type_defs import PRData
 
 
 class TestRefixLabeling:
-    def test_ensure_repo_label_exists_creates_when_missing(self):
-        get_result = Mock(returncode=1, stdout="", stderr="404 Not Found")
-        create_result = Mock(
-            returncode=0, stdout='{"name":"refix: running"}', stderr=""
+    def test_ensure_repo_label_exists_creates_when_missing(
+        self, mocker, make_cmd_result
+    ):
+        mock_run = mocker.patch(
+            "pr_label.run_command",
+            side_effect=[
+                make_cmd_result("", returncode=1, stderr="404 Not Found"),
+                make_cmd_result('{"name":"refix: running"}'),
+            ],
         )
-        with patch(
-            "pr_label.run_command", side_effect=[get_result, create_result]
-        ) as mock_run:
-            ok = pr_label._ensure_repo_label_exists(
-                "owner/repo",
-                "refix: running",
-                color="FBCA04",
-                description="running label",
-            )
+        ok = pr_label._ensure_repo_label_exists(
+            "owner/repo",
+            "refix: running",
+            color="FBCA04",
+            description="running label",
+        )
 
         assert ok is True
         assert mock_run.call_count == 2
@@ -33,12 +35,10 @@ class TestRefixLabeling:
         assert create_call[:3] == ["gh", "api", "repos/owner/repo/labels"]
         assert "name=refix: running" in create_call
 
-    def test_set_pr_running_label_ensures_labels_before_edit(self):
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label", return_value=True) as mock_edit,
-        ):
-            pr_label.set_pr_running_label("owner/repo", 9)
+    def test_set_pr_running_label_ensures_labels_before_edit(self, mocker):
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+        pr_label.set_pr_running_label("owner/repo", 9)
 
         mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
@@ -60,36 +60,30 @@ class TestRefixLabeling:
             ]
         )
 
-    def test_set_pr_running_label_skips_edit_when_already_has_running(self):
+    def test_set_pr_running_label_skips_edit_when_already_has_running(self, mocker):
         """When PR already has refix: running and no refix: done, skip gh pr edit to avoid updating PR."""
         pr_data: PRData = {"labels": [{"name": "refix: running"}]}
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label") as mock_edit,
-        ):
-            pr_label.set_pr_running_label("owner/repo", 9, pr_data=pr_data)
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label")
+        pr_label.set_pr_running_label("owner/repo", 9, pr_data=pr_data)
 
         mock_ensure.assert_not_called()
         mock_edit.assert_not_called()
 
-    def test_set_pr_done_label_skips_edit_when_already_has_done(self):
+    def test_set_pr_done_label_skips_edit_when_already_has_done(self, mocker):
         """When PR already has refix: done and no refix: running, skip gh pr edit to avoid updating PR."""
         pr_data: PRData = {"labels": [{"name": "refix: done"}]}
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label") as mock_edit,
-        ):
-            pr_label._set_pr_done_label("owner/repo", 11, pr_data=pr_data)
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label")
+        pr_label._set_pr_done_label("owner/repo", 11, pr_data=pr_data)
 
         mock_ensure.assert_not_called()
         mock_edit.assert_not_called()
 
-    def test_set_pr_done_label_ensures_labels_before_edit(self):
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label", return_value=True) as mock_edit,
-        ):
-            pr_label._set_pr_done_label("owner/repo", 11)
+    def test_set_pr_done_label_ensures_labels_before_edit(self, mocker):
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+        pr_label._set_pr_done_label("owner/repo", 11)
 
         mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
@@ -111,12 +105,10 @@ class TestRefixLabeling:
             ]
         )
 
-    def test_set_pr_merged_label_ensures_labels_before_edit(self):
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label", return_value=True) as mock_edit,
-        ):
-            pr_label._set_pr_merged_label("owner/repo", 12)
+    def test_set_pr_merged_label_ensures_labels_before_edit(self, mocker):
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
+        pr_label._set_pr_merged_label("owner/repo", 12)
 
         mock_ensure.assert_called_once_with("owner/repo", error_collector=None)
         mock_edit.assert_has_calls(
@@ -145,31 +137,27 @@ class TestRefixLabeling:
             ]
         )
 
-    def test_set_pr_running_label_noop_when_running_and_done_disabled(self):
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label") as mock_edit,
-        ):
-            pr_label.set_pr_running_label(
-                "owner/repo",
-                9,
-                enabled_pr_label_keys={"merged", "auto_merge_requested"},
-            )
+    def test_set_pr_running_label_noop_when_running_and_done_disabled(self, mocker):
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label")
+        pr_label.set_pr_running_label(
+            "owner/repo",
+            9,
+            enabled_pr_label_keys={"merged", "auto_merge_requested"},
+        )
         mock_ensure.assert_not_called()
         mock_edit.assert_not_called()
 
-    def test_set_pr_running_label_removes_done_when_running_disabled(self):
+    def test_set_pr_running_label_removes_done_when_running_disabled(self, mocker):
         pr_data: PRData = {"labels": [{"name": "refix: done"}]}
-        with (
-            patch("pr_label._ensure_refix_labels") as mock_ensure,
-            patch("pr_label.edit_pr_label") as mock_edit,
-        ):
-            pr_label.set_pr_running_label(
-                "owner/repo",
-                9,
-                pr_data=pr_data,
-                enabled_pr_label_keys={"done"},
-            )
+        mock_ensure = mocker.patch("pr_label._ensure_refix_labels")
+        mock_edit = mocker.patch("pr_label.edit_pr_label")
+        pr_label.set_pr_running_label(
+            "owner/repo",
+            9,
+            pr_data=pr_data,
+            enabled_pr_label_keys={"done"},
+        )
         mock_ensure.assert_called_once_with(
             "owner/repo", enabled_pr_label_keys={"done"}, error_collector=None
         )
@@ -182,26 +170,26 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_backfill_merged_labels_skips_when_no_merge_related_labels_enabled(self):
-        with patch("pr_label.run_command") as mock_run:
-            count = pr_label.backfill_merged_labels(
-                "owner/repo", enabled_pr_label_keys={"done"}
-            )
+    def test_backfill_merged_labels_skips_when_no_merge_related_labels_enabled(
+        self, mocker
+    ):
+        mock_run = mocker.patch("pr_label.run_command")
+        count = pr_label.backfill_merged_labels(
+            "owner/repo", enabled_pr_label_keys={"done"}
+        )
         assert count == 0
         mock_run.assert_not_called()
 
-    def test_trigger_pr_auto_merge_executes_gh_merge(self):
-        with (
-            patch(
-                "pr_label._get_allowed_merge_methods",
-                return_value=["merge", "squash"],
-            ),
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(returncode=0, stdout="", stderr=""),
-            ) as mock_run,
-        ):
-            merge_state_reached, _ = pr_label._trigger_pr_auto_merge("owner/repo", 7)
+    def test_trigger_pr_auto_merge_executes_gh_merge(self, mocker, make_cmd_result):
+        mocker.patch(
+            "pr_label._get_allowed_merge_methods",
+            return_value=["merge", "squash"],
+        )
+        mock_run = mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(""),
+        )
+        merge_state_reached, _ = pr_label._trigger_pr_auto_merge("owner/repo", 7)
 
         assert merge_state_reached is True
         mock_run.assert_any_call(
@@ -209,14 +197,14 @@ class TestRefixLabeling:
             check=False,
         )
 
-    def test_trigger_pr_auto_merge_explicit_squash(self):
-        with patch(
+    def test_trigger_pr_auto_merge_explicit_squash(self, mocker, make_cmd_result):
+        mock_run = mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(returncode=0, stdout="", stderr=""),
-        ) as mock_run:
-            merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
-                "owner/repo", 7, merge_method="squash"
-            )
+            return_value=make_cmd_result(""),
+        )
+        merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
+            "owner/repo", 7, merge_method="squash"
+        )
 
         assert merge_state_reached is True
         mock_run.assert_any_call(
@@ -224,39 +212,42 @@ class TestRefixLabeling:
             check=False,
         )
 
-    def test_trigger_pr_auto_merge_auto_falls_back_on_method_not_allowed(self):
+    def test_trigger_pr_auto_merge_auto_falls_back_on_method_not_allowed(
+        self, mocker, make_cmd_result
+    ):
         """auto モードでメソッド非対応エラーが返った場合、次のメソッドを試みる。"""
-        responses = [
-            Mock(returncode=1, stdout="", stderr="merge method not allowed"),
-            Mock(returncode=0, stdout="", stderr=""),
-        ]
-        with (
-            patch(
-                "pr_label._get_allowed_merge_methods",
-                return_value=None,  # API 失敗 → priority 順で試行
-            ),
-            patch("pr_label.run_command", side_effect=responses),
-            patch("pr_label._ensure_refix_labels"),
-            patch("pr_label.edit_pr_label", return_value=False),
-        ):
-            merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
-                "owner/repo", 7, merge_method="auto"
-            )
-
-        assert merge_state_reached is True
-
-    def test_trigger_pr_auto_merge_treats_already_merged_as_success(self):
-        with patch(
+        mocker.patch("pr_label._get_allowed_merge_methods", return_value=None)
+        mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(
-                returncode=1, stdout="", stderr="pull request is already merged"
-            ),
-        ):
-            merge_state_reached, _ = pr_label._trigger_pr_auto_merge("owner/repo", 8)
+            side_effect=[
+                make_cmd_result("", returncode=1, stderr="merge method not allowed"),
+                make_cmd_result(""),
+            ],
+        )
+        mocker.patch("pr_label._ensure_refix_labels")
+        mocker.patch("pr_label.edit_pr_label", return_value=False)
+        merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
+            "owner/repo", 7, merge_method="auto"
+        )
 
         assert merge_state_reached is True
 
-    def test_mark_pr_merged_label_if_needed_adds_label_for_done_merged_pr(self):
+    def test_trigger_pr_auto_merge_treats_already_merged_as_success(
+        self, mocker, make_cmd_result
+    ):
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(
+                "", returncode=1, stderr="pull request is already merged"
+            ),
+        )
+        merge_state_reached, _ = pr_label._trigger_pr_auto_merge("owner/repo", 8)
+
+        assert merge_state_reached is True
+
+    def test_mark_pr_merged_label_if_needed_adds_label_for_done_merged_pr(
+        self, mocker, make_cmd_result
+    ):
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
             "labels": [
@@ -264,20 +255,20 @@ class TestRefixLabeling:
                 {"name": "refix: auto-merge-requested"},
             ],
         }
-        with (
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr=""),
-            ),
-            patch(
-                "pr_label._set_pr_merged_label", return_value=True
-            ) as mock_set_merged,
-        ):
-            ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 21)
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(json.dumps(pr_view)),
+        )
+        mock_set_merged = mocker.patch(
+            "pr_label._set_pr_merged_label", return_value=True
+        )
+        ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 21)
         assert ok is True
         mock_set_merged.assert_called_once_with("owner/repo", 21, error_collector=None)
 
-    def test_mark_pr_merged_label_if_needed_skips_when_not_merged(self):
+    def test_mark_pr_merged_label_if_needed_skips_when_not_merged(
+        self, mocker, make_cmd_result
+    ):
         pr_view = {
             "mergedAt": None,
             "labels": [
@@ -285,47 +276,43 @@ class TestRefixLabeling:
                 {"name": "refix: auto-merge-requested"},
             ],
         }
-        with (
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr=""),
-            ),
-            patch("pr_label._set_pr_merged_label") as mock_set_merged,
-        ):
-            ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 22)
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(json.dumps(pr_view)),
+        )
+        mock_set_merged = mocker.patch("pr_label._set_pr_merged_label")
+        ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 22)
         assert ok is False
         mock_set_merged.assert_not_called()
 
-    def test_mark_pr_merged_label_if_needed_skips_when_auto_merge_not_requested(self):
+    def test_mark_pr_merged_label_if_needed_skips_when_auto_merge_not_requested(
+        self, mocker, make_cmd_result
+    ):
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
             "labels": [{"name": "refix: done"}],
         }
-        with (
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(returncode=0, stdout=json.dumps(pr_view), stderr=""),
-            ),
-            patch("pr_label._set_pr_merged_label") as mock_set_merged,
-        ):
-            ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 23)
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(json.dumps(pr_view)),
+        )
+        mock_set_merged = mocker.patch("pr_label._set_pr_merged_label")
+        ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 23)
         assert ok is False
         mock_set_merged.assert_not_called()
 
-    def test_backfill_merged_labels_applies_label_to_matching_prs(self):
+    def test_backfill_merged_labels_applies_label_to_matching_prs(
+        self, mocker, make_cmd_result
+    ):
         merged_prs = [{"number": 31}, {"number": 32}]
-        with (
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(
-                    returncode=0, stdout=json.dumps(merged_prs), stderr=""
-                ),
-            ),
-            patch(
-                "pr_label._mark_pr_merged_label_if_needed", return_value=True
-            ) as mock_mark,
-        ):
-            count = pr_label.backfill_merged_labels("owner/repo")
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result(json.dumps(merged_prs)),
+        )
+        mock_mark = mocker.patch(
+            "pr_label._mark_pr_merged_label_if_needed", return_value=True
+        )
+        count = pr_label.backfill_merged_labels("owner/repo")
         assert count == 2
         mock_mark.assert_has_calls(
             [
@@ -334,15 +321,15 @@ class TestRefixLabeling:
             ]
         )
 
-    def test_backfill_merged_labels_returns_zero_on_list_failure(self):
-        with (
-            patch(
-                "pr_label.run_command",
-                return_value=Mock(returncode=1, stdout="", stderr="boom"),
-            ),
-            patch("pr_label._set_pr_merged_label") as mock_set_merged,
-        ):
-            count = pr_label.backfill_merged_labels("owner/repo")
+    def test_backfill_merged_labels_returns_zero_on_list_failure(
+        self, mocker, make_cmd_result
+    ):
+        mocker.patch(
+            "pr_label.run_command",
+            return_value=make_cmd_result("", returncode=1, stderr="boom"),
+        )
+        mock_set_merged = mocker.patch("pr_label._set_pr_merged_label")
+        count = pr_label.backfill_merged_labels("owner/repo")
         assert count == 0
         mock_set_merged.assert_not_called()
 
@@ -358,29 +345,29 @@ class TestRefixLabeling:
         }
         assert coderabbit.contains_coderabbit_processing_marker(pr_data, []) is True
 
-    def test_update_done_label_sets_done_when_conditions_met(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
-            patch("pr_label.are_all_ci_checks_successful", return_value=True),
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-            patch("pr_label._trigger_pr_auto_merge") as mock_auto_merge,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-            )
+    def test_update_done_label_sets_done_when_conditions_met(self, mocker):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        mock_auto_merge = mocker.patch("pr_label._trigger_pr_auto_merge")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
         mock_set_done.assert_called_once_with(
             "owner/repo",
             1,
@@ -390,33 +377,33 @@ class TestRefixLabeling:
         mock_set_running.assert_not_called()
         mock_auto_merge.assert_not_called()
 
-    def test_update_done_label_triggers_auto_merge_when_enabled(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
-            patch("pr_label.are_all_ci_checks_successful", return_value=True),
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-            patch(
-                "pr_label._trigger_pr_auto_merge", return_value=(True, False)
-            ) as mock_auto_merge,
-            patch("pr_label._mark_pr_merged_label_if_needed") as mock_mark_merged,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=3,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-                auto_merge_enabled=True,
-            )
+    def test_update_done_label_triggers_auto_merge_when_enabled(self, mocker):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        mock_auto_merge = mocker.patch(
+            "pr_label._trigger_pr_auto_merge", return_value=(True, False)
+        )
+        mock_mark_merged = mocker.patch("pr_label._mark_pr_merged_label_if_needed")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=3,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+            auto_merge_enabled=True,
+        )
         mock_set_done.assert_called_once_with(
             "owner/repo",
             3,
@@ -429,28 +416,26 @@ class TestRefixLabeling:
         )
         mock_mark_merged.assert_called_once_with("owner/repo", 3, error_collector=None)
 
-    def test_update_done_label_sets_running_when_review_fix_added_commit(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker") as mock_marker,
-            patch("pr_label.are_all_ci_checks_successful") as mock_ci,
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=True,
-                review_fix_started=True,
-                review_fix_added_commits=True,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-            )
+    def test_update_done_label_sets_running_when_review_fix_added_commit(self, mocker):
+        mock_marker = mocker.patch("pr_label.contains_coderabbit_processing_marker")
+        mock_ci = mocker.patch("pr_label.are_all_ci_checks_successful")
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=True,
+            review_fix_started=True,
+            review_fix_added_commits=True,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
         mock_marker.assert_not_called()
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
@@ -461,28 +446,28 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_update_done_label_sets_running_when_ci_not_success(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
-            patch("pr_label.are_all_ci_checks_successful", return_value=False),
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=2,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-            )
+    def test_update_done_label_sets_running_when_ci_not_success(self, mocker):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=False)
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=2,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
             "owner/repo",
@@ -491,26 +476,24 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_update_done_label_skips_when_review_fix_failed(self):
-        with (
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=True,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-            )
+    def test_update_done_label_skips_when_review_fix_failed(self, mocker):
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=True,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
             "owner/repo",
@@ -519,66 +502,66 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_update_done_label_skips_when_dry_run(self):
-        with patch("pr_label._set_pr_done_label") as mock_set_done:
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=True,
-                summarize_only=False,
-            )
+    def test_update_done_label_skips_when_dry_run(self, mocker):
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=True,
+            summarize_only=False,
+        )
         mock_set_done.assert_not_called()
 
-    def test_update_done_label_skips_when_summarize_only(self):
-        with patch("pr_label._set_pr_done_label") as mock_set_done:
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=True,
-            )
+    def test_update_done_label_skips_when_summarize_only(self, mocker):
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=True,
+        )
         mock_set_done.assert_not_called()
 
-    def test_update_done_label_skips_when_coderabbit_processing(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=True),
-            patch("pr_label.are_all_ci_checks_successful") as mock_ci,
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-            )
+    def test_update_done_label_skips_when_coderabbit_processing(self, mocker):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=True
+        )
+        mock_ci = mocker.patch("pr_label.are_all_ci_checks_successful")
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
@@ -588,29 +571,29 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_update_done_label_skips_when_coderabbit_rate_limit_active(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
-            patch("pr_label.are_all_ci_checks_successful") as mock_ci,
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-                coderabbit_rate_limit_active=True,
-            )
+    def test_update_done_label_skips_when_coderabbit_rate_limit_active(self, mocker):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_ci = mocker.patch("pr_label.are_all_ci_checks_successful")
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+            coderabbit_rate_limit_active=True,
+        )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
@@ -620,29 +603,31 @@ class TestRefixLabeling:
             error_collector=None,
         )
 
-    def test_update_done_label_skips_when_coderabbit_review_skipped_active(self):
-        with (
-            patch("pr_label.contains_coderabbit_processing_marker", return_value=False),
-            patch("pr_label.are_all_ci_checks_successful") as mock_ci,
-            patch("pr_label._set_pr_done_label") as mock_set_done,
-            patch("pr_label.set_pr_running_label") as mock_set_running,
-        ):
-            pr_label.update_done_label_if_completed(
-                repo="owner/repo",
-                pr_number=1,
-                has_review_targets=False,
-                review_fix_started=False,
-                review_fix_added_commits=False,
-                review_fix_failed=False,
-                state_saved=True,
-                commits_by_phase=[],
-                pr_data={"reviews": [], "comments": []},
-                review_comments=[],
-                issue_comments=[],
-                dry_run=False,
-                summarize_only=False,
-                coderabbit_review_skipped_active=True,
-            )
+    def test_update_done_label_skips_when_coderabbit_review_skipped_active(
+        self, mocker
+    ):
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_ci = mocker.patch("pr_label.are_all_ci_checks_successful")
+        mock_set_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_set_running = mocker.patch("pr_label.set_pr_running_label")
+        pr_label.update_done_label_if_completed(
+            repo="owner/repo",
+            pr_number=1,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+            coderabbit_review_skipped_active=True,
+        )
         mock_ci.assert_not_called()
         mock_set_done.assert_not_called()
         mock_set_running.assert_called_once_with(
@@ -654,76 +639,80 @@ class TestRefixLabeling:
 
 
 class TestErrorCollectorIntegration:
-    def test_ensure_repo_label_exists_subprocess_error_adds_repo_error(self):
+    def test_ensure_repo_label_exists_subprocess_error_adds_repo_error(self, mocker):
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "pr_label.run_command", side_effect=SubprocessError("network error")
-        ):
-            ok = pr_label._ensure_repo_label_exists(
-                "owner/repo",
-                "refix: running",
-                color="FBCA04",
-                description="desc",
-                error_collector=ec,
-            )
+        )
+        ok = pr_label._ensure_repo_label_exists(
+            "owner/repo",
+            "refix: running",
+            color="FBCA04",
+            description="desc",
+            error_collector=ec,
+        )
         assert ok is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo"
         assert "failed to check label" in ec._errors[0].message
 
-    def test_ensure_repo_label_exists_unexpected_api_error_adds_repo_error(self):
+    def test_ensure_repo_label_exists_unexpected_api_error_adds_repo_error(
+        self, mocker, make_cmd_result
+    ):
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="403 Forbidden"),
-        ):
-            ok = pr_label._ensure_repo_label_exists(
-                "owner/repo",
-                "refix: running",
-                color="FBCA04",
-                description="desc",
-                error_collector=ec,
-            )
+            return_value=make_cmd_result("", returncode=1, stderr="403 Forbidden"),
+        )
+        ok = pr_label._ensure_repo_label_exists(
+            "owner/repo",
+            "refix: running",
+            color="FBCA04",
+            description="desc",
+            error_collector=ec,
+        )
         assert ok is False
         assert ec.has_errors
         assert "failed to verify label" in ec._errors[0].message
 
-    def test_edit_pr_label_failure_adds_pr_error(self):
+    def test_edit_pr_label_failure_adds_pr_error(self, mocker, make_cmd_result):
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="API error"),
-        ):
-            ok = pr_label.edit_pr_label(
-                "owner/repo",
-                42,
-                add=True,
-                label="refix: running",
-                error_collector=ec,
-            )
+            return_value=make_cmd_result("", returncode=1, stderr="API error"),
+        )
+        ok = pr_label.edit_pr_label(
+            "owner/repo",
+            42,
+            add=True,
+            label="refix: running",
+            error_collector=ec,
+        )
         assert ok is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#42"
 
-    def test_backfill_merged_labels_list_failure_adds_repo_error(self):
+    def test_backfill_merged_labels_list_failure_adds_repo_error(
+        self, mocker, make_cmd_result
+    ):
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="boom"),
-        ):
-            count = pr_label.backfill_merged_labels("owner/repo", error_collector=ec)
+            return_value=make_cmd_result("", returncode=1, stderr="boom"),
+        )
+        count = pr_label.backfill_merged_labels("owner/repo", error_collector=ec)
         assert count == 0
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo"
 
-    def test_trigger_pr_auto_merge_failure_adds_pr_error(self):
+    def test_trigger_pr_auto_merge_failure_adds_pr_error(self, mocker, make_cmd_result):
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "pr_label.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="forbidden"),
-        ):
-            merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
-                "owner/repo", 7, error_collector=ec
-            )
+            return_value=make_cmd_result("", returncode=1, stderr="forbidden"),
+        )
+        merge_state_reached, _ = pr_label._trigger_pr_auto_merge(
+            "owner/repo", 7, error_collector=ec
+        )
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#7"

@@ -1,6 +1,6 @@
 """Unit tests for project_config module."""
 
-from unittest.mock import call, patch
+from unittest.mock import call
 
 import pytest
 
@@ -136,18 +136,18 @@ def test_version_defaults_to_1_when_omitted(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_does_nothing_when_no_config_file(tmp_path):
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+def test_does_nothing_when_no_config_file(tmp_path, mocker):
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
     mock_run.assert_not_called()
 
 
-def test_runs_commands_in_order(tmp_path):
+def test_runs_commands_in_order(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - run: npm ci\n    - run: cp .env.example .env\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     assert mock_run.call_count == 2
     assert mock_run.call_args_list[0] == call(
@@ -162,70 +162,70 @@ def test_runs_commands_in_order(tmp_path):
     )
 
 
-def test_passes_repo_root_as_cwd(tmp_path):
+def test_passes_repo_root_as_cwd(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - run: echo hello\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     _, kwargs = mock_run.call_args
     assert kwargs["cwd"] == tmp_path
 
 
-def test_uses_shell_c_invocation(tmp_path):
+def test_uses_shell_c_invocation(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - run: npm ci && echo done\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     cmd = mock_run.call_args[0][0]
     assert cmd == ["sh", "-c", "npm ci && echo done"]
 
 
-def test_propagates_subprocess_error(tmp_path):
+def test_propagates_subprocess_error(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(
+    mocker.patch.object(
         project_config,
         "run_command",
         side_effect=SubprocessError("failed", returncode=1),
-    ):
-        with pytest.raises(SubprocessError):
-            project_config.run_project_setup(tmp_path, is_first_clone=True)
+    )
+    with pytest.raises(SubprocessError):
+        project_config.run_project_setup(tmp_path, is_first_clone=True)
 
 
-def test_prints_command_name_if_present(tmp_path, capsys):
+def test_prints_command_name_if_present(tmp_path, capsys, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - name: install deps\n      run: npm ci\n"
     )
-    with patch.object(project_config, "run_command"):
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     captured = capsys.readouterr()
     assert "install deps" in captured.out
     assert "npm ci" in captured.out
 
 
-def test_prints_run_string_if_name_absent(tmp_path, capsys):
+def test_prints_run_string_if_name_absent(tmp_path, capsys, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(project_config, "run_command"):
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     captured = capsys.readouterr()
     assert "npm ci" in captured.out
 
 
-def test_skips_execution_when_commands_empty(tmp_path):
+def test_skips_execution_when_commands_empty(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  commands: []\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
 
     mock_run.assert_not_called()
 
@@ -235,37 +235,37 @@ def test_skips_execution_when_commands_empty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_when_always_runs_on_first_clone(tmp_path):
+def test_when_always_runs_on_first_clone(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  when: always\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
     mock_run.assert_called_once()
 
 
-def test_when_always_runs_on_subsequent_update(tmp_path):
+def test_when_always_runs_on_subsequent_update(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  when: always\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=False)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=False)
     mock_run.assert_called_once()
 
 
-def test_when_clone_only_runs_on_first_clone(tmp_path):
+def test_when_clone_only_runs_on_first_clone(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  when: clone_only\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=True)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=True)
     mock_run.assert_called_once()
 
 
-def test_when_clone_only_skips_on_subsequent_update(tmp_path):
+def test_when_clone_only_skips_on_subsequent_update(tmp_path, mocker):
     (tmp_path / ".refix-project.yaml").write_text(
         "version: 1\nsetup:\n  when: clone_only\n  commands:\n    - run: npm ci\n"
     )
-    with patch.object(project_config, "run_command") as mock_run:
-        project_config.run_project_setup(tmp_path, is_first_clone=False)
+    mock_run = mocker.patch.object(project_config, "run_command")
+    project_config.run_project_setup(tmp_path, is_first_clone=False)
     mock_run.assert_not_called()

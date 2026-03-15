@@ -1,7 +1,6 @@
 """Unit tests for CodeRabbit rate limit helpers."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
 
 
 import auto_fixer
@@ -186,30 +185,30 @@ class TestCodeRabbitRateLimitHelpers:
         )
         assert status is None
 
-    def test_maybe_auto_resume_posts_comment_when_wait_elapsed(self):
+    def test_maybe_auto_resume_posts_comment_when_wait_elapsed(self, mocker):
         now = datetime.now(timezone.utc)
         status: RateLimitStatus = {
             "updated_at": now,
             "resume_after": now - timedelta(seconds=1),
         }
-        with patch("coderabbit._post_issue_comment", return_value=True) as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                rate_limit_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+        )
 
         assert posted is True
         mock_post.assert_called_once_with(
             "owner/repo", 1, "@coderabbitai resume", error_collector=None
         )
 
-    def test_maybe_auto_resume_skips_when_resume_already_exists(self):
+    def test_maybe_auto_resume_skips_when_resume_already_exists(self, mocker):
         threshold = datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
         status: RateLimitStatus = {
             "updated_at": threshold,
@@ -221,154 +220,158 @@ class TestCodeRabbitRateLimitHelpers:
                 "updated_at": "2026-03-11T12:01:00Z",
             }
         ]
-        with patch("coderabbit._post_issue_comment") as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=issue_comments,
-                rate_limit_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=issue_comments,
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+        )
 
         assert posted is False
         mock_post.assert_not_called()
 
-    def test_maybe_auto_resume_skips_when_per_run_limit_reached(self):
+    def test_maybe_auto_resume_skips_when_per_run_limit_reached(self, mocker):
         threshold = datetime.now(timezone.utc)
         status: RateLimitStatus = {
             "updated_at": threshold,
             "resume_after": threshold,
         }
-        with patch("coderabbit._post_issue_comment") as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                rate_limit_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=0,
-                dry_run=False,
-                summarize_only=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=0,
+            dry_run=False,
+            summarize_only=False,
+        )
         assert posted is False
         mock_post.assert_not_called()
 
-    def test_maybe_auto_resume_review_failed_posts_comment(self):
+    def test_maybe_auto_resume_review_failed_posts_comment(self, mocker):
         threshold = datetime.now(timezone.utc)
         status: ReviewFailedStatus = {
             "updated_at": threshold,
         }
-        with patch("coderabbit._post_issue_comment", return_value=True) as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review_failed(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                review_failed_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_resume_coderabbit_review_failed(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            review_failed_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+        )
 
         assert posted is True
         mock_post.assert_called_once_with(
             "owner/repo", 1, "@coderabbitai resume", error_collector=None
         )
 
-    def test_maybe_auto_resume_review_failed_skips_when_per_run_limit_reached(self):
+    def test_maybe_auto_resume_review_failed_skips_when_per_run_limit_reached(
+        self, mocker
+    ):
         threshold = datetime.now(timezone.utc)
         status: ReviewFailedStatus = {
             "updated_at": threshold,
         }
-        with patch("coderabbit._post_issue_comment") as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review_failed(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                review_failed_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=0,
-                dry_run=False,
-                summarize_only=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_resume_coderabbit_review_failed(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            review_failed_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=0,
+            dry_run=False,
+            summarize_only=False,
+        )
         assert posted is False
         mock_post.assert_not_called()
 
-    def test_maybe_auto_resume_skips_when_rate_limit_trigger_disabled(self):
+    def test_maybe_auto_resume_skips_when_rate_limit_trigger_disabled(self, mocker):
         threshold = datetime.now(timezone.utc)
         status: RateLimitStatus = {
             "updated_at": threshold,
             "resume_after": threshold,
         }
-        with patch("coderabbit._post_issue_comment") as mock_post:
-            posted = coderabbit.maybe_auto_resume_coderabbit_review(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                rate_limit_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-                trigger_enabled=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            trigger_enabled=False,
+        )
         assert posted is False
         mock_post.assert_not_called()
 
-    def test_maybe_auto_trigger_review_skipped_posts_review_comment(self):
+    def test_maybe_auto_trigger_review_skipped_posts_review_comment(self, mocker):
         threshold = datetime.now(timezone.utc)
         status: ReviewSkippedStatus = {
             "updated_at": threshold,
             "reason": "draft_detected",
             "reason_label": "Draft detected",
         }
-        with patch("coderabbit._post_issue_comment", return_value=True) as mock_post:
-            posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                review_skipped_status=status,
-                auto_resume_enabled=True,
-                trigger_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-                is_draft=False,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            review_skipped_status=status,
+            auto_resume_enabled=True,
+            trigger_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            is_draft=False,
+        )
 
         assert posted is True
         mock_post.assert_called_once_with(
             "owner/repo", 1, "@coderabbitai review", error_collector=None
         )
 
-    def test_maybe_auto_trigger_review_skipped_skips_when_pr_is_draft(self):
+    def test_maybe_auto_trigger_review_skipped_skips_when_pr_is_draft(self, mocker):
         threshold = datetime.now(timezone.utc)
         status: ReviewSkippedStatus = {
             "updated_at": threshold,
             "reason": "draft_detected",
             "reason_label": "Draft detected",
         }
-        with patch("coderabbit._post_issue_comment") as mock_post:
-            posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
-                repo="owner/repo",
-                pr_number=1,
-                issue_comments=[],
-                review_skipped_status=status,
-                auto_resume_enabled=True,
-                trigger_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-                is_draft=True,
-            )
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=[],
+            review_skipped_status=status,
+            auto_resume_enabled=True,
+            trigger_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            is_draft=True,
+        )
 
         assert posted is False
         mock_post.assert_not_called()
 
-    def test_maybe_auto_resume_posts_comment_with_error_collector(self):
+    def test_maybe_auto_resume_posts_comment_with_error_collector(
+        self, mocker, make_cmd_result
+    ):
         """error_collector が _post_issue_comment に伝わることを確認。"""
         now = datetime.now(timezone.utc)
         status: RateLimitStatus = {
@@ -376,31 +379,31 @@ class TestCodeRabbitRateLimitHelpers:
             "resume_after": now - timedelta(seconds=1),
         }
         ec = ErrorCollector()
-        with patch(
+        mocker.patch(
             "coderabbit.run_command",
-            return_value=Mock(returncode=1, stdout="", stderr="forbidden"),
-        ):
-            posted = coderabbit.maybe_auto_resume_coderabbit_review(
-                repo="owner/repo",
-                pr_number=2,
-                issue_comments=[],
-                rate_limit_status=status,
-                auto_resume_enabled=True,
-                remaining_resume_posts=1,
-                dry_run=False,
-                summarize_only=False,
-                error_collector=ec,
-            )
+            return_value=make_cmd_result("", returncode=1, stderr="forbidden"),
+        )
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=2,
+            issue_comments=[],
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            error_collector=ec,
+        )
         assert posted is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#2"
 
-    def test_post_issue_comment_subprocess_error_adds_pr_error(self):
+    def test_post_issue_comment_subprocess_error_adds_pr_error(self, mocker):
         ec = ErrorCollector()
-        with patch("coderabbit.run_command", side_effect=SubprocessError("net error")):
-            result = coderabbit._post_issue_comment(
-                "owner/repo", 5, "hello", error_collector=ec
-            )
+        mocker.patch("coderabbit.run_command", side_effect=SubprocessError("net error"))
+        result = coderabbit._post_issue_comment(
+            "owner/repo", 5, "hello", error_collector=ec
+        )
         assert result is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#5"
