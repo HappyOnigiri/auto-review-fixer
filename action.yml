@@ -62,7 +62,7 @@ runs:
 
     - name: Filter event
       id: filter
-      if: env.GITHUB_EVENT_NAME == 'issue_comment'
+      if: github.event_name == 'issue_comment'
       run: python .refix-tool/src/filter_event.py
       shell: bash
       env:
