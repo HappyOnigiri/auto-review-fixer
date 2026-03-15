@@ -17,19 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate config
-        env:
-          REFIX_CONFIG_YAML: ${{ vars.REFIX_CONFIG_YAML }}
-        run: |
-          if [ -z "$REFIX_CONFIG_YAML" ]; then
-            echo "Error: REFIX_CONFIG_YAML is not set or empty" >&2
-            exit 1
-          fi
-          printf '%s\n' "$REFIX_CONFIG_YAML" > .refix.yaml
-
-      - uses: ./
+      # NOTE: `uses: ./` references the checked-out action.yml on the current branch,
+      # enabling testing of unreleased changes within this repository.
+      # When using this file as a template in another repository,
+      # change `./` to `HappyOnigiri/Refix@main` (or a specific version tag).
+      - name: Run Refix
+        uses: ./
         with:
-          multi-repo: 'true'
+          multi-repo: "true"
           gh-token: ${{ secrets.GH_TOKEN }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          config-path: ${{ github.workspace }}/.refix.yaml
+          config-yaml: ${{ vars.REFIX_CONFIG_YAML }}
