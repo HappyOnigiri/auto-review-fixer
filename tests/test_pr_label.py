@@ -791,7 +791,7 @@ class TestCiPendingLabel:
         mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
 
         # review_fix_failed=True → non-CI block; pr_data has ci-pending label already
-        pr_data_with_label = {
+        pr_data_with_label: PRData = {
             "reviews": [],
             "comments": [],
             "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
