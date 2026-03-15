@@ -5,3 +5,5 @@
 - **テストにシークレット不要**: テストは外部APIを全モック化しているため、`GH_TOKEN` や `CLAUDE_CODE_OAUTH_TOKEN` なしで実行可能。
 - **`make dry-run` の動作**: `.refix.yaml` のサンプル設定（`owner/repo`）では「Repository not found」エラーが出るが、これはダミーリポジトリのため期待通りの動作。実際のリポジトリを設定すれば正常に動作する。
 - **主要コマンド**: `Makefile` 参照。`make test` でテスト、`make dry-run` でスモークテスト。
+- **Git ユーザー設定**: `.git/config` に local ユーザー（`HappyOnigiri` / `253838257+NodeMeld@users.noreply.github.com`）を設定済み。スナップショットで保持される。
+- **Co-authored-by 無効化**: `commit-msg.cursor.co-author` フックの実行権限を除去して無効化済み。スナップショットで保持される。
