@@ -41,6 +41,8 @@ DEFAULT_CONFIG: AppConfig = {
         "draft_detected": True,
     },
     "coderabbit_auto_resume_max_per_run": 1,
+    "coderabbit_require_review": True,
+    "coderabbit_block_while_processing": True,
     "process_draft_prs": False,
     "include_fork_repositories": True,
     "state_comment_timezone": "JST",
@@ -71,6 +73,8 @@ _BASE_OPERATIONAL_KEYS = {
     "coderabbit_auto_resume",
     "coderabbit_auto_resume_triggers",
     "coderabbit_auto_resume_max_per_run",
+    "coderabbit_require_review",
+    "coderabbit_block_while_processing",
     "process_draft_prs",
     "state_comment_timezone",
     "merge_method",
@@ -131,6 +135,8 @@ _SCALAR_FIELDS: dict[str, FieldSpec] = {
     "write_result_to_comment": FieldSpec(bool),
     "auto_merge": FieldSpec(bool),
     "coderabbit_auto_resume": FieldSpec(bool),
+    "coderabbit_require_review": FieldSpec(bool),
+    "coderabbit_block_while_processing": FieldSpec(bool),
     "process_draft_prs": FieldSpec(bool),
     "include_fork_repositories": FieldSpec(bool),
     "ci_empty_as_success": FieldSpec(bool),
@@ -450,6 +456,10 @@ def _make_default_config() -> AppConfig:
         ),
         "coderabbit_auto_resume_max_per_run": DEFAULT_CONFIG[
             "coderabbit_auto_resume_max_per_run"
+        ],
+        "coderabbit_require_review": DEFAULT_CONFIG["coderabbit_require_review"],
+        "coderabbit_block_while_processing": DEFAULT_CONFIG[
+            "coderabbit_block_while_processing"
         ],
         "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
         "include_fork_repositories": DEFAULT_CONFIG["include_fork_repositories"],

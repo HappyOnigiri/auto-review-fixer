@@ -649,6 +649,35 @@ def maybe_auto_trigger_coderabbit_review_skipped(
     )
 
 
+def has_coderabbit_comments(
+    pr_data: PRData,
+    review_comments: list[GitHubComment],
+    issue_comments: list[GitHubComment] | None = None,
+) -> bool:
+    """CodeRabbit によるコメント・レビューが1件以上存在するか確認する。"""
+    for review in pr_data.get("reviews", []):
+        login = review.get("author", {}).get("login", "")
+        if is_coderabbit_login(login):
+            return True
+
+    for comment in pr_data.get("comments", []):
+        login = comment.get("author", {}).get("login", "")
+        if is_coderabbit_login(login):
+            return True
+
+    for comment in review_comments:
+        login = comment.get("user", {}).get("login", "")
+        if is_coderabbit_login(login):
+            return True
+
+    for comment in issue_comments or []:
+        login = comment.get("user", {}).get("login", "")
+        if is_coderabbit_login(login):
+            return True
+
+    return False
+
+
 def contains_coderabbit_processing_marker(
     pr_data: PRData,
     review_comments: list[GitHubComment],
