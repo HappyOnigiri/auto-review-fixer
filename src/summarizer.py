@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -22,6 +23,22 @@ from prompt_builder import (
     inline_comment_state_id,
     review_summary_id,
 )
+
+
+def _sanitize_json_text(text: str) -> str:
+    """Pre-process Claude output to fix common JSON formatting issues."""
+    # 1. Markdown code fence を除去
+    text = re.sub(r"```(?:json)?\s*\n?", "", text)
+    # 2. Trailing comma を除去
+    text = re.sub(r",(\s*[\]}])", r"\1", text)
+
+    # 3. JSON 文字列内の未エスケープ制御文字をエスケープ
+    def _escape_match(m: re.Match) -> str:
+        s = m.group(0)
+        return s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+    text = re.sub(r'"(?:[^"\\]|\\.)*?"', _escape_match, text, flags=re.DOTALL)
+    return text
 
 
 def _print_raw_summarizer_output(stdout: str, stderr: str, *, returncode: int) -> None:
@@ -191,6 +208,7 @@ def summarize_reviews(
 
     try:
         text = result.stdout
+        text = _sanitize_json_text(text)
         parsed = None
 
         # まず全体をそのままパース試行（トップレベルが list のみ許容）
@@ -211,7 +229,9 @@ def summarize_reviews(
                     break
                 try:
                     obj, _ = decoder.raw_decode(text, idx)
-                    if isinstance(obj, list):
+                    if isinstance(obj, list) and any(
+                        isinstance(item, dict) and "id" in item for item in obj
+                    ):
                         parsed = obj
                         break
                 except json.JSONDecodeError:
@@ -230,7 +250,9 @@ def summarize_reviews(
                 candidate = text[first_bracket : last_bracket + 1]
                 try:
                     obj = json.loads(candidate)
-                    if isinstance(obj, list):
+                    if isinstance(obj, list) and any(
+                        isinstance(item, dict) and "id" in item for item in obj
+                    ):
                         parsed = obj
                 except json.JSONDecodeError:
                     pass
