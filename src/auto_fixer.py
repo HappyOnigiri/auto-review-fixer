@@ -1234,6 +1234,8 @@ def _process_single_pr(
     backfilled_count: int = 0,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
+    coderabbit_require_review: bool = True,
+    coderabbit_block_while_processing: bool = True,
     exclude_authors: list[str] | None = None,
     exclude_labels: list[str] | None = None,
     target_authors: list[str] | None = None,
@@ -1505,6 +1507,8 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             coderabbit_review_skipped_active=bool(active_review_skipped),
+            coderabbit_require_review=coderabbit_require_review,
+            coderabbit_block_while_processing=coderabbit_block_while_processing,
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1729,6 +1733,8 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             coderabbit_review_skipped_active=bool(active_review_skipped),
+            coderabbit_require_review=coderabbit_require_review,
+            coderabbit_block_while_processing=coderabbit_block_while_processing,
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -1804,6 +1810,8 @@ def _process_single_pr(
             coderabbit_rate_limit_active=bool(active_rate_limit),
             coderabbit_review_failed_active=bool(active_review_failed),
             coderabbit_review_skipped_active=bool(active_review_skipped),
+            coderabbit_require_review=coderabbit_require_review,
+            coderabbit_block_while_processing=coderabbit_block_while_processing,
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
@@ -2013,6 +2021,17 @@ def process_repo(
         runtime_config.get("ci_empty_grace_minutes")
         or DEFAULT_CONFIG["ci_empty_grace_minutes"]
     )
+    coderabbit_require_review = bool(
+        runtime_config.get(
+            "coderabbit_require_review", DEFAULT_CONFIG["coderabbit_require_review"]
+        )
+    )
+    coderabbit_block_while_processing = bool(
+        runtime_config.get(
+            "coderabbit_block_while_processing",
+            DEFAULT_CONFIG["coderabbit_block_while_processing"],
+        )
+    )
     merge_method = (
         str(runtime_config.get("merge_method", DEFAULT_CONFIG["merge_method"])).strip()
         or DEFAULT_CONFIG["merge_method"]
@@ -2154,6 +2173,8 @@ def process_repo(
                     backfilled_count=total_backfilled,
                     ci_empty_as_success=ci_empty_as_success,
                     ci_empty_grace_minutes=ci_empty_grace_minutes,
+                    coderabbit_require_review=coderabbit_require_review,
+                    coderabbit_block_while_processing=coderabbit_block_while_processing,
                     exclude_authors=exclude_authors,
                     exclude_labels=exclude_labels,
                     target_authors=target_authors,

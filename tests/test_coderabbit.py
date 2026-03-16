@@ -407,3 +407,59 @@ class TestCodeRabbitRateLimitHelpers:
         assert result is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#5"
+
+
+class TestHasCoderabbitComments:
+    """has_coderabbit_comments() のテスト。"""
+
+    def _make_pr_data(self, reviews=None, comments=None) -> PRData:
+        return {"reviews": reviews or [], "comments": comments or []}
+
+    def test_no_comments_returns_false(self):
+        pr_data = self._make_pr_data()
+        assert coderabbit.has_coderabbit_comments(pr_data, [], []) is False
+
+    def test_review_by_coderabbit_returns_true(self):
+        pr_data = self._make_pr_data(
+            reviews=[{"author": {"login": "coderabbitai"}, "body": "LGTM"}]
+        )
+        assert coderabbit.has_coderabbit_comments(pr_data, [], []) is True
+
+    def test_review_by_coderabbit_bot_suffix_returns_true(self):
+        pr_data = self._make_pr_data(
+            reviews=[{"author": {"login": "coderabbitai[bot]"}, "body": "Nice!"}]
+        )
+        assert coderabbit.has_coderabbit_comments(pr_data, [], []) is True
+
+    def test_comment_in_pr_comments_returns_true(self):
+        pr_data = self._make_pr_data(
+            comments=[{"author": {"login": "coderabbitai"}, "body": "Note"}]
+        )
+        assert coderabbit.has_coderabbit_comments(pr_data, [], []) is True
+
+    def test_review_comment_returns_true(self):
+        pr_data = self._make_pr_data()
+        review_comments: list[GitHubComment] = [
+            {"user": {"login": "coderabbitai"}, "body": "Inline note"}
+        ]
+        assert coderabbit.has_coderabbit_comments(pr_data, review_comments, []) is True
+
+    def test_issue_comment_returns_true(self):
+        pr_data = self._make_pr_data()
+        issue_comments: list[GitHubComment] = [
+            {"user": {"login": "coderabbitai[bot]"}, "body": "Rate limited"}
+        ]
+        assert coderabbit.has_coderabbit_comments(pr_data, [], issue_comments) is True
+
+    def test_only_non_coderabbit_comments_returns_false(self):
+        pr_data = self._make_pr_data(
+            reviews=[{"author": {"login": "other-user"}, "body": "Review"}]
+        )
+        issue_comments: list[GitHubComment] = [
+            {"user": {"login": "someone-else"}, "body": "Comment"}
+        ]
+        assert coderabbit.has_coderabbit_comments(pr_data, [], issue_comments) is False
+
+    def test_issue_comments_none_does_not_raise(self):
+        pr_data = self._make_pr_data()
+        assert coderabbit.has_coderabbit_comments(pr_data, [], None) is False

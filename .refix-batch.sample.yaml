@@ -66,6 +66,14 @@ global:
   # Default: 1
   coderabbit_auto_resume_max_per_run: 1
 
+  # Block transitioning to refix: done if CodeRabbit has not yet posted any comment/review (Optional)
+  # Default: true
+  coderabbit_require_review: true
+
+  # Block transitioning to refix: done while CodeRabbit is still processing (Optional)
+  # Default: true
+  coderabbit_block_while_processing: true
+
   # Whether to process DRAFT PRs (Optional)
   # Default: false
   process_draft_prs: false

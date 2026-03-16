@@ -346,6 +346,7 @@ class TestRefixLabeling:
         assert coderabbit.contains_coderabbit_processing_marker(pr_data, []) is True
 
     def test_update_done_label_sets_done_when_conditions_met(self, mocker):
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -379,6 +380,7 @@ class TestRefixLabeling:
         mock_auto_merge.assert_not_called()
 
     def test_update_done_label_triggers_auto_merge_when_enabled(self, mocker):
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -749,6 +751,7 @@ class TestCiPendingLabel:
         assert "ci-pending" in full_cmd
 
     def test_update_done_label_adds_ci_pending_when_ci_blocks(self, mocker):
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -823,6 +826,7 @@ class TestCiPendingLabel:
 
     def _call_update_done_label(self, mocker, **overrides):
         """update_done_label_if_completed のデフォルト引数ヘルパー。"""
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         defaults = dict(
             repo="owner/repo",
             pr_number=10,
@@ -1006,3 +1010,108 @@ class TestCiPendingLabel:
         ]
         assert len(ci_pending_calls) == 1
         assert ci_pending_calls[0].kwargs["add"] is False
+
+
+class TestCoderabbitRequireReview:
+    """coderabbit_require_review / coderabbit_block_while_processing のテスト。"""
+
+    def _base_mocks(self, mocker):
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label", return_value=True)
+        mocker.patch("pr_label.edit_pr_label", return_value=True)
+        mocker.patch("pr_label._trigger_pr_auto_merge")
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+
+    def _call(self, mocker, **overrides):
+        defaults = dict(
+            repo="owner/repo",
+            pr_number=10,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
+        defaults.update(overrides)
+        return pr_label.update_done_label_if_completed(**defaults)  # type: ignore[arg-type]
+
+    def test_require_review_blocks_when_no_coderabbit_comment(self, mocker):
+        """coderabbit_require_review=True かつ CR コメントなし → done にならない。"""
+        self._base_mocks(mocker)
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=False)
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+
+        self._call(mocker, coderabbit_require_review=True)
+
+        mock_done.assert_not_called()
+
+    def test_require_review_allows_when_coderabbit_comment_exists(self, mocker):
+        """coderabbit_require_review=True かつ CR コメントあり → done になれる。"""
+        self._base_mocks(mocker)
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+
+        self._call(mocker, coderabbit_require_review=True)
+
+        mock_done.assert_called_once()
+
+    def test_require_review_false_skips_check(self, mocker):
+        """coderabbit_require_review=False → CR コメントなくても done になれる。"""
+        self._base_mocks(mocker)
+        mock_has = mocker.patch("pr_label.has_coderabbit_comments", return_value=False)
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+
+        self._call(mocker, coderabbit_require_review=False)
+
+        mock_has.assert_not_called()
+        mock_done.assert_called_once()
+
+    def test_block_while_processing_blocks_when_marker_present(self, mocker):
+        """coderabbit_block_while_processing=True かつ processing マーカーあり → done にならない。"""
+        self._base_mocks(mocker)
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=True
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+
+        self._call(
+            mocker,
+            coderabbit_require_review=True,
+            coderabbit_block_while_processing=True,
+        )
+
+        mock_done.assert_not_called()
+
+    def test_block_while_processing_false_ignores_marker(self, mocker):
+        """coderabbit_block_while_processing=False → processing マーカーがあっても done になれる。"""
+        self._base_mocks(mocker)
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
+        mock_marker = mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=True
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+
+        self._call(
+            mocker,
+            coderabbit_require_review=True,
+            coderabbit_block_while_processing=False,
+        )
+
+        mock_marker.assert_not_called()
+        mock_done.assert_called_once()

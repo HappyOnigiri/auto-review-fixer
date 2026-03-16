@@ -10,7 +10,7 @@ from subprocess_helpers import SubprocessError, run_command, run_gh_api
 from ci_check import are_all_ci_checks_successful
 from type_defs import GitHubComment, PRData
 from error_collector import ErrorCollector
-from coderabbit import contains_coderabbit_processing_marker
+from coderabbit import contains_coderabbit_processing_marker, has_coderabbit_comments
 
 # --- ラベル定数 ---
 REFIX_RUNNING_LABEL = "refix: running"
@@ -783,6 +783,8 @@ def update_done_label_if_completed(
     coderabbit_rate_limit_active: bool = False,
     coderabbit_review_failed_active: bool = False,
     coderabbit_review_skipped_active: bool = False,
+    coderabbit_require_review: bool = True,
+    coderabbit_block_while_processing: bool = True,
     enabled_pr_label_keys: set[str] | None = None,
     ci_empty_as_success: bool = True,
     ci_empty_grace_minutes: int = 5,
@@ -815,7 +817,17 @@ def update_done_label_if_completed(
         block_reasons.append("review fix pending or added commits")
 
     if is_completed:
-        if contains_coderabbit_processing_marker(
+        if coderabbit_require_review and not has_coderabbit_comments(
+            pr_data, review_comments, issue_comments
+        ):
+            print(
+                f"CodeRabbit has not reviewed {_pr_ref(repo, pr_number)} yet; "
+                f"mark as {REFIX_RUNNING_LABEL}."
+            )
+            is_completed = False
+            block_reasons.append("CodeRabbit review not yet received")
+
+        if coderabbit_block_while_processing and contains_coderabbit_processing_marker(
             pr_data, review_comments, issue_comments
         ):
             print(
