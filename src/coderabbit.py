@@ -661,18 +661,21 @@ def has_coderabbit_comments(
             return True
 
     for comment in pr_data.get("comments", []):
-        login = comment.get("author", {}).get("login", "")
-        if is_coderabbit_login(login):
+        if is_coderabbit_login(
+            comment.get("author", {}).get("login", "")
+        ) or is_coderabbit_login(comment.get("user", {}).get("login", "")):
             return True
 
     for comment in review_comments:
-        login = comment.get("user", {}).get("login", "")
-        if is_coderabbit_login(login):
+        if is_coderabbit_login(
+            comment.get("user", {}).get("login", "")
+        ) or is_coderabbit_login(comment.get("author", {}).get("login", "")):
             return True
 
     for comment in issue_comments or []:
-        login = comment.get("user", {}).get("login", "")
-        if is_coderabbit_login(login):
+        if is_coderabbit_login(
+            comment.get("user", {}).get("login", "")
+        ) or is_coderabbit_login(comment.get("author", {}).get("login", "")):
             return True
 
     return False
