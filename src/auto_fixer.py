@@ -1909,6 +1909,8 @@ def _process_single_pr(
         coderabbit_rate_limit_active=bool(active_rate_limit),
         coderabbit_review_failed_active=bool(active_review_failed),
         coderabbit_review_skipped_active=bool(active_review_skipped),
+        coderabbit_require_review=coderabbit_require_review,
+        coderabbit_block_while_processing=coderabbit_block_while_processing,
         enabled_pr_label_keys=enabled_pr_label_keys,
         ci_empty_as_success=ci_empty_as_success,
         ci_empty_grace_minutes=ci_empty_grace_minutes,
