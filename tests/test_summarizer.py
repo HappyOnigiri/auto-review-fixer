@@ -6,6 +6,55 @@ import summarizer
 from claude_limit import ClaudeCommandFailedError, ClaudeUsageLimitError
 
 
+class TestSanitizeJsonText:
+    """Tests for _sanitize_json_text()."""
+
+    def test_trailing_comma_in_json_array(self):
+        """Trailing comma before ] is removed so json.loads succeeds."""
+        raw = '[{"id": "r1", "summary": "s1"},]'
+        result = summarizer._sanitize_json_text(raw)
+        import json
+
+        parsed = json.loads(result)
+        assert parsed == [{"id": "r1", "summary": "s1"}]
+
+    def test_unescaped_newline_in_json_string(self):
+        """Unescaped newline inside a JSON string value is escaped."""
+        raw = '[{"id": "r1", "summary": "line1\nline2"}]'
+        result = summarizer._sanitize_json_text(raw)
+        import json
+
+        parsed = json.loads(result)
+        assert parsed[0]["summary"] == "line1\nline2"
+
+    def test_markdown_code_fence_stripped(self):
+        """Markdown ```json fences are removed before parsing."""
+        raw = '```json\n[{"id": "r1", "summary": "s1"}]\n```\n'
+        result = summarizer._sanitize_json_text(raw)
+        import json
+
+        parsed = json.loads(result.strip())
+        assert parsed == [{"id": "r1", "summary": "s1"}]
+
+    def test_unescaped_newline_with_bracket_in_text(self):
+        """Summary containing [0] text with unescaped newline does not cause TypeError."""
+        raw = '[{"id": "r1", "summary": "fix pull_requests[0]\nand more"}]'
+        result = summarizer._sanitize_json_text(raw)
+        import json
+
+        parsed = json.loads(result)
+        assert "pull_requests[0]" in parsed[0]["summary"]
+
+    def test_trailing_comma_with_code_fence(self):
+        """Combination of code fence and trailing comma is handled."""
+        raw = '```json\n[{"id": "r1", "summary": "s1"},]\n```\n'
+        result = summarizer._sanitize_json_text(raw)
+        import json
+
+        parsed = json.loads(result.strip())
+        assert parsed == [{"id": "r1", "summary": "s1"}]
+
+
 class TestSummarizeReviews:
     """Tests for summarize_reviews(). subprocess is always mocked."""
 
@@ -336,6 +385,22 @@ Hope this helps!"""
         )
         assert written_prompts
         assert "_pr_body" not in written_prompts[0]
+
+    def test_stage2_rejects_non_dict_array(self, mocker, make_cmd_result):
+        """Stage 2 raw_decode must not accept a list of non-dict items as valid."""
+        # Output has text before a valid array containing a plain list like [0]
+        # followed by the real JSON array — stage 2 should skip [0] and find the real one.
+        fake_stdout = (
+            'note: pull_requests[0] is checked\n[{"id": "r1", "summary": "ok"}]'
+        )
+        mocker.patch(
+            "summarizer.subprocess.run", return_value=make_cmd_result(fake_stdout)
+        )
+        result = summarizer.summarize_reviews(
+            [{"id": "r1", "body": "x"}],
+            [],
+        )
+        assert result == {"r1": "ok"}
 
     def test_pr_body_summary_returned_as_pr_body_key(self, mocker, make_cmd_result):
         """_pr_body key in JSON response is included in returned dict."""
