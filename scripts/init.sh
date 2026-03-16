@@ -53,7 +53,7 @@ on:
         type: number
 
 concurrency:
-  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.issue.number || inputs.pr-number || 'dispatch' }}
+  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.issue.number || inputs['pr-number'] || 'dispatch' }}
   cancel-in-progress: false
 
 permissions:
@@ -62,7 +62,7 @@ permissions:
 jobs:
   run-refix:
     if: |
-      (github.event_name != 'check_suite' || github.event.check_suite.pull_requests[0].number != 0) &&
+      (github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests.length > 0)) &&
       !(github.event_name == 'pull_request' && github.event.pull_request.state == 'closed') &&
       (github.event_name != 'issue_comment' || github.event.issue.pull_request != null)
     runs-on: ubuntu-latest
