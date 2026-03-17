@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Refix
-        uses: HappyOnigiri/Refix@main
+        uses: HappyOnigiri/Refix@378afa672ee414347c5053ba994de3dec323f845 # refix-v0.4.0
         with:
           gh-token: ${{ secrets.GH_TOKEN }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
