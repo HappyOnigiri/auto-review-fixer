@@ -1,5 +1,87 @@
 # Changelog
 
+## [0.4.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.3.0...refix-v0.4.0) (2026-03-17)
+
+
+### Features
+
+* **action:** config-path を config-yaml に変更し、config 生成を action 内に集約 ([c4d2005](https://github.com/HappyOnigiri/Refix/commit/c4d2005653c03a0eb12db73b735d9aef9fa2c4b6))
+* **action:** GitHub Actions モード（イベント駆動の PR 自動検出）を追加 ([c3ba0b4](https://github.com/HappyOnigiri/Refix/commit/c3ba0b4ed081fa8b5bc89f45a6ac1b9fd1beea17))
+* **ci:** GitHub Action と単一PRモードを追加 ([23edb41](https://github.com/HappyOnigiri/Refix/commit/23edb4125df3603fb7b27827c60d74900480e7ff))
+* **ci:** ワークフローを action に統合し、マルチリポジトリと単一 PR に分割 ([d63eee8](https://github.com/HappyOnigiri/Refix/commit/d63eee8bd3e85852da5ea9980725845f2357da56))
+* **coderabbit:** coderabbit_require_review と coderabbit_block_while_processing を追加 ([6fd3492](https://github.com/HappyOnigiri/Refix/commit/6fd349225008f0f5b72800796c668bf7313ba69b))
+* **config:** config-yaml 未指定時にリポジトリの .refix.yaml にフォールバック ([463a521](https://github.com/HappyOnigiri/Refix/commit/463a521242d6d1a0ea37e58304fbdee75be4e687))
+* **config:** issue_comment イベント向けトリガー作者フィルタを追加 ([0b69b19](https://github.com/HappyOnigiri/Refix/commit/0b69b19db9d1d6f8129b27038523c8b14ade4563))
+* **pr_label:** CI ブロック時に ci-pending ラベルを付与・除去 ([08d90a7](https://github.com/HappyOnigiri/Refix/commit/08d90a729d0f3348b49d184c758a64880fe20b7c))
+* **pr-label:** commits のみがブロック理由の場合も ci-pending を付与する ([e059b10](https://github.com/HappyOnigiri/Refix/commit/e059b1083cceee35bde59bfc6d9fe947ba2e43b8))
+* **project-config:** .refix-project.yaml に git ユーザー（user_name, user_email）を追加し、シングルPRモードで適用 ([c94fe76](https://github.com/HappyOnigiri/Refix/commit/c94fe765844360b451998b68c8421b6ed81f467c))
+* **scripts:** 新規リポジトリ向けの run-refix ワークフロー初期化スクリプトを追加 ([eee1e0f](https://github.com/HappyOnigiri/Refix/commit/eee1e0fb40e53d1c6c2a27ed58916f218fbdd024))
+* **type_defs:** 共有 TypedDict 定義を追加 ([06b2978](https://github.com/HappyOnigiri/Refix/commit/06b2978cee307f79a0ab17830171b9909e1e85cf))
+
+
+### Bug Fixes
+
+* **action:** action.yml の ref をハードコードから inputs.ref に変更 ([7e022b8](https://github.com/HappyOnigiri/Refix/commit/7e022b851a6188cd95c0e73e95210c90632b4d0e))
+* **action:** ARGS を配列で構築し "${ARGS[@]}" で展開することでシェル注入を防止 ([90872bb](https://github.com/HappyOnigiri/Refix/commit/90872bb0484a20020e904bb9a01ef09cbc95bf8a))
+* **action:** checkout ステップに PAT トークンを追加してブランチ fetch の信頼性を向上 ([49d54bd](https://github.com/HappyOnigiri/Refix/commit/49d54bd1f69523ec6f442ac71f27e3c6707de229))
+* **action:** checkout 失敗時の main フォールバックを追加 ([58ff7e3](https://github.com/HappyOnigiri/Refix/commit/58ff7e3f6e008621e9a0c0fcaecd361b171b57f8))
+* **action:** fallback checkout 時に warning メッセージを出力してユーザーに通知 ([31acab4](https://github.com/HappyOnigiri/Refix/commit/31acab422df45bd41dc2aab8d3112c4962eec1b2))
+* **action:** Filter event の if 条件を github.event_name に変更 ([adff35b](https://github.com/HappyOnigiri/Refix/commit/adff35b05b8a0c9da74a8ff4105f2390a3a66588))
+* **action:** チェックアウト ref を main に固定 ([8211fde](https://github.com/HappyOnigiri/Refix/commit/8211fde819f9ac3de69ab508de5a6c9297ff7ecd))
+* **auto_fixer:** _run_review_fix_phase 経路の update_done_label_if_completed に coderabbit_require_review と coderabbit_block_while_processing を追加 ([1227daf](https://github.com/HappyOnigiri/Refix/commit/1227daff1e364db7d545c1355aa429c87a528c54))
+* **auto_fixer:** _save_result_log 失敗時に stale upsert を禁止しエラーを記録して return False ([696a368](https://github.com/HappyOnigiri/Refix/commit/696a36863e2e1cf7a117b1b1d74c6840a167b2e6))
+* **auto_fixer:** issue_comment の PR 解決を追加し、workflow_dispatch の inputs を pr-number に統一 ([b69e8a1](https://github.com/HappyOnigiri/Refix/commit/b69e8a1ed1677cf907da179d7798b2cca3e0e94c))
+* **auto_fixer:** load_state_comment 失敗時に _preloaded_state=None を渡すよう修正 ([eb5ed6e](https://github.com/HappyOnigiri/Refix/commit/eb5ed6e8d0d331e24b474cea0c593868ed37f7d2))
+* **auto_fixer:** load_state_comment 失敗時に fallback を _preloaded_state に渡すよう修正 ([fecb77b](https://github.com/HappyOnigiri/Refix/commit/fecb77b44c53ebb99700cdf43162541ee8e6c49f))
+* **auto_fixer:** load_state_comment 失敗時に stale な result_log_body マージを禁止 ([109e5ac](https://github.com/HappyOnigiri/Refix/commit/109e5acabc2453e8d10d2a232ecd8e788179b08a))
+* **auto_fixer:** MERGED/CLOSED PR を早期スキップして無駄な API コールを防止 ([9255b83](https://github.com/HappyOnigiri/Refix/commit/9255b8358729160e6ca43f592110b2f7690ddb4f))
+* **auto_fixer:** raise RuntimeError on gh API failure in _resolve_prs_from_sha and _pr_has_ci_pending_label ([affaed9](https://github.com/HappyOnigiri/Refix/commit/affaed9104bb810c012242b65c650715edb0cc90))
+* **auto-fixer:** _fetch_ci_pending_prs に --limit 1000 を追加し非ゼロ終了時に RuntimeError を送出 ([85c7bca](https://github.com/HappyOnigiri/Refix/commit/85c7bcaff8104003b26f7d8c883c1b66295fb10a))
+* **auto-fixer:** _resolve_action_targets に workflow_dispatch 分岐を追加 ([024ca43](https://github.com/HappyOnigiri/Refix/commit/024ca4303dcfe47571a51537e88058b3be601884))
+* **auto-fixer:** エラー発生時に REFIX_RUNNING_LABEL を除去する ([e82453d](https://github.com/HappyOnigiri/Refix/commit/e82453df01ff7830c3aef3d54de0efdecd1389ac))
+* **check_dict_any:** off-by-one エラーを修正 len(rest) &lt; 6 → &lt; 5 ([659c7c8](https://github.com/HappyOnigiri/Refix/commit/659c7c84ec448457266eeacfd90ea58f3f702d58))
+* **check_dict_any:** tokenize ベースの解析に置き換えて誤免除・誤検知を修正 ([b93f07b](https://github.com/HappyOnigiri/Refix/commit/b93f07be7f03d3895e069545e05a5f4f7808c1de))
+* **ci:** pr-number を required に変更し、check_suite 無 PR 時のジョブ条件を追加 ([d895e68](https://github.com/HappyOnigiri/Refix/commit/d895e68b2c6f62400aadf7b505fc65a9a6f6c09a))
+* **ci:** run-refix-single の PR 番号解決を検証付きで強化 ([b7bfe60](https://github.com/HappyOnigiri/Refix/commit/b7bfe60f418d842e38182b19cb1e23e6d2fb635f))
+* **coderabbit:** has_coderabbit_comments で author と user の両ログインフィールドを確認する ([e5e30e9](https://github.com/HappyOnigiri/Refix/commit/e5e30e912453c82672cee0de4c6ea907590b376d))
+* **docs:** curl -s を -fsSL に変更して HTTP エラーを検知可能にする (README.ja.md) ([5e47c71](https://github.com/HappyOnigiri/Refix/commit/5e47c7170bb3d55858acf534d34bc09c406c655f))
+* **docs:** curl -s を -fsSL に変更して HTTP エラーを検知可能にする (README.md) ([1482fa5](https://github.com/HappyOnigiri/Refix/commit/1482fa5383d3b77613f8ad00cd6a975d05c494ff))
+* **docs:** README.md の em ダッシュを ASCII ハイフンに置換して CI を修正 ([8eb7b36](https://github.com/HappyOnigiri/Refix/commit/8eb7b364d7b3c26258d150a73635933da072c7da))
+* **filter_event:** FileNotFoundError に as exc を追加して例外詳細を含める ([f2110c2](https://github.com/HappyOnigiri/Refix/commit/f2110c2b46c6f90cbd176bf282dc70445243d5ec))
+* **filter_event:** イベントファイル読み込み時のエラーハンドリングを追加 ([fa1cb03](https://github.com/HappyOnigiri/Refix/commit/fa1cb036dc859f54fcac95b15e5d5bf04030cd3d))
+* **git_ops:** batch_setup 指定時は load_project_config() をスキップ ([dfcc913](https://github.com/HappyOnigiri/Refix/commit/dfcc913aff8033dbf2b3c572908e51a663469c07))
+* **pr_reviewer:** ReviewComment に id フィールドを追加し [NEW] 判定を修正 ([eccd636](https://github.com/HappyOnigiri/Refix/commit/eccd636588a3ab9a7c9319d935d59d1c1c28738e))
+* **pr_reviewer:** 自身の check run を除外して CI ブロックを防ぐ ([7477a55](https://github.com/HappyOnigiri/Refix/commit/7477a550d7ffecabcbe8a21f4f9af672a85b969b))
+* **pr-label:** ci_pending のみ有効時も set_pr_running_label 内で _ensure_refix_labels を呼び出す ([208ebd0](https://github.com/HappyOnigiri/Refix/commit/208ebd030c4cc7e74c4ad2186c0313b17d80e19e))
+* **pr-label:** edit_pr_label の戻り値を label_was_updated に反映（2 箇所） ([1806736](https://github.com/HappyOnigiri/Refix/commit/180673601b0a71114afdbc2476a9c118e094c4f3))
+* **pr-label:** skip edit_pr_label for ci-pending when no state change needed ([999f73c](https://github.com/HappyOnigiri/Refix/commit/999f73cba81e6ab9a80441ad9727b4cdaf20e707))
+* **scripts:** issue_comment トリガーを PR コメントのみに限定 ([97a3688](https://github.com/HappyOnigiri/Refix/commit/97a368839ade6ac4de59e732836fe9f21220b917))
+* **summarizer:** Claude 出力の JSON パース耐性を強化 ([5abbfdd](https://github.com/HappyOnigiri/Refix/commit/5abbfdd74ed71783b730dbd10ddec941efc502b8))
+* **summarizer:** review_summary_id/inline_comment_state_id でキー生成を統一 ([60c9616](https://github.com/HappyOnigiri/Refix/commit/60c961632601386f8a4d19cbccc68c27e66857ea))
+* **test:** _fetch_ci_pending_prs の失敗時テストを RuntimeError 期待に修正 ([ce7ebbd](https://github.com/HappyOnigiri/Refix/commit/ce7ebbdd375c8ef5c714e1f08a146ef9253ff0ce))
+* **test:** add PRData type annotation to pr_data_with_label to fix pyright error ([3ffc429](https://github.com/HappyOnigiri/Refix/commit/3ffc4290add865d028c23f45f1d7ea16af074613))
+* **test:** DEFAULT_CONFIG を先に展開してから auto_merge=True で上書きするよう修正 ([42e5791](https://github.com/HappyOnigiri/Refix/commit/42e57911d88b85442e1973ae1131776bfecc8262))
+* **workflow:** check_suite イベントで削除済みブランチを checkout しないよう ref フォールバックを修正 ([27a39bf](https://github.com/HappyOnigiri/Refix/commit/27a39bf20ff155e52923973962a9751a2157eb01))
+* **workflow:** closed PR でジョブをスキップする条件を追加 ([ee54024](https://github.com/HappyOnigiri/Refix/commit/ee54024887507df9e2d90e0a86862d163cdca4bc))
+* **workflow:** issue_comment の非 PR コメント時にジョブをスキップする条件を追加 ([28f40bd](https://github.com/HappyOnigiri/Refix/commit/28f40bda792d2eae3a89fa79f94c784345f9534e))
+* **workflow:** run-refix-batch.yml の Run Refix ステップに ref 入力を追加 ([5720018](https://github.com/HappyOnigiri/Refix/commit/572001838db9ac5a8c633f990fe9d644b3b4bafa))
+* **workflow:** workflow_dispatch の inputs 参照と check_suite の PR チェックを修正 ([9fd539f](https://github.com/HappyOnigiri/Refix/commit/9fd539f7e94592364a201c80e622c508db4b5599))
+
+
+### Documentation
+
+* **.refix.yaml:** auto_merge: true のブランチ保護前提条件をコメントで明示 ([a1bbd2c](https://github.com/HappyOnigiri/Refix/commit/a1bbd2c57f4451566b117d442b649297f7dd747b))
+* **.refix.yaml:** exclude_authors の *[[]bot] パターンにコメントを追加 ([8c770ae](https://github.com/HappyOnigiri/Refix/commit/8c770ae7dcad38b82b102bca7bce41091a73be57))
+* **ci:** run-refix-single に uses の説明コメントと step 名を追加 ([58fc608](https://github.com/HappyOnigiri/Refix/commit/58fc608e4980d8f6b9c12d12f857c3fe11dc68ed))
+* **readme:** Claude Code と自動 resume 機能を README の機能一覧に追加 ([7d532ec](https://github.com/HappyOnigiri/Refix/commit/7d532ece25813f41fb77c895da9c7163edd0bc6c))
+* **readme:** README を init.sh ベースのセットアップに合わせて簡素化 ([0986d5f](https://github.com/HappyOnigiri/Refix/commit/0986d5f18bb03f4026c9e3a3d5061191db492d08))
+* **readme:** README.ja.md のバッチワークフロー説明を composite action 構成に更新 ([4028df3](https://github.com/HappyOnigiri/Refix/commit/4028df32fdf95425b4f3dc625d60896a47c03d26))
+* **readme:** README.md のバッチワークフロー説明を composite action 構成に更新 ([55ef0ae](https://github.com/HappyOnigiri/Refix/commit/55ef0ae2a42644ab36ff23a034d1b2ddbd133af2))
+* **readme:** シングル PR モードの説明を追加 ([44fbeaa](https://github.com/HappyOnigiri/Refix/commit/44fbeaa1e0b6f41bd3354699ea2aac1bf5df852e))
+* **release-please:** GH_TOKEN を使用する理由をワークフローにコメントで明記する ([bf3a50f](https://github.com/HappyOnigiri/Refix/commit/bf3a50fdf4e22c01c41ab35c60c71344292b150e))
+* **ruler:** AGENTS.md の CI 品質保証ルールと Caveats を更新 ([9368cec](https://github.com/HappyOnigiri/Refix/commit/9368cec8b5b7fdb465719842435bea90841fda04))
+* **ruler:** 品質保証 (CI) の箇条書きを複数項目に分割して可読性を向上 ([27ca7be](https://github.com/HappyOnigiri/Refix/commit/27ca7bec1997da351d537078248a23e856727a29))
+
 ## [0.3.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.2.0...refix-v0.3.0) (2026-03-15)
 
 
