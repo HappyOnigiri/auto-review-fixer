@@ -139,6 +139,7 @@ Thumbs.db
 works/
 data/
 .refix-batch.yaml
+.refix.yaml
 
 # Env
 .envrc
