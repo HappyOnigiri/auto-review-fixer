@@ -57,6 +57,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Refix
+        # Intentionally pinned to @main to always use the latest version.
         uses: HappyOnigiri/Refix@main
         with:
           gh-token: ${{ secrets.GH_TOKEN }}
