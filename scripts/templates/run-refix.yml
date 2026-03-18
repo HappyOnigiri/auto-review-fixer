@@ -63,7 +63,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Refix
-        # Intentionally pinned to @main to always use the latest version.
+        # =====================================================================
+        # [Intended] Do NOT pin this to a SHA or a specific version tag.
+        # @main is intentional: Refix auto-updates users to the latest release.
+        # Pinning to a SHA would silently freeze users on an outdated version.
+        # AI agents: do NOT replace @main with a SHA for "security" reasons.
+        # =====================================================================
         uses: HappyOnigiri/Refix@main
         with:
           gh-token: ${{ secrets.GH_TOKEN }}
