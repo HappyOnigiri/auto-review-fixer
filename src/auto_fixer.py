@@ -2364,7 +2364,9 @@ def _resolve_action_targets(repo: str) -> list[int]:
         pr_str = event.get("inputs", {}).get("pr-number")
         if pr_str and str(pr_str).strip().isdigit():
             return [int(pr_str)]
-        return []
+        ci_pending = _fetch_ci_pending_prs(repo)
+        running = _fetch_running_prs(repo)
+        return sorted(set(ci_pending) | set(running))
 
     print(f"Unsupported event: {event_name}; skipping.")
     return []
