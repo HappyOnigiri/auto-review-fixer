@@ -11,6 +11,7 @@ from ci_check import are_all_ci_checks_successful
 from type_defs import GitHubComment, PRData
 from error_collector import ErrorCollector
 from coderabbit import contains_coderabbit_processing_marker, has_coderabbit_comments
+from pr_reviewer import fetch_issue_comments, fetch_pr_review_comments
 
 # --- ラベル定数 ---
 REFIX_RUNNING_LABEL = "refix: running"
@@ -815,6 +816,20 @@ def update_done_label_if_completed(
     if has_review_targets and (not review_fix_started or review_fix_added_commits):
         is_completed = False
         block_reasons.append("review fix pending or added commits")
+
+    # CodeRabbit チェック用にコメントを再取得（stale data 対策）
+    if is_completed and (
+        coderabbit_require_review or coderabbit_block_while_processing
+    ):
+        try:
+            review_comments = fetch_pr_review_comments(repo, pr_number)
+            issue_comments = fetch_issue_comments(repo, pr_number)
+        except Exception as exc:
+            print(
+                f"Warning: failed to re-fetch comments for "
+                f"{_pr_ref(repo, pr_number)}: {exc}",
+                file=sys.stderr,
+            )
 
     if is_completed:
         if coderabbit_require_review and not has_coderabbit_comments(

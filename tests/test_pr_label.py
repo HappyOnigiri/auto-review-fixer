@@ -346,6 +346,8 @@ class TestRefixLabeling:
         assert coderabbit.contains_coderabbit_processing_marker(pr_data, []) is True
 
     def test_update_done_label_sets_done_when_conditions_met(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
@@ -380,6 +382,8 @@ class TestRefixLabeling:
         mock_auto_merge.assert_not_called()
 
     def test_update_done_label_triggers_auto_merge_when_enabled(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
@@ -452,6 +456,8 @@ class TestRefixLabeling:
         )
 
     def test_update_done_label_sets_running_when_ci_not_success(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -548,6 +554,8 @@ class TestRefixLabeling:
         mock_set_done.assert_not_called()
 
     def test_update_done_label_skips_when_coderabbit_processing(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=True
         )
@@ -580,6 +588,8 @@ class TestRefixLabeling:
         )
 
     def test_update_done_label_skips_when_coderabbit_rate_limit_active(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -615,6 +625,8 @@ class TestRefixLabeling:
     def test_update_done_label_skips_when_coderabbit_review_skipped_active(
         self, mocker
     ):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -751,6 +763,8 @@ class TestCiPendingLabel:
         assert "ci-pending" in full_cmd
 
     def test_update_done_label_adds_ci_pending_when_ci_blocks(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
@@ -826,6 +840,8 @@ class TestCiPendingLabel:
 
     def _call_update_done_label(self, mocker, **overrides):
         """update_done_label_if_completed のデフォルト引数ヘルパー。"""
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         defaults = dict(
             repo="owner/repo",
@@ -973,6 +989,8 @@ class TestCiPendingLabel:
         assert ci_pending_calls[0].kwargs["add"] is True
 
     def test_update_done_label_removes_ci_pending_when_completed(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -1016,6 +1034,8 @@ class TestCoderabbitRequireReview:
     """coderabbit_require_review / coderabbit_block_while_processing のテスト。"""
 
     def _base_mocks(self, mocker):
+        mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
         mocker.patch("pr_label._set_pr_done_label")
         mocker.patch("pr_label.set_pr_running_label", return_value=True)
         mocker.patch("pr_label.edit_pr_label", return_value=True)
@@ -1114,4 +1134,115 @@ class TestCoderabbitRequireReview:
         )
 
         mock_marker.assert_not_called()
+        mock_done.assert_called_once()
+
+
+class TestUpdateDoneLabelRefetch:
+    """update_done_label_if_completed のコメント再取得ロジックのテスト。"""
+
+    def _base_call(self, mocker, **overrides):
+        defaults = dict(
+            repo="owner/repo",
+            pr_number=10,
+            has_review_targets=False,
+            review_fix_started=False,
+            review_fix_added_commits=False,
+            review_fix_failed=False,
+            state_saved=True,
+            commits_by_phase=[],
+            pr_data={"reviews": [], "comments": []},
+            review_comments=[],
+            issue_comments=[],
+            dry_run=False,
+            summarize_only=False,
+        )
+        defaults.update(overrides)
+        return pr_label.update_done_label_if_completed(**defaults)  # type: ignore[arg-type]
+
+    def test_refetch_detects_processing_marker_in_fresh_data(self, mocker):
+        """stale データにはマーカーなし、再取得データにマーカーあり → done にならない。"""
+        # review_comments は user.login キーを使用
+        processing_comment = {
+            "user": {"login": "coderabbitai"},
+            "body": "Currently processing new changes in this PR.",
+        }
+        mocker.patch(
+            "pr_label.fetch_pr_review_comments", return_value=[processing_comment]
+        )
+        mocker.patch("pr_label.fetch_issue_comments", return_value=[])
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mocker.patch("pr_label.edit_pr_label", return_value=True)
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+        mock_running = mocker.patch("pr_label.set_pr_running_label")
+        # has_coderabbit_comments を True にしておく（require_review はパス）
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
+        # contains_coderabbit_processing_marker は実装を通す（モックしない）
+        # → 再取得した review_comments の processing_comment を検出するはず
+
+        self._base_call(
+            mocker,
+            coderabbit_require_review=True,
+            coderabbit_block_while_processing=True,
+        )
+
+        mock_done.assert_not_called()
+        mock_running.assert_called_once()
+
+    def test_no_refetch_when_already_blocked(self, mocker):
+        """review_fix_failed=True で is_completed=False → fetch 関数が呼ばれない。"""
+        mock_fetch_review = mocker.patch("pr_label.fetch_pr_review_comments")
+        mock_fetch_issue = mocker.patch("pr_label.fetch_issue_comments")
+        mocker.patch("pr_label.edit_pr_label", return_value=True)
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label")
+
+        self._base_call(mocker, review_fix_failed=True)
+
+        mock_fetch_review.assert_not_called()
+        mock_fetch_issue.assert_not_called()
+
+    def test_no_refetch_when_coderabbit_checks_disabled(self, mocker):
+        """coderabbit_require_review=False かつ coderabbit_block_while_processing=False → fetch しない。"""
+        mock_fetch_review = mocker.patch("pr_label.fetch_pr_review_comments")
+        mock_fetch_issue = mocker.patch("pr_label.fetch_issue_comments")
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mocker.patch("pr_label.edit_pr_label", return_value=True)
+        mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label")
+
+        self._base_call(
+            mocker,
+            coderabbit_require_review=False,
+            coderabbit_block_while_processing=False,
+        )
+
+        mock_fetch_review.assert_not_called()
+        mock_fetch_issue.assert_not_called()
+
+    def test_refetch_failure_falls_back_to_stale_data(self, mocker):
+        """fetch が例外 → stale データで続行（done になる）。"""
+        mocker.patch(
+            "pr_label.fetch_pr_review_comments",
+            side_effect=Exception("network error"),
+        )
+        mocker.patch(
+            "pr_label.fetch_issue_comments",
+            side_effect=Exception("network error"),
+        )
+        mocker.patch("pr_label.are_all_ci_checks_successful", return_value=True)
+        mocker.patch("pr_label.edit_pr_label", return_value=True)
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
+        mocker.patch(
+            "pr_label.contains_coderabbit_processing_marker", return_value=False
+        )
+        mock_done = mocker.patch("pr_label._set_pr_done_label")
+        mocker.patch("pr_label.set_pr_running_label")
+
+        self._base_call(
+            mocker,
+            coderabbit_require_review=True,
+            coderabbit_block_while_processing=True,
+        )
+
+        # stale データで処理が続行され done になる
         mock_done.assert_called_once()
