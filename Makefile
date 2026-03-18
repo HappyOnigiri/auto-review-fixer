@@ -1,4 +1,4 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-ruler
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci lint repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-ruler
 
 # venv の Python が利用可能な場合はそれを使用する（activate なしで make test/ci を実行するため）
 PYTHON := $(if $(wildcard .venv/bin/python),$(abspath .venv/bin/python),$(shell command -v python3 || command -v python))
@@ -80,6 +80,12 @@ test:
 
 ci:
 	$(PYTHON) scripts/ci.py
+
+lint:
+	$(PYTHON) -m ruff format src tests scripts
+	$(PYTHON) -m ruff check src tests scripts --fix
+	$(PYTHON) scripts/fix_newlines.py
+	mdformat --wrap 80 $(shell ls *.md | grep -v CHANGELOG.md)
 
 # --- Repomix ---
 # コードベースを AI フレンドリーな単一ファイルにまとめます。
