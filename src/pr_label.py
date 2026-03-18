@@ -822,8 +822,10 @@ def update_done_label_if_completed(
         coderabbit_require_review or coderabbit_block_while_processing
     ):
         try:
-            review_comments = fetch_pr_review_comments(repo, pr_number)
-            issue_comments = fetch_issue_comments(repo, pr_number)
+            fresh_review_comments = fetch_pr_review_comments(repo, pr_number)
+            fresh_issue_comments = fetch_issue_comments(repo, pr_number)
+            review_comments = fresh_review_comments
+            issue_comments = fresh_issue_comments
         except Exception as exc:
             print(
                 f"Warning: failed to re-fetch comments for "
