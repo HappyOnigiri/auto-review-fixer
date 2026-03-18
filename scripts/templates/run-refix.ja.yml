@@ -63,7 +63,8 @@ on:
   #        （{owner} と {repo} は実際のリポジトリ名に置き換える）
   #      - Execution schedule: Every hour
   #      - Request method: POST
-  #      - Request body: {"ref":"main"}
+  #      - Request body: {"ref":"<デフォルトブランチ>"}
+  #        （<デフォルトブランチ>をリポジトリのデフォルトブランチに置き換える、例: main または master）
   #      - Request headers:
   #          Authorization: Bearer {手順1で発行したトークン}  （Bearer の後に半角スペース必須）
   #          Accept: application/vnd.github+json

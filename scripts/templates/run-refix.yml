@@ -62,7 +62,8 @@ on:
   #        (replace {owner} and {repo} with your actual repository details)
   #      - Execution schedule: Every hour
   #      - Request method: POST
-  #      - Request body: {"ref":"main"}
+  #      - Request body: {"ref":"<default-branch>"}
+  #        (replace <default-branch> with your repository's default branch, e.g. main or master)
   #      - Request headers:
   #          Authorization: Bearer {token from step 1}  (note: space required after "Bearer")
   #          Accept: application/vnd.github+json
