@@ -49,6 +49,8 @@ See [`.refix.sample.yaml`](.refix.sample.yaml) for all available options.
 
 For processing multiple repositories at once, use batch mode with `.github/workflows/run-refix-batch.yml`.
 
+You can customize the target repositories and behavior by placing a `.refix-batch.yaml` file at your repository root, or by setting `REFIX_CONFIG_BATCH_YAML` as a GitHub Actions Variable.
+
 See [`.refix-batch.sample.yaml`](.refix-batch.sample.yaml) for the configuration format.
 
 ## Contributing
