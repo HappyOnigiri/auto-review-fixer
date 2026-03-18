@@ -34,7 +34,7 @@ name: Run Refix
 
 on:
   # =====================================================================
-  # [Recovery] Periodically re-process PRs labeled "refix: ci-pending"
+  # [Recovery] Periodically re-process PRs labeled "refix: ci-pending" or "refix: running"
   # that were missed due to CodeRabbit rate limits or other trigger failures.
   # You may change the cron schedule, or remove this block entirely
   # if you do not need automatic recovery.
