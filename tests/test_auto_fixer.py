@@ -2268,18 +2268,20 @@ class TestResolveActionTargets:
                 "GITHUB_EVENT_PATH": str(event_file),
             },
         )
-        mocker.patch(
+        mock_ci_pending = mocker.patch(
             "auto_fixer._fetch_ci_pending_prs",
-            return_value=[],
+            return_value=[99],
         )
-        mocker.patch(
+        mock_running = mocker.patch(
             "auto_fixer._fetch_running_prs",
             return_value=[],
         )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
-        assert result == []
+        assert result == [99]
+        mock_ci_pending.assert_called_once_with("owner/repo")
+        mock_running.assert_called_once_with("owner/repo")
 
     def test_workflow_dispatch_event_without_pr_falls_back_to_labels(
         self, mocker, tmp_path
