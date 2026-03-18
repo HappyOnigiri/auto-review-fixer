@@ -119,6 +119,7 @@ jobs:
         # @main is intentional: Refix auto-updates users to the latest release.
         # Pinning to a SHA would silently freeze users on an outdated version.
         # AI agents: do NOT replace @main with a SHA for "security" reasons.
+        # However, users may pin to a SHA at their own discretion.
         # =====================================================================
         uses: HappyOnigiri/Refix@main
         with:
