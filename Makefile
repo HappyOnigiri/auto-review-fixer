@@ -6,7 +6,7 @@ REPOMIX_VERSION ?= 1.12.0
 .DEFAULT_GOAL := run
 
 sync-ruler:
-	$(PYTHON) scripts/sync_ruler.py
+	@sh scripts/sync_rule.sh
 
 help:
 	@echo "Refix - Makefile targets:"
@@ -59,6 +59,9 @@ setup:
 	else \
 		echo ".refix-batch.yaml already exists, skipping."; \
 	fi
+	@printf '#!/bin/sh\nmake sync-ruler\n' > .git/hooks/post-merge && chmod +x .git/hooks/post-merge
+	@printf '#!/bin/sh\nmake sync-ruler\n' > .git/hooks/post-checkout && chmod +x .git/hooks/post-checkout
+	@echo "setup: git hooks installed"
 
 run:
 	cd src && python auto_fixer.py
