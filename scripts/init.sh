@@ -9,8 +9,12 @@ WORKFLOW_FILE="$WORKFLOW_DIR/run-refix.yml"
 
 # 上書きチェック
 if [ -f "$WORKFLOW_FILE" ] && [ "${1:-}" != "-f" ]; then
-  echo "⚠️  $WORKFLOW_FILE already exists. Use '-f' to overwrite."
-  exit 1
+  printf "⚠️  %s already exists. Overwrite? [y/N] " "$WORKFLOW_FILE"
+  read -r answer
+  case "$answer" in
+    [yY]*) ;;
+    *) echo "Aborted."; exit 1 ;;
+  esac
 fi
 
 mkdir -p "$WORKFLOW_DIR"
