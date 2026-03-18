@@ -2296,6 +2296,35 @@ def _fetch_ci_pending_prs(repo: str) -> list[int]:
     return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
 
 
+def _fetch_running_prs(repo: str) -> list[int]:
+    """running ラベル付きの open PR 番号リストを返す。"""
+    cmd = [
+        "gh",
+        "pr",
+        "list",
+        "--repo",
+        repo,
+        "--label",
+        REFIX_RUNNING_LABEL,
+        "--state",
+        "open",
+        "--limit",
+        "1000",
+        "--json",
+        "number",
+        "--jq",
+        ".[].number",
+    ]
+    result = run_command(cmd, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"_fetch_running_prs: gh pr list failed (exit {result.returncode}): {result.stderr}"
+        )
+    if not result.stdout.strip():
+        return []
+    return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
+
+
 def _resolve_action_targets(repo: str) -> list[int]:
     """GitHub Actions イベントから処理対象の PR 番号リストを返す。"""
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
@@ -2319,7 +2348,10 @@ def _resolve_action_targets(repo: str) -> list[int]:
         return [n for n in pr_numbers if _pr_has_ci_pending_label(repo, n)]
 
     if event_name == "schedule":
-        return _fetch_ci_pending_prs(repo)
+        ci_pending = _fetch_ci_pending_prs(repo)
+        running = _fetch_running_prs(repo)
+        merged = set(ci_pending) | set(running)
+        return sorted(merged)
 
     if event_name == "issue_comment":
         issue = event.get("issue", {})
