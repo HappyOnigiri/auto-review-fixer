@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.5.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.4.0...refix-v0.5.0) (2026-03-18)
+
+
+### Features
+
+* **auto_fixer:** workflow_dispatch で pr-number 未指定時にラベル付きPRへのフォールバックを追加 ([a77ce93](https://github.com/HappyOnigiri/Refix/commit/a77ce93ae52cd082f9746035cc288011663232a3))
+* **scripts:** 日本語版ワークフローテンプレートと init スクリプトを追加 ([2178128](https://github.com/HappyOnigiri/Refix/commit/2178128f5c8095e526ab7824afea19425a9e99f0))
+* **workflows:** schedule トリガーを追加し Rate Limit 欠落時の自動復旧機構を実装 ([0e76de1](https://github.com/HappyOnigiri/Refix/commit/0e76de1b01ddd909ded46db6a236525ffcc27c08))
+* **workflows:** workflow_dispatch の pr-number を optional に変更しラベルベース一括処理を手動実行可能にする ([8bac86f](https://github.com/HappyOnigiri/Refix/commit/8bac86ff99c2efe367e6b874e576d502a290c3c6))
+
+
+### Bug Fixes
+
+* **auto_fixer:** git log 失敗を例外化し merge/force-push 時の pre-push rebase をスキップ ([6a657d0](https://github.com/HappyOnigiri/Refix/commit/6a657d03d37f1a47103a55baa8ecfbb71b879828))
+* **auto_fixer:** schedule イベントで refix:running ラベルのPRも処理対象に含める ([2dec228](https://github.com/HappyOnigiri/Refix/commit/2dec2284e33566da7eac23dd69fb2783f55cfac5))
+* **init:** -f なし・既存ファイル時にインタラクティブな上書き確認を追加 ([03bcb78](https://github.com/HappyOnigiri/Refix/commit/03bcb78351893554d93869d2f56695f6a64f9a59))
+* **init:** /dev/tty の可用性チェックを printf より前に移動し非対話環境で正しくエラー終了するよう修正 ([3eae5b7](https://github.com/HappyOnigiri/Refix/commit/3eae5b71368b1be564185de223e5caaab31c750e))
+* **init:** pipe 経由実行時に /dev/tty から入力を取得し非対話時はエラー終了 ([f9f7deb](https://github.com/HappyOnigiri/Refix/commit/f9f7deb17995b86215e6d47a2a4fe71c87d818ae))
+* **init:** プロンプト出力先を /dev/tty に統一し stdout リダイレクト時も表示されるよう修正 ([0212495](https://github.com/HappyOnigiri/Refix/commit/021249569f4bae77737233c890c40a4a7fbdd6bc))
+* **pr_label:** update_done_label_if_completed で CodeRabbit チェック直前にコメントを再取得しレースコンディションを修正 ([5116500](https://github.com/HappyOnigiri/Refix/commit/511650005e9a847768e5ee9f9d5bbdcef5427421))
+* **pr_label:** 再取得時のfresh/stale混在を防ぐためテンポラリ変数を使用 ([27254f2](https://github.com/HappyOnigiri/Refix/commit/27254f2e93a672c80d8006ae6a82918fc73a2bfd))
+* **root:** sync_rule.sh に rsync 存在確認を追加、setup で既存 hook を上書きしないよう修正 ([9cec5a3](https://github.com/HappyOnigiri/Refix/commit/9cec5a33c9275880543d124a04265a43964113ec))
+* **scripts:** curl 失敗時に空ファイルが残らないよう mktemp + mv を使用 ([3288529](https://github.com/HappyOnigiri/Refix/commit/3288529e957294e4e17a5f6a1164f5593aca3bc2))
+* **scripts:** rsync エラーメッセージに SKILLS_SRC をコンテキストとして含める ([7158b62](https://github.com/HappyOnigiri/Refix/commit/7158b623cdcf192d6e9081b33bd47029a410f53b))
+* **templates:** .length を [0] != null に置き換え (en) ([e15d337](https://github.com/HappyOnigiri/Refix/commit/e15d3374817578f3b82d959f801a5a6c74f23f7a))
+* **templates:** .length を [0] != null に置き換え (ja) ([3d262f8](https://github.com/HappyOnigiri/Refix/commit/3d262f8478013dac4c4dee38137f8d9567c18b61))
+* **templates:** HappyOnigiri/Refix@main をフル SHA にピン留めしサプライチェーンリスクを軽減 ([ec9a1cc](https://github.com/HappyOnigiri/Refix/commit/ec9a1cc5f10429df6a6160f1ba0f5dadaf84233d))
+* **templates:** issue_comment トリガーを OWNER/MEMBER/COLLABORATOR のみに制限 ([a46c0a2](https://github.com/HappyOnigiri/Refix/commit/a46c0a2ebb38b3d95d6fc81c0c8135fea31a3242))
+* **templates:** issue_comment の author_association 制限を削除しガードコメントを追加 ([e9febaa](https://github.com/HappyOnigiri/Refix/commit/e9febaa2a6439eec6745c03c822289f7683c8346))
+* **templates:** workflow_dispatch の ref をプレースホルダーに変更 ([6a8a0ae](https://github.com/HappyOnigiri/Refix/commit/6a8a0aec6e5100dc84e9115a0232a8f8fa3e7abf))
+
+
+### Documentation
+
+* **readme:** バッチモードの設定方法に REFIX_CONFIG_BATCH_YAML の案内を追記 ([2e55ccb](https://github.com/HappyOnigiri/Refix/commit/2e55ccbaf613398bca58c499741e1b7a70823796))
+* **readme:** 日本語 README のセットアップコマンドを init.ja.sh に変更 ([f7dd326](https://github.com/HappyOnigiri/Refix/commit/f7dd3264c4dd0b5804d44c52e0b92495ae68642e))
+* **root:** sample yaml ヘッダーに GitHub Actions Variable での設定方法を追記 ([9085561](https://github.com/HappyOnigiri/Refix/commit/9085561c0f0a4da355c96afad8b6c9cb17f51b5a))
+* **root:** テンプレートバージョンは PR 単位で1度だけ上げるルールを追記 ([639f731](https://github.com/HappyOnigiri/Refix/commit/639f7311e7dcab1151d3c632d8ca221704fc4ec7))
+* **ruler:** AGENTS.md に [Intended][Policy][Workaround] のガイドラインを追加 ([d153b22](https://github.com/HappyOnigiri/Refix/commit/d153b227d64d21ff495498a7448dc46ff13fb433))
+* **ruler:** コメント例を Python 記法（#）に修正 ([7a9abaa](https://github.com/HappyOnigiri/Refix/commit/7a9abaaf75e7e3f3c756291249ac6be17d0fbfe0))
+* **templates:** [@main](https://github.com/main) ピン留め禁止のガードコメントを追加 ([d083e1a](https://github.com/HappyOnigiri/Refix/commit/d083e1a6d80db81e5a931753a342eec97cded578))
+* **templates:** [@main](https://github.com/main) を意図的に使用する旨のコメントを追加 ([a996b81](https://github.com/HappyOnigiri/Refix/commit/a996b815541d846b62e9b5613b5da0e69cdd6dd4))
+* **templates:** schedule コメントに cron-job.org を代替として使う Tip と設定手順を追加 ([ac0f6a3](https://github.com/HappyOnigiri/Refix/commit/ac0f6a3b945dbce59a2df4636fbfa2ae3dfbde03))
+* **templates:** schedule コメントに refix:running ラベルも対象であることを明記 ([804ec1a](https://github.com/HappyOnigiri/Refix/commit/804ec1a12f8092900aa4c8da0f4a245e9583e819))
+* **templates:** ファイル全体の無断編集を禁止するポリシーコメントを追加 ([e7e5072](https://github.com/HappyOnigiri/Refix/commit/e7e507201cedc0353cf6637f0e71f4df732cd3cd))
+* **templates:** ユーザーの判断による SHA ピン留めは許可することを明記 ([2bb8bae](https://github.com/HappyOnigiri/Refix/commit/2bb8baed5ed7a412c8001fc8978161540c1a1c0c))
+* **templates:** 日本語版テンプレートのコメント表現を微調整 ([ed19a1c](https://github.com/HappyOnigiri/Refix/commit/ed19a1c641b4813b65a1bd4b9f17c08dd96c28c6))
+* **templates:** 配布先リポジトリの AI エージェント向けに編集禁止ポリシーを修正 ([c80be77](https://github.com/HappyOnigiri/Refix/commit/c80be7758e54961647fc478c8c7f690c5dca1709))
+
 ## [0.4.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.3.0...refix-v0.4.0) (2026-03-17)
 
 
