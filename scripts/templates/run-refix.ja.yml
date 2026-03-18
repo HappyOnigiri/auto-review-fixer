@@ -107,7 +107,7 @@ jobs:
     # =====================================================================
     if: |
       github.event_name == 'schedule' ||
-      ((github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests.length > 0)) &&
+      ((github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests[0] != null)) &&
       !(github.event_name == 'pull_request' && github.event.pull_request.state == 'closed') &&
       (github.event_name != 'issue_comment' || github.event.issue.pull_request != null))
     runs-on: ubuntu-latest
