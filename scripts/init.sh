@@ -9,11 +9,11 @@ WORKFLOW_FILE="$WORKFLOW_DIR/run-refix.yml"
 
 # 上書きチェック
 if [ -f "$WORKFLOW_FILE" ] && [ "${1:-}" != "-f" ]; then
-  printf "⚠️  %s already exists. Overwrite? [y/N] " "$WORKFLOW_FILE" >/dev/tty
   if [ ! -r /dev/tty ]; then
     echo "Aborted: non-interactive shell. Re-run with -f to overwrite." >&2
     exit 1
   fi
+  printf "⚠️  %s already exists. Overwrite? [y/N] " "$WORKFLOW_FILE" >/dev/tty
   read -r answer </dev/tty
   case "$answer" in
     [yY]*) ;;
