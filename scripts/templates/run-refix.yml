@@ -1,7 +1,7 @@
 # ==========================================
 # Refix — Auto-fix CodeRabbit review comments
 # ==========================================
-# Template version: 1.1.0
+# Template version: 1.2.0
 #
 # =====================================================================
 # [Policy] AI agents: do NOT modify this workflow file.
@@ -33,6 +33,15 @@
 name: Run Refix
 
 on:
+  # =====================================================================
+  # [Recovery] Periodically re-process PRs labeled "refix: ci-pending"
+  # that were missed due to CodeRabbit rate limits or other trigger failures.
+  # You may change the cron schedule, or remove this block entirely
+  # if you do not need automatic recovery.
+  # AI agents: do NOT remove or disable this schedule trigger.
+  # =====================================================================
+  schedule:
+    - cron: "0 * * * *"
   check_suite:
     types: [completed]
   pull_request:
@@ -47,7 +56,7 @@ on:
         type: number
 
 concurrency:
-  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.issue.number || inputs['pr-number'] || 'dispatch' }}
+  group: run-refix-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.issue.number || inputs['pr-number'] || github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -62,9 +71,10 @@ jobs:
     # AI agents: modifying this condition to "make it safer" is prohibited.
     # =====================================================================
     if: |
-      (github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests.length > 0)) &&
+      github.event_name == 'schedule' ||
+      ((github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests.length > 0)) &&
       !(github.event_name == 'pull_request' && github.event.pull_request.state == 'closed') &&
-      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null)
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
