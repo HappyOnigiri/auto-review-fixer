@@ -30,7 +30,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/Refix/main/scri
 リポジトリの **Settings > Secrets and variables > Actions** に以下を追加します:
 
 - **`GH_TOKEN`** — Fine-grained Personal Access Token
-  - GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens で作成
+  - GitHub Settings > Developer settings > Personal access tokens > Fine-grained
+    tokens で作成
   - 必要な Repository permissions:
     - Contents: Read and write（コミットの push）
     - Pull requests: Read and write（ラベル・コメント・auto-merge）
@@ -41,15 +42,18 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/Refix/main/scri
 
 ## 設定（任意）
 
-リポジトリルートに `.refix.yaml` を配置するか、GitHub Actions Variable に `REFIX_CONFIG_YAML` として設定することで、Refix の動作をカスタマイズできます。
+リポジトリルートに `.refix.yaml` を配置するか、GitHub Actions Variable に `REFIX_CONFIG_YAML`
+として設定することで、Refix の動作をカスタマイズできます。
 
 利用可能なオプションは [`.refix.sample.yaml`](.refix.sample.yaml) を参照してください。
 
 ## バッチモード
 
-複数リポジトリを一括処理するには、バッチモードを使用します。ワークフローは `.github/workflows/run-refix-batch.yml` を使用します。
+複数リポジトリを一括処理するには、バッチモードを使用します。ワークフローは `.github/workflows/run-refix-batch.yml`
+を使用します。
 
-リポジトリルートに `.refix-batch.yaml` を配置するか、GitHub Actions Variable に `REFIX_CONFIG_BATCH_YAML` として設定することで、処理対象リポジトリや動作をカスタマイズできます。
+リポジトリルートに `.refix-batch.yaml` を配置するか、GitHub Actions Variable に
+`REFIX_CONFIG_BATCH_YAML` として設定することで、処理対象リポジトリや動作をカスタマイズできます。
 
 設定フォーマットは [`.refix-batch.sample.yaml`](.refix-batch.sample.yaml) を参照してください。
 

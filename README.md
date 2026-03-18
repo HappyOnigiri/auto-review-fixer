@@ -2,12 +2,15 @@
 
 [Japanese version](README.ja.md)
 
-A GitHub Action that automatically fixes unresolved CodeRabbit review comments using Claude.
+A GitHub Action that automatically fixes unresolved CodeRabbit review comments
+using Claude.
 
 ## Features
 
-- Detects and summarizes unresolved CodeRabbit reviews, then auto-fixes code with Claude Code
-- CodeRabbit auto resume (automatically posts `@coderabbitai resume` when rate-limited or review fails, optional)
+- Detects and summarizes unresolved CodeRabbit reviews, then auto-fixes code
+  with Claude Code
+- CodeRabbit auto resume (automatically posts `@coderabbitai resume` when
+  rate-limited or review fails, optional)
 - Reads failed CI logs and auto-fixes errors
 - Keeps PR branches up to date with the base branch and resolves merge conflicts
 - Optionally auto-merges PRs after all fixes are applied
@@ -23,14 +26,16 @@ Run the following command in your repository root:
 bash <(curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/Refix/main/scripts/init.sh)
 ```
 
-This creates `.github/workflows/run-refix.yml`, which triggers automatically on PR events, CI completion, and comments.
+This creates `.github/workflows/run-refix.yml`, which triggers automatically on
+PR events, CI completion, and comments.
 
 ### 2. Register secrets
 
 Go to your repository's **Settings > Secrets and variables > Actions** and add:
 
 - **`GH_TOKEN`** - Fine-grained Personal Access Token
-  - Create at: GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens
+  - Create at: GitHub Settings > Developer settings > Personal access tokens >
+    Fine-grained tokens
   - Required Repository permissions:
     - Contents: Read and write (push commits)
     - Pull requests: Read and write (labels, comments, auto-merge)
@@ -41,17 +46,22 @@ Go to your repository's **Settings > Secrets and variables > Actions** and add:
 
 ## Configuration (optional)
 
-You can customize Refix behavior by placing a `.refix.yaml` file at your repository root, or by setting `REFIX_CONFIG_YAML` as a GitHub Actions Variable.
+You can customize Refix behavior by placing a `.refix.yaml` file at your
+repository root, or by setting `REFIX_CONFIG_YAML` as a GitHub Actions Variable.
 
 See [`.refix.sample.yaml`](.refix.sample.yaml) for all available options.
 
 ## Batch mode
 
-For processing multiple repositories at once, use batch mode with `.github/workflows/run-refix-batch.yml`.
+For processing multiple repositories at once, use batch mode with
+`.github/workflows/run-refix-batch.yml`.
 
-You can customize the target repositories and behavior by placing a `.refix-batch.yaml` file at your repository root, or by setting `REFIX_CONFIG_BATCH_YAML` as a GitHub Actions Variable.
+You can customize the target repositories and behavior by placing a
+`.refix-batch.yaml` file at your repository root, or by setting
+`REFIX_CONFIG_BATCH_YAML` as a GitHub Actions Variable.
 
-See [`.refix-batch.sample.yaml`](.refix-batch.sample.yaml) for the configuration format.
+See [`.refix-batch.sample.yaml`](.refix-batch.sample.yaml) for the configuration
+format.
 
 ## Contributing
 
