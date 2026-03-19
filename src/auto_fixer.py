@@ -104,6 +104,7 @@ from prompt_builder import (
     review_summary_id,
     summarization_target_ids,
     generate_prompt,
+    strip_nitpick_sections,
 )
 from result_report import build_phase_result_entry, merge_result_log_body
 from state_manager import (
@@ -1551,6 +1552,11 @@ def _process_single_pr(
     )
 
     has_review_targets = bool(unresolved_reviews or unresolved_comments)
+    if has_review_targets and coderabbit_ignore_nitpick:
+        has_review_targets = any(
+            strip_nitpick_sections(r.get("body", "")).strip()
+            for r in unresolved_reviews
+        ) or bool(unresolved_comments)
     if not has_review_targets and not is_behind and not has_failing_ci:
         print(
             f"No unresolved reviews, not behind, and no failing CI for {_pr_ref(repo, pr_number)}"
