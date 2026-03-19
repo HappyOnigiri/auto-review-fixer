@@ -17,5 +17,17 @@ jobs:
       # カスタム PAT の GH_TOKEN を使用する。run-refix.yml・run-refix-batch.yml でも
       # 同じ GH_TOKEN を共有しており、複数ワークフロー連携や外部 API 呼び出しに対応している。
       - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+        id: release
         with:
           token: ${{ secrets.GH_TOKEN }}
+
+      - name: Update major version tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          MAJOR="${TAG%%.*}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$MAJOR" -m "Update $MAJOR tag to $TAG"
+          git push origin "$MAJOR" --force
