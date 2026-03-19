@@ -1,11 +1,11 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci lint repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-ruler
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci lint repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-rule
 
 # venv の Python が利用可能な場合はそれを使用する（activate なしで make test/ci を実行するため）
 PYTHON := $(if $(wildcard .venv/bin/python),$(abspath .venv/bin/python),$(shell command -v python3 || command -v python))
 REPOMIX_VERSION ?= 1.12.0
 .DEFAULT_GOAL := run
 
-sync-ruler:
+sync-rule:
 	@sh scripts/sync_rule.sh
 
 help:
@@ -59,9 +59,10 @@ setup:
 	else \
 		echo ".refix-batch.yaml already exists, skipping."; \
 	fi
-	@if [ -e .git/hooks/post-merge ]; then echo "setup: skipping post-merge (already exists)"; else printf '#!/bin/sh\nmake sync-ruler\n' > .git/hooks/post-merge && chmod +x .git/hooks/post-merge; fi
-	@if [ -e .git/hooks/post-checkout ]; then echo "setup: skipping post-checkout (already exists)"; else printf '#!/bin/sh\nmake sync-ruler\n' > .git/hooks/post-checkout && chmod +x .git/hooks/post-checkout; fi
+	@printf '#!/bin/sh\nmake sync-rule\n' > .git/hooks/post-merge && chmod +x .git/hooks/post-merge
+	@printf '#!/bin/sh\nmake sync-rule\n' > .git/hooks/post-checkout && chmod +x .git/hooks/post-checkout
 	@echo "setup: git hooks installed"
+	@make sync-rule
 
 run:
 	cd src && python auto_fixer.py
