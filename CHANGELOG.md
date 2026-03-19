@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.4.0...refix-v0.5.0) (2026-03-18)
+## [0.5.0](https://github.com/HappyOnigiri/Refix/compare/v0.4.0...v0.5.0) (2026-03-18)
 
 
 ### Features
@@ -49,7 +49,7 @@
 * **templates:** 日本語版テンプレートのコメント表現を微調整 ([ed19a1c](https://github.com/HappyOnigiri/Refix/commit/ed19a1c641b4813b65a1bd4b9f17c08dd96c28c6))
 * **templates:** 配布先リポジトリの AI エージェント向けに編集禁止ポリシーを修正 ([c80be77](https://github.com/HappyOnigiri/Refix/commit/c80be7758e54961647fc478c8c7f690c5dca1709))
 
-## [0.4.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.3.0...refix-v0.4.0) (2026-03-17)
+## [0.4.0](https://github.com/HappyOnigiri/Refix/compare/v0.3.0...v0.4.0) (2026-03-17)
 
 
 ### Features
@@ -131,7 +131,7 @@
 * **ruler:** AGENTS.md の CI 品質保証ルールと Caveats を更新 ([9368cec](https://github.com/HappyOnigiri/Refix/commit/9368cec8b5b7fdb465719842435bea90841fda04))
 * **ruler:** 品質保証 (CI) の箇条書きを複数項目に分割して可読性を向上 ([27ca7be](https://github.com/HappyOnigiri/Refix/commit/27ca7bec1997da351d537078248a23e856727a29))
 
-## [0.3.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.2.0...refix-v0.3.0) (2026-03-15)
+## [0.3.0](https://github.com/HappyOnigiri/Refix/compare/v0.2.0...v0.3.0) (2026-03-15)
 
 
 ### Features
@@ -164,7 +164,7 @@
 
 * **config:** .refix.sample.yaml に merge_method と base_update_method を追記 ([9be71ca](https://github.com/HappyOnigiri/Refix/commit/9be71ca878b4fe6d736a6175576c01c241a94d1f))
 
-## [0.2.0](https://github.com/HappyOnigiri/Refix/compare/refix-v0.1.0...refix-v0.2.0) (2026-03-14)
+## [0.2.0](https://github.com/HappyOnigiri/Refix/compare/511f5fefab4524e5d049ae3b1258c1258b683fd4...v0.2.0) (2026-03-14)
 
 
 ### Features
