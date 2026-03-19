@@ -47,16 +47,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/Refix/main/scri
 
 利用可能なオプションは [`.refix.sample.yaml`](.refix.sample.yaml) を参照してください。
 
-## バッチモード
-
-複数リポジトリを一括処理するには、バッチモードを使用します。ワークフローは `.github/workflows/run-refix-batch.yml`
-を使用します。
-
-リポジトリルートに `.refix-batch.yaml` を配置するか、GitHub Actions Variable に
-`REFIX_CONFIG_BATCH_YAML` として設定することで、処理対象リポジトリや動作をカスタマイズできます。
-
-設定フォーマットは [`.refix-batch.sample.yaml`](.refix-batch.sample.yaml) を参照してください。
-
 ## Contributing
 
 コントリビュート歓迎です。
