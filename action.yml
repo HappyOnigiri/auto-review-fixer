@@ -1,4 +1,4 @@
-name: "Refix"
+name: "Refix Action"
 description: "Automatically fix CodeRabbit review comments using Claude"
 
 branding:
