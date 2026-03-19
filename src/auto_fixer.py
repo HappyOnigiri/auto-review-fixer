@@ -839,6 +839,21 @@ def _run_merge_phase_rebase(
             # git add . して rebase --continue
             _run_git("add", ".", cwd=works_dir, timeout=30)
             if not is_rebase_in_progress(works_dir):
+                # rebase が進行中でない場合、正常完了か abort かを判別する
+                ancestor_check = _run_git(
+                    "merge-base",
+                    "--is-ancestor",
+                    f"origin/{base_branch}",
+                    "HEAD",
+                    cwd=works_dir,
+                    check=False,
+                    timeout=30,
+                )
+                if ancestor_check.returncode != 0:
+                    raise RuntimeError(
+                        f"Rebase is not in progress but origin/{base_branch} is not an ancestor of HEAD; "
+                        "rebase may have been aborted by Claude"
+                    )
                 # Claude が rebase を完了させた場合
                 rebase_done = True
                 print(
