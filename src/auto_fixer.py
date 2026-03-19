@@ -1737,14 +1737,15 @@ def _process_single_pr(
 
     if has_failing_ci and not commit_limit_reached and not claude_limit_reached:
         if not dry_run and _has_done_label and not _ran_set_running:
-            set_pr_running_label(
+            if set_pr_running_label(
                 repo,
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
-            )
-            _mark_pr_data_as_running(pr_data)
-            _ran_set_running = True
+            ):
+                modified_prs.add((repo, pr_number))
+                _mark_pr_data_as_running(pr_data)
+                _ran_set_running = True
         ci_commits = _run_ci_fix_phase(
             ctx, pr_data, works_dir, state_comment, result_blocks, error_collector
         )
@@ -1755,14 +1756,15 @@ def _process_single_pr(
 
     if is_behind and not commit_limit_reached:
         if not dry_run and _has_done_label and not _ran_set_running:
-            set_pr_running_label(
+            if set_pr_running_label(
                 repo,
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
-            )
-            _mark_pr_data_as_running(pr_data)
-            _ran_set_running = True
+            ):
+                modified_prs.add((repo, pr_number))
+                _mark_pr_data_as_running(pr_data)
+                _ran_set_running = True
         _run_merge_phase(
             ctx,
             works_dir,
