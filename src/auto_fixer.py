@@ -1711,15 +1711,17 @@ def _process_single_pr(
         isinstance(lbl, dict) and str(lbl.get("name", "")).strip() == REFIX_DONE_LABEL
         for lbl in (pr_data.get("labels") or [])
     )
+    _ran_set_running = False
 
     if has_failing_ci and not commit_limit_reached and not claude_limit_reached:
-        if not dry_run and _has_done_label:
+        if not dry_run and _has_done_label and not _ran_set_running:
             set_pr_running_label(
                 repo,
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
             )
+            _ran_set_running = True
         ci_commits = _run_ci_fix_phase(
             ctx, pr_data, works_dir, state_comment, result_blocks, error_collector
         )
@@ -1729,13 +1731,14 @@ def _process_single_pr(
         print(f"[ci-fix] {_pr_ref(repo, pr_number)}: skipped due to per-run limit")
 
     if is_behind and not commit_limit_reached:
-        if not dry_run and _has_done_label:
+        if not dry_run and _has_done_label and not _ran_set_running:
             set_pr_running_label(
                 repo,
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
             )
+            _ran_set_running = True
         _run_merge_phase(
             ctx,
             works_dir,
