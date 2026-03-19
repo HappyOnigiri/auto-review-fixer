@@ -21,6 +21,9 @@ jobs:
         with:
           token: ${{ secrets.GH_TOKEN }}
 
+      - uses: actions/checkout@v4
+        if: steps.release.outputs.release_created == 'true'
+
       - name: Update major version tag
         if: steps.release.outputs.release_created == 'true'
         env:
