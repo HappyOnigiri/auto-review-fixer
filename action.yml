@@ -1,6 +1,10 @@
 name: "Refix"
 description: "Automatically fix CodeRabbit review comments using Claude"
 
+branding:
+  icon: "check-circle"
+  color: "green"
+
 inputs:
   version:
     description: "Refix action version (for tracking)"
@@ -27,7 +31,7 @@ inputs:
   ref:
     description: "Ref (tag, branch, or SHA) of HappyOnigiri/Refix to check out"
     required: false
-    default: "main"
+    default: "v1"
   dry-run:
     description: "Run without making changes"
     required: false
