@@ -1054,6 +1054,126 @@ class TestProcessRepo:
 
         mock_prepare.assert_called_once()
 
+    def test_done_label_pr_sets_running_before_merge_phase(self, mocker, tmp_path):
+        prs = [{"number": 1, "title": "Test", "labels": [{"name": "refix: done"}]}]
+        pr_data = {
+            "headRefName": "feature/test",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "comments": [],
+            "labels": [{"name": "refix: done"}],
+        }
+        mocker.patch("auto_fixer.fetch_open_prs", return_value=prs)
+        mocker.patch("auto_fixer.fetch_pr_details", return_value=pr_data)
+        mocker.patch("auto_fixer.fetch_pr_review_comments", return_value=[])
+        mocker.patch("auto_fixer.fetch_review_threads", return_value={})
+        mocker.patch("auto_fixer.fetch_issue_comments", return_value=[])
+        mocker.patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1))
+        mocker.patch("auto_fixer.load_state_comment", return_value=make_state_comment())
+        mocker.patch("auto_fixer.prepare_repository", return_value=tmp_path)
+        mocker.patch("auto_fixer.merge_base_branch", return_value=(False, False))
+        mock_set_running = mocker.patch("auto_fixer.set_pr_running_label")
+        mocker.patch(
+            "auto_fixer.update_done_label_if_completed",
+            return_value=(False, False),
+        )
+        auto_fixer.process_repo({"repo": "owner/repo"})
+
+        mock_set_running.assert_called_once_with(
+            "owner/repo",
+            1,
+            pr_data=pr_data,
+            enabled_pr_label_keys={
+                "running",
+                "done",
+                "merged",
+                "auto_merge_requested",
+                "ci_pending",
+            },
+        )
+
+    def test_non_done_pr_does_not_set_running_in_merge_phase(self, mocker, tmp_path):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature/test",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "comments": [],
+            "labels": [{"name": "refix: running"}],
+        }
+        mocker.patch("auto_fixer.fetch_open_prs", return_value=prs)
+        mocker.patch("auto_fixer.fetch_pr_details", return_value=pr_data)
+        mocker.patch("auto_fixer.fetch_pr_review_comments", return_value=[])
+        mocker.patch("auto_fixer.fetch_review_threads", return_value={})
+        mocker.patch("auto_fixer.fetch_issue_comments", return_value=[])
+        mocker.patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1))
+        mocker.patch("auto_fixer.load_state_comment", return_value=make_state_comment())
+        mocker.patch("auto_fixer.prepare_repository", return_value=tmp_path)
+        mocker.patch("auto_fixer.merge_base_branch", return_value=(False, False))
+        mock_set_running = mocker.patch("auto_fixer.set_pr_running_label")
+        mocker.patch(
+            "auto_fixer.update_done_label_if_completed",
+            return_value=(False, False),
+        )
+        auto_fixer.process_repo({"repo": "owner/repo"})
+
+        mock_set_running.assert_not_called()
+
+    def test_done_label_pr_sets_running_before_ci_fix_phase(
+        self, mocker, make_cmd_result, tmp_path
+    ):
+        prs = [{"number": 1, "title": "Test"}]
+        pr_data = {
+            "headRefName": "feature/test",
+            "baseRefName": "main",
+            "title": "Test",
+            "reviews": [],
+            "comments": [],
+            "labels": [{"name": "refix: done"}],
+            "check_runs": [
+                {"name": "ci/test", "conclusion": "FAILURE", "detailsUrl": ""}
+            ],
+        }
+        mocker.patch("auto_fixer.fetch_open_prs", return_value=prs)
+        mocker.patch("auto_fixer.fetch_pr_details", return_value=pr_data)
+        mocker.patch("auto_fixer.fetch_pr_review_comments", return_value=[])
+        mocker.patch("auto_fixer.fetch_review_threads", return_value={})
+        mocker.patch("auto_fixer.fetch_issue_comments", return_value=[])
+        mocker.patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0))
+        mocker.patch("auto_fixer.load_state_comment", return_value=make_state_comment())
+        mocker.patch("auto_fixer.prepare_repository", return_value=tmp_path)
+        mocker.patch("auto_fixer.collect_ci_failure_materials", return_value=[])
+        mocker.patch(
+            "auto_fixer.run_claude_prompt",
+            return_value=("aaa111 ci fix commit", "stdout"),
+        )
+        mock_set_running = mocker.patch("auto_fixer.set_pr_running_label")
+        mocker.patch(
+            "auto_fixer.update_done_label_if_completed",
+            return_value=(False, False),
+        )
+        mocker.patch(
+            "auto_fixer.subprocess.run",
+            return_value=make_cmd_result(""),
+        )
+        mocker.patch("auto_fixer.upsert_state_comment")
+        auto_fixer.process_repo({"repo": "owner/repo"})
+
+        mock_set_running.assert_called_once_with(
+            "owner/repo",
+            1,
+            pr_data=pr_data,
+            enabled_pr_label_keys={
+                "running",
+                "done",
+                "merged",
+                "auto_merge_requested",
+                "ci_pending",
+            },
+        )
+
     def test_review_fix_start_sets_running_label(
         self, mocker, make_cmd_result, tmp_path
     ):
