@@ -16,12 +16,12 @@ jobs:
       # GITHUB_TOKEN はワークフロー間トリガー（他のワークフローの起動）に制約があるため、
       # カスタム PAT の GH_TOKEN を使用する。run-refix.yml・run-refix-batch.yml でも
       # 同じ GH_TOKEN を共有しており、複数ワークフロー連携や外部 API 呼び出しに対応している。
-      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+      - uses: googleapis/release-please-action@v4
         id: release
         with:
           token: ${{ secrets.GH_TOKEN }}
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@v6
         if: steps.release.outputs.release_created == 'true'
         with:
           token: ${{ secrets.GH_TOKEN }}
