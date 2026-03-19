@@ -1793,95 +1793,195 @@ def _process_single_pr(
             )
         raise
 
-    if not has_review_targets:
-        if commits_by_phase and not dry_run:
-            _push_if_needed(ctx, works_dir, branch_name)
-        if ctx.write_result_to_comment and result_blocks:
-            state_saved = _save_result_log(
-                repo, pr_number, result_blocks, state_comment, error_collector
+    try:
+        if not has_review_targets:
+            if commits_by_phase and not dry_run:
+                _push_if_needed(ctx, works_dir, branch_name)
+            if ctx.write_result_to_comment and result_blocks:
+                state_saved = _save_result_log(
+                    repo, pr_number, result_blocks, state_comment, error_collector
+                )
+            else:
+                state_saved = True
+            _done_updated, _ci_grace = update_done_label_if_completed(
+                repo=repo,
+                pr_number=pr_number,
+                has_review_targets=False,
+                review_fix_started=review_fix_started,
+                review_fix_added_commits=review_fix_added_commits,
+                review_fix_failed=review_fix_failed,
+                state_saved=state_saved,
+                commits_by_phase=commits_by_phase,
+                pr_data=pr_data,
+                review_comments=gc_review_comments,
+                issue_comments=gc_issue_comments,
+                dry_run=dry_run,
+                summarize_only=summarize_only,
+                auto_merge_enabled=auto_merge_enabled,
+                merge_method=merge_method,
+                coderabbit_rate_limit_active=bool(active_rate_limit),
+                coderabbit_review_failed_active=bool(active_review_failed),
+                coderabbit_review_skipped_active=bool(active_review_skipped),
+                coderabbit_require_review=coderabbit_require_review,
+                coderabbit_block_while_processing=coderabbit_block_while_processing,
+                enabled_pr_label_keys=enabled_pr_label_keys,
+                ci_empty_as_success=ci_empty_as_success,
+                ci_empty_grace_minutes=ci_empty_grace_minutes,
+                error_collector=error_collector,
             )
+            if _done_updated:
+                modified_prs.add((repo, pr_number))
+            _cacheable = (
+                not dry_run
+                and state_saved
+                and not bool(active_rate_limit)
+                and not bool(active_review_failed)
+                and not bool(active_review_skipped)
+                and not _ci_grace
+            )
+            if commits_by_phase:
+                return (
+                    False,
+                    True,
+                    (repo, pr_number, "\n".join(commits_by_phase)),
+                    _cacheable,
+                )
+            return False, True, None, _cacheable
+
+        # レビュー修正をスキップすべきかの判定
+        skip_review_fix = False
+        skip_review_fix_reason = ""
+        if active_rate_limit:
+            skip_review_fix = True
+            skip_review_fix_reason = "CodeRabbit is rate-limited"
+        elif active_review_skipped:
+            skip_review_fix = True
+            skip_review_fix_reason = (
+                f"CodeRabbit review is skipped ({active_review_skipped['reason_label']})"
+            )
+        elif commit_limit_reached:
+            skip_review_fix = True
+            skip_review_fix_reason = (
+                f"max_committed_prs_per_run limit reached ({max_committed_prs})"
+            )
+        elif claude_limit_reached:
+            skip_review_fix = True
+            skip_review_fix_reason = (
+                f"max_claude_prs_per_run limit reached ({max_claude_prs})"
+            )
+
+        if skip_review_fix:
+            if commits_by_phase and not dry_run:
+                _push_if_needed(ctx, works_dir, branch_name)
+            if ctx.write_result_to_comment and result_blocks:
+                state_saved = _save_result_log(
+                    repo, pr_number, result_blocks, state_comment, error_collector
+                )
+            print(
+                f"Skipping review-fix for {_pr_ref(repo, pr_number)} "
+                f"because {skip_review_fix_reason}; "
+                "CI repair and merge-base handling already ran."
+            )
+            _done_updated, _ = update_done_label_if_completed(
+                repo=repo,
+                pr_number=pr_number,
+                has_review_targets=has_review_targets,
+                review_fix_started=review_fix_started,
+                review_fix_added_commits=review_fix_added_commits,
+                review_fix_failed=review_fix_failed,
+                state_saved=state_saved,
+                commits_by_phase=commits_by_phase,
+                pr_data=pr_data,
+                review_comments=gc_review_comments,
+                issue_comments=gc_issue_comments,
+                dry_run=dry_run,
+                summarize_only=summarize_only,
+                auto_merge_enabled=auto_merge_enabled,
+                merge_method=merge_method,
+                coderabbit_rate_limit_active=bool(active_rate_limit),
+                coderabbit_review_failed_active=bool(active_review_failed),
+                coderabbit_review_skipped_active=bool(active_review_skipped),
+                coderabbit_require_review=coderabbit_require_review,
+                coderabbit_block_while_processing=coderabbit_block_while_processing,
+                enabled_pr_label_keys=enabled_pr_label_keys,
+                ci_empty_as_success=ci_empty_as_success,
+                ci_empty_grace_minutes=ci_empty_grace_minutes,
+                error_collector=error_collector,
+            )
+            if _done_updated:
+                modified_prs.add((repo, pr_number))
+            if commits_by_phase:
+                return False, True, (repo, pr_number, "\n".join(commits_by_phase)), False
+            return False, True, None, False
+
+        # Summarize reviews before passing to code-fix model
+        print()
+        if dry_run:
+            print("\n[DRY RUN] Would summarize:")
+            print(
+                f"  command: claude --model {summarize_model} -p 'Read the file <temp>.md ...'"
+            )
+            print(
+                f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)"
+            )
+            summaries = {}
+            for i, r in enumerate(unresolved_reviews, 1):
+                review_id = review_summary_id(r)
+                if review_id:
+                    summaries[review_id] = f"（レビューコメント {i} の要約）"
+            for i, c in enumerate(unresolved_comments, 1):
+                if c.get("id"):
+                    rid = inline_comment_state_id(c)
+                    path = c.get("path", "")
+                    label = f"{path} " if path else ""
+                    summaries[rid] = f"（インラインコメント {i} {label}の要約）"
         else:
-            state_saved = True
+            summaries = summarize_reviews(
+                unresolved_reviews,
+                unresolved_comments,
+                pr_body=pr_data.get("body", ""),
+                silent=silent,
+                model=summarize_model,
+            )
+
+        summary_target_ids = summarization_target_ids(
+            unresolved_reviews, unresolved_comments
+        )
+        summarized_count = sum(
+            1 for sid in summary_target_ids if summaries.get(sid, "").strip()
+        )
+        if summary_target_ids:
+            if summarized_count == 0:
+                print(
+                    f"Summarization unavailable: falling back to raw review text for all {len(summary_target_ids)} item(s)"
+                )
+            elif summarized_count < len(summary_target_ids):
+                print(
+                    f"Summaries available for {summarized_count}/{len(summary_target_ids)} item(s)"
+                )
+                print(
+                    f"Summarization fallback to raw review text for {len(summary_target_ids) - summarized_count} item(s)"
+                )
+            else:
+                print(f"Summaries available for all {len(summary_target_ids)} item(s)")
+
+        review_fix_started, review_fix_added_commits, state_saved, review_fix_failed = (
+            _run_review_fix_phase(
+                ctx,
+                pr_data,
+                unresolved_reviews,
+                unresolved_comments,
+                summaries,
+                state_comment,
+                result_blocks,
+                works_dir,
+                thread_map,
+                commits_by_phase,
+                error_collector=error_collector,
+            )
+        )
+
         _done_updated, _ci_grace = update_done_label_if_completed(
-            repo=repo,
-            pr_number=pr_number,
-            has_review_targets=False,
-            review_fix_started=review_fix_started,
-            review_fix_added_commits=review_fix_added_commits,
-            review_fix_failed=review_fix_failed,
-            state_saved=state_saved,
-            commits_by_phase=commits_by_phase,
-            pr_data=pr_data,
-            review_comments=gc_review_comments,
-            issue_comments=gc_issue_comments,
-            dry_run=dry_run,
-            summarize_only=summarize_only,
-            auto_merge_enabled=auto_merge_enabled,
-            merge_method=merge_method,
-            coderabbit_rate_limit_active=bool(active_rate_limit),
-            coderabbit_review_failed_active=bool(active_review_failed),
-            coderabbit_review_skipped_active=bool(active_review_skipped),
-            coderabbit_require_review=coderabbit_require_review,
-            coderabbit_block_while_processing=coderabbit_block_while_processing,
-            enabled_pr_label_keys=enabled_pr_label_keys,
-            ci_empty_as_success=ci_empty_as_success,
-            ci_empty_grace_minutes=ci_empty_grace_minutes,
-            error_collector=error_collector,
-        )
-        if _done_updated:
-            modified_prs.add((repo, pr_number))
-        _cacheable = (
-            not dry_run
-            and state_saved
-            and not bool(active_rate_limit)
-            and not bool(active_review_failed)
-            and not bool(active_review_skipped)
-            and not _ci_grace
-        )
-        if commits_by_phase:
-            return (
-                False,
-                True,
-                (repo, pr_number, "\n".join(commits_by_phase)),
-                _cacheable,
-            )
-        return False, True, None, _cacheable
-
-    # レビュー修正をスキップすべきかの判定
-    skip_review_fix = False
-    skip_review_fix_reason = ""
-    if active_rate_limit:
-        skip_review_fix = True
-        skip_review_fix_reason = "CodeRabbit is rate-limited"
-    elif active_review_skipped:
-        skip_review_fix = True
-        skip_review_fix_reason = (
-            f"CodeRabbit review is skipped ({active_review_skipped['reason_label']})"
-        )
-    elif commit_limit_reached:
-        skip_review_fix = True
-        skip_review_fix_reason = (
-            f"max_committed_prs_per_run limit reached ({max_committed_prs})"
-        )
-    elif claude_limit_reached:
-        skip_review_fix = True
-        skip_review_fix_reason = (
-            f"max_claude_prs_per_run limit reached ({max_claude_prs})"
-        )
-
-    if skip_review_fix:
-        if commits_by_phase and not dry_run:
-            _push_if_needed(ctx, works_dir, branch_name)
-        if ctx.write_result_to_comment and result_blocks:
-            state_saved = _save_result_log(
-                repo, pr_number, result_blocks, state_comment, error_collector
-            )
-        print(
-            f"Skipping review-fix for {_pr_ref(repo, pr_number)} "
-            f"because {skip_review_fix_reason}; "
-            "CI repair and merge-base handling already ran."
-        )
-        _done_updated, _ = update_done_label_if_completed(
             repo=repo,
             pr_number=pr_number,
             has_review_targets=has_review_targets,
@@ -1909,117 +2009,29 @@ def _process_single_pr(
         )
         if _done_updated:
             modified_prs.add((repo, pr_number))
+        _cacheable = (
+            not dry_run
+            and state_saved
+            and not review_fix_failed
+            and not bool(active_rate_limit)
+            and not bool(active_review_failed)
+            and not bool(active_review_skipped)
+            and not _ci_grace
+        )
         if commits_by_phase:
-            return False, True, (repo, pr_number, "\n".join(commits_by_phase)), False
-        return False, True, None, False
-
-    # Summarize reviews before passing to code-fix model
-    print()
-    if dry_run:
-        print("\n[DRY RUN] Would summarize:")
-        print(
-            f"  command: claude --model {summarize_model} -p 'Read the file <temp>.md ...'"
-        )
-        print(
-            f"  items: {len(unresolved_reviews)} review(s), {len(unresolved_comments)} inline comment(s)"
-        )
-        summaries = {}
-        for i, r in enumerate(unresolved_reviews, 1):
-            review_id = review_summary_id(r)
-            if review_id:
-                summaries[review_id] = f"（レビューコメント {i} の要約）"
-        for i, c in enumerate(unresolved_comments, 1):
-            if c.get("id"):
-                rid = inline_comment_state_id(c)
-                path = c.get("path", "")
-                label = f"{path} " if path else ""
-                summaries[rid] = f"（インラインコメント {i} {label}の要約）"
-    else:
-        summaries = summarize_reviews(
-            unresolved_reviews,
-            unresolved_comments,
-            pr_body=pr_data.get("body", ""),
-            silent=silent,
-            model=summarize_model,
-        )
-
-    summary_target_ids = summarization_target_ids(
-        unresolved_reviews, unresolved_comments
-    )
-    summarized_count = sum(
-        1 for sid in summary_target_ids if summaries.get(sid, "").strip()
-    )
-    if summary_target_ids:
-        if summarized_count == 0:
-            print(
-                f"Summarization unavailable: falling back to raw review text for all {len(summary_target_ids)} item(s)"
+            return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
+        return False, True, None, _cacheable
+    except Exception:
+        if _ran_set_running:
+            edit_pr_label(
+                repo,
+                pr_number,
+                add=False,
+                label=REFIX_RUNNING_LABEL,
+                enabled_pr_label_keys=enabled_pr_label_keys,
+                error_collector=error_collector,
             )
-        elif summarized_count < len(summary_target_ids):
-            print(
-                f"Summaries available for {summarized_count}/{len(summary_target_ids)} item(s)"
-            )
-            print(
-                f"Summarization fallback to raw review text for {len(summary_target_ids) - summarized_count} item(s)"
-            )
-        else:
-            print(f"Summaries available for all {len(summary_target_ids)} item(s)")
-
-    review_fix_started, review_fix_added_commits, state_saved, review_fix_failed = (
-        _run_review_fix_phase(
-            ctx,
-            pr_data,
-            unresolved_reviews,
-            unresolved_comments,
-            summaries,
-            state_comment,
-            result_blocks,
-            works_dir,
-            thread_map,
-            commits_by_phase,
-            error_collector=error_collector,
-        )
-    )
-
-    _done_updated, _ci_grace = update_done_label_if_completed(
-        repo=repo,
-        pr_number=pr_number,
-        has_review_targets=has_review_targets,
-        review_fix_started=review_fix_started,
-        review_fix_added_commits=review_fix_added_commits,
-        review_fix_failed=review_fix_failed,
-        state_saved=state_saved,
-        commits_by_phase=commits_by_phase,
-        pr_data=pr_data,
-        review_comments=gc_review_comments,
-        issue_comments=gc_issue_comments,
-        dry_run=dry_run,
-        summarize_only=summarize_only,
-        auto_merge_enabled=auto_merge_enabled,
-        merge_method=merge_method,
-        coderabbit_rate_limit_active=bool(active_rate_limit),
-        coderabbit_review_failed_active=bool(active_review_failed),
-        coderabbit_review_skipped_active=bool(active_review_skipped),
-        coderabbit_require_review=coderabbit_require_review,
-        coderabbit_block_while_processing=coderabbit_block_while_processing,
-        enabled_pr_label_keys=enabled_pr_label_keys,
-        ci_empty_as_success=ci_empty_as_success,
-        ci_empty_grace_minutes=ci_empty_grace_minutes,
-        error_collector=error_collector,
-    )
-    if _done_updated:
-        modified_prs.add((repo, pr_number))
-    _cacheable = (
-        not dry_run
-        and state_saved
-        and not review_fix_failed
-        and not bool(active_rate_limit)
-        and not bool(active_review_failed)
-        and not bool(active_review_skipped)
-        and not _ci_grace
-    )
-    if commits_by_phase:
-        return False, True, (repo, pr_number, "\n".join(commits_by_phase)), _cacheable
-    return False, True, None, _cacheable
+        raise
 
 
 def process_repo(
