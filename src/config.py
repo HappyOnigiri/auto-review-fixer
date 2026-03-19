@@ -43,6 +43,7 @@ DEFAULT_CONFIG: AppConfig = {
     "coderabbit_auto_resume_max_per_run": 1,
     "coderabbit_require_review": True,
     "coderabbit_block_while_processing": True,
+    "coderabbit_ignore_nitpick": False,
     "process_draft_prs": False,
     "include_fork_repositories": True,
     "state_comment_timezone": "JST",
@@ -75,6 +76,7 @@ _BASE_OPERATIONAL_KEYS = {
     "coderabbit_auto_resume_max_per_run",
     "coderabbit_require_review",
     "coderabbit_block_while_processing",
+    "coderabbit_ignore_nitpick",
     "process_draft_prs",
     "state_comment_timezone",
     "merge_method",
@@ -137,6 +139,7 @@ _SCALAR_FIELDS: dict[str, FieldSpec] = {
     "coderabbit_auto_resume": FieldSpec(bool),
     "coderabbit_require_review": FieldSpec(bool),
     "coderabbit_block_while_processing": FieldSpec(bool),
+    "coderabbit_ignore_nitpick": FieldSpec(bool),
     "process_draft_prs": FieldSpec(bool),
     "include_fork_repositories": FieldSpec(bool),
     "ci_empty_as_success": FieldSpec(bool),
@@ -461,6 +464,7 @@ def _make_default_config() -> AppConfig:
         "coderabbit_block_while_processing": DEFAULT_CONFIG[
             "coderabbit_block_while_processing"
         ],
+        "coderabbit_ignore_nitpick": DEFAULT_CONFIG["coderabbit_ignore_nitpick"],
         "process_draft_prs": DEFAULT_CONFIG["process_draft_prs"],
         "include_fork_repositories": DEFAULT_CONFIG["include_fork_repositories"],
         "state_comment_timezone": DEFAULT_CONFIG["state_comment_timezone"],

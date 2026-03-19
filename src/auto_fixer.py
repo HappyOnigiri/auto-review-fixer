@@ -159,6 +159,7 @@ class PRContext:
     ci_empty_grace_minutes: int
     merge_method: str
     base_update_method: str
+    ignore_nitpick: bool = False
     needs_force_push: bool = False
 
 
@@ -952,6 +953,7 @@ def _run_review_fix_phase(
         unresolved_comments,
         summaries,
         body=pr_body_summary,
+        ignore_nitpick=ctx.ignore_nitpick,
     )
 
     if ctx.dry_run:
@@ -1302,6 +1304,7 @@ def _process_single_pr(
     ci_empty_grace_minutes: int = 5,
     coderabbit_require_review: bool = True,
     coderabbit_block_while_processing: bool = True,
+    coderabbit_ignore_nitpick: bool = False,
     exclude_authors: list[str] | None = None,
     exclude_labels: list[str] | None = None,
     target_authors: list[str] | None = None,
@@ -1525,6 +1528,7 @@ def _process_single_pr(
         ci_empty_grace_minutes=ci_empty_grace_minutes,
         merge_method=merge_method,
         base_update_method=base_update_method,
+        ignore_nitpick=coderabbit_ignore_nitpick,
     )
 
     # Fetch PR status (CI, behind, unresolved reviews)
@@ -1672,6 +1676,7 @@ def _process_single_pr(
                     pr_body=pr_data.get("body", ""),
                     silent=silent,
                     model=summarize_model,
+                    ignore_nitpick=coderabbit_ignore_nitpick,
                 )
             summary_target_ids = summarization_target_ids(
                 unresolved_reviews, unresolved_comments
@@ -1945,6 +1950,7 @@ def _process_single_pr(
                 pr_body=pr_data.get("body", ""),
                 silent=silent,
                 model=summarize_model,
+                ignore_nitpick=coderabbit_ignore_nitpick,
             )
 
         summary_target_ids = summarization_target_ids(
@@ -2144,6 +2150,12 @@ def process_repo(
             DEFAULT_CONFIG["coderabbit_block_while_processing"],
         )
     )
+    coderabbit_ignore_nitpick = bool(
+        runtime_config.get(
+            "coderabbit_ignore_nitpick",
+            DEFAULT_CONFIG["coderabbit_ignore_nitpick"],
+        )
+    )
     merge_method = (
         str(runtime_config.get("merge_method", DEFAULT_CONFIG["merge_method"])).strip()
         or DEFAULT_CONFIG["merge_method"]
@@ -2287,6 +2299,7 @@ def process_repo(
                     ci_empty_grace_minutes=ci_empty_grace_minutes,
                     coderabbit_require_review=coderabbit_require_review,
                     coderabbit_block_while_processing=coderabbit_block_while_processing,
+                    coderabbit_ignore_nitpick=coderabbit_ignore_nitpick,
                     exclude_authors=exclude_authors,
                     exclude_labels=exclude_labels,
                     target_authors=target_authors,
