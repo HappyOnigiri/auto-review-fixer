@@ -133,7 +133,7 @@ def strip_nitpick_sections(text: str) -> str:
     )
     # パターン2: "Nitpick comments:\n" から次の "---" または末尾まで
     text = re.sub(
-        r"Nitpick comments:\n.*?(?=\n---|\Z)",
+        r"Nitpick comments:\n.*?(?:\n---|\Z)",
         "",
         text,
         flags=re.DOTALL,
