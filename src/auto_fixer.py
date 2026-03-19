@@ -838,16 +838,24 @@ def _run_merge_phase_rebase(
             ctx.claude_prs.add((repo, pr_number))
             # git add . して rebase --continue
             _run_git("add", ".", cwd=works_dir, timeout=30)
-            try:
-                rebase_done = continue_rebase(works_dir)
-            except Exception as e:
+            if not is_rebase_in_progress(works_dir):
+                # Claude が rebase を完了させた場合
+                rebase_done = True
                 print(
-                    f"[merge-base:error] {_pr_ref(repo, pr_number)}: git rebase --continue failed",
-                    file=sys.stderr,
+                    f"[merge-base] {_pr_ref(repo, pr_number)}: "
+                    "rebase already completed by Claude",
                 )
-                print(f"  details: {e}", file=sys.stderr)
-                abort_rebase(works_dir)
-                raise RuntimeError(f"git rebase --continue failed: {e}") from e
+            else:
+                try:
+                    rebase_done = continue_rebase(works_dir)
+                except Exception as e:
+                    print(
+                        f"[merge-base:error] {_pr_ref(repo, pr_number)}: git rebase --continue failed",
+                        file=sys.stderr,
+                    )
+                    print(f"  details: {e}", file=sys.stderr)
+                    abort_rebase(works_dir)
+                    raise RuntimeError(f"git rebase --continue failed: {e}") from e
             if rebase_done:
                 break
         else:
