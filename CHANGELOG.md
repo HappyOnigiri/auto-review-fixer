@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.6.0](https://github.com/HappyOnigiri/Refix/compare/v0.5.0...v0.6.0) (2026-03-19)
+
+
+### Features
+
+* **auto_fixer:** refix:done PR の merge/CI fix フェーズ開始前に running ラベルへ変更 ([b8a0e7c](https://github.com/HappyOnigiri/Refix/commit/b8a0e7ca114eb1758c95373e431bb6705f2bd9ea))
+* **config:** coderabbit_ignore_nitpick 設定キーを追加し auto_fixer の PR 処理フローに伝播 ([a99f305](https://github.com/HappyOnigiri/Refix/commit/a99f305cda4ed8c6914401beb3ebca730cb2d2d2))
+* **init:** init.ja.sh にもチャンネル・スケジュール選択プロンプトと --channel/--schedule フラグを追加 ([bd03ee2](https://github.com/HappyOnigiri/Refix/commit/bd03ee22b3aaf23a545ddab74247774c7f4e6504))
+* **init:** チャンネル・スケジュール選択プロンプトと --channel/--schedule フラグを追加 ([2eaa875](https://github.com/HappyOnigiri/Refix/commit/2eaa875c373ff95cb4fca3d30f9c87122bc6851a))
+* **prompt_builder:** strip_nitpick_sections() を追加し generate_prompt() に ignore_nitpick を対応 ([aceb6da](https://github.com/HappyOnigiri/Refix/commit/aceb6dad410f250c78dff35ed7327bbdc13ac308))
+* **summarizer:** summarize_reviews() に ignore_nitpick を追加し nitpick セクションを除去 ([43ea1a1](https://github.com/HappyOnigiri/Refix/commit/43ea1a1eb11d41b7ee598c32c2b4644a012d7bbe))
+
+
+### Bug Fixes
+
+* **auto_fixer:** _ran_set_running フラグで set_pr_running_label の重複呼び出しを防止 ([9aa4b5e](https://github.com/HappyOnigiri/Refix/commit/9aa4b5e80c026cd014895bd7f74ab27facea080b))
+* **auto_fixer:** apply make ci formatter changes (line length) ([7cd72a4](https://github.com/HappyOnigiri/Refix/commit/7cd72a452f634570dd2affceb6e1839387788ba6))
+* **auto_fixer:** CI fix/merge フェーズ例外時に running ラベルを解除する ([8ce09f9](https://github.com/HappyOnigiri/Refix/commit/8ce09f9ea55a08691e63c226434ef64335724fe4))
+* **auto_fixer:** Claude が rebase を完了させた場合の 'no rebase in progress' エラーを修正 ([3ad6288](https://github.com/HappyOnigiri/Refix/commit/3ad6288c6806e587e807a7a75f714ac88d3c0320))
+* **auto_fixer:** ignore_nitpick フィルタ後に has_review_targets を再評価し Nitpick のみ PR でのレビュー修正フローをスキップ ([8c3f2cf](https://github.com/HappyOnigiri/Refix/commit/8c3f2cf645bc209b5877e0443acc7c8a81937a0c))
+* **auto_fixer:** post-CI/merge コードの例外でも running ラベルをロールバックする ([088ede1](https://github.com/HappyOnigiri/Refix/commit/088ede1d18ab1ec1ed78685cb347a668983f23b7))
+* **auto_fixer:** rebase 未完了（abort）を成功扱いする誤判定を修正 ([9484852](https://github.com/HappyOnigiri/Refix/commit/94848522580c4a1dbb2844d5f68968d2af529b7f))
+* **auto_fixer:** schedule/workflow_dispatch で refix:done ラベルの PR もコンフリクト処理対象に含める ([570eda7](https://github.com/HappyOnigiri/Refix/commit/570eda7d4b16d32dd35ba2468169e45efe340a3f))
+* **auto_fixer:** set_pr_running_label 後に pr_data スナップショットを更新し重複 API 呼び出しを防止 ([be65496](https://github.com/HappyOnigiri/Refix/commit/be65496d4b36e42a2bb0602f51d5ffb00014e078))
+* **ci:** mdformat を sys.executable 経由で実行し Windows 互換性を確保 ([028aa16](https://github.com/HappyOnigiri/Refix/commit/028aa165b0bbd7be4554a258a1f66dc81bdc7748))
+* **make:** mdformat を \$(PYTHON) -m 経由で実行し venv 依存を解決 ([007e896](https://github.com/HappyOnigiri/Refix/commit/007e89691d9e37a0e63a1317d886dde847725dc7))
+* **prompt_builder:** ignore_nitpick 時の severity 判定を strip 済みテキストで行うよう修正 ([9776fc7](https://github.com/HappyOnigiri/Refix/commit/9776fc767bdbb6070e1e4e504e84fd1aba5bdd05))
+* **prompt_builder:** strip_nitpick_sections で \n--- 区切り線が残るバグを修正 ([dd7c527](https://github.com/HappyOnigiri/Refix/commit/dd7c527608ba95ad96666145182e6995642bcb52))
+* **version:** __version__ を 1.0.0 に更新して v1 タグが生成されるようにする ([33d0937](https://github.com/HappyOnigiri/Refix/commit/33d0937bde1da588290e217573880bc025d331b5))
+* **workflows:** actions/checkout を SHA ピン留めに変更してサプライチェーンセキュリティを統一 ([887cc29](https://github.com/HappyOnigiri/Refix/commit/887cc2975f67a682570462d59c3b614286795b41))
+* **workflows:** actions/checkout を SHA ピン留めに変更してサプライチェーン安全性を統一 ([3ab975d](https://github.com/HappyOnigiri/Refix/commit/3ab975d2da79bdb82044934487e153527a5669ee))
+* **workflows:** check_suite 条件を length &gt; 0 から [0] != null に統一しテンプレートと同期 ([753b4fe](https://github.com/HappyOnigiri/Refix/commit/753b4feec3e604ed6e75f15541b3545c2789c9e2))
+* **workflows:** checkout ステップに GH_TOKEN を追加して認証情報を統一 ([1c57481](https://github.com/HappyOnigiri/Refix/commit/1c57481a70b08e3ce6291e6e279298be505247c0))
+* **workflows:** release-please ジョブにリポジトリの checkout ステップを追加 ([4fc82e5](https://github.com/HappyOnigiri/Refix/commit/4fc82e560493ef3ebf0fe931b2ce9812b96076de))
+
+
+### Documentation
+
+* **changelog:** use v* tags in compare URLs ([6f071b0](https://github.com/HappyOnigiri/Refix/commit/6f071b0acb58b02d8a7ac65170b1d3585622f2f0))
+* **readme:** バッチモードのセクションを削除 ([5b0db6c](https://github.com/HappyOnigiri/Refix/commit/5b0db6cfc9025ca7c5d2e3e6531b13d208572708))
+
 ## [0.5.0](https://github.com/HappyOnigiri/Refix/compare/v0.4.0...v0.5.0) (2026-03-18)
 
 
