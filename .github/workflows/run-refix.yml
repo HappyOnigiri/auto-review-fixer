@@ -1,8 +1,6 @@
 name: Run Refix
 
 on:
-  schedule:
-    - cron: '0 * * * *'
   check_suite:
     types: [completed]
   pull_request:
