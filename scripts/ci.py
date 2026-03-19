@@ -19,7 +19,6 @@ TASKS: list[tuple[str, str] | tuple[str, str, str]] = [
         "Python-Lint-ruff-check",
         f"{sys.executable} -m ruff check src tests scripts --fix",
     ),
-    ("mdformat", f"{sys.executable} -m mdformat --wrap 80 README.md README.ja.md"),
     ("Fix-Newlines", f"{sys.executable} scripts/fix_newlines.py"),
     ("Check-Non-ASCII", f"{sys.executable} scripts/check_non_ascii.py"),
     ("Check-Dict-Any", f"{sys.executable} scripts/check_dict_any.py"),
@@ -33,7 +32,6 @@ MUTATING_TASK_NAMES = {
     "Python-Lint-ruff-format",
     "Python-Lint-ruff-check",
     "Fix-Newlines",
-    "mdformat",
 }
 
 

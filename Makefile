@@ -86,7 +86,6 @@ lint:
 	$(PYTHON) -m ruff format src tests scripts
 	$(PYTHON) -m ruff check src tests scripts --fix
 	$(PYTHON) scripts/fix_newlines.py
-	$(PYTHON) -m mdformat --wrap 80 README.md README.ja.md
 
 # --- Repomix ---
 # コードベースを AI フレンドリーな単一ファイルにまとめます。
