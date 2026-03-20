@@ -2113,12 +2113,11 @@ def process_repo(
     coderabbit_auto_resume_triggers = get_coderabbit_auto_resume_triggers(
         runtime_config, DEFAULT_CONFIG
     )
+    _raw_stale_minutes = runtime_config.get("coderabbit_auto_resume_stale_minutes")
     coderabbit_auto_resume_stale_minutes = int(
-        runtime_config.get(
-            "coderabbit_auto_resume_stale_minutes",
-            DEFAULT_CONFIG["coderabbit_auto_resume_stale_minutes"],
-        )
-        or DEFAULT_CONFIG["coderabbit_auto_resume_stale_minutes"]
+        DEFAULT_CONFIG["coderabbit_auto_resume_stale_minutes"]
+        if _raw_stale_minutes is None
+        else _raw_stale_minutes
     )
     auto_resume_run_state = normalize_auto_resume_state(
         runtime_config, DEFAULT_CONFIG, auto_resume_run_state
