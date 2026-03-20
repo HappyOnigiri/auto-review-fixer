@@ -1,12 +1,9 @@
-.PHONY: run run-silent dry-run run-summarize-only reset setup test ci lint repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en sync-rule
+.PHONY: run run-silent dry-run run-summarize-only reset setup test ci lint repomix repomix-full repomix-task repomix-core prep-repomix install-hooks help help-en
 
 # venv の Python が利用可能な場合はそれを使用する（activate なしで make test/ci を実行するため）
 PYTHON := $(if $(wildcard .venv/bin/python),$(abspath .venv/bin/python),$(shell command -v python3 || command -v python))
 REPOMIX_VERSION ?= 1.12.0
 .DEFAULT_GOAL := run
-
-sync-rule:
-	@sh scripts/sync_rule.sh
 
 help:
 	@echo "Refix - Makefile targets:"
@@ -48,6 +45,7 @@ help-en:
 	@echo "    Install dependencies and create .env and .refix-batch.yaml templates."
 
 setup:
+	curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/ShareSettings/main/SyncRule/run.sh | bash
 	$(PYTHON) -m pip install -r requirements.txt
 	@if [ ! -f .env ]; then \
 		cp .env.sample .env && echo ".env created from .env.sample"; \
@@ -59,10 +57,6 @@ setup:
 	else \
 		echo ".refix-batch.yaml already exists, skipping."; \
 	fi
-	@printf '#!/bin/sh\nmake sync-rule\n' > .git/hooks/post-merge && chmod +x .git/hooks/post-merge
-	@printf '#!/bin/sh\nmake sync-rule\n' > .git/hooks/post-checkout && chmod +x .git/hooks/post-checkout
-	@echo "setup: git hooks installed"
-	@make sync-rule
 
 run:
 	cd src && python auto_fixer.py
