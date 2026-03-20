@@ -65,6 +65,12 @@ coderabbit_auto_resume_triggers:
 # Default: 1
 coderabbit_auto_resume_max_per_run: 1
 
+# How long (in minutes) a previously-posted resume/review command remains "fresh" (Optional, min: 5)
+# If a resume comment was posted more than this many minutes ago and CodeRabbit has not responded,
+# Refix will re-post it on the next run. Set to 0 to disable staleness check (legacy behavior).
+# Default: 30
+coderabbit_auto_resume_stale_minutes: 30
+
 # Block transitioning to refix: done if CodeRabbit has not yet posted any comment/review (Optional)
 # Default: true
 coderabbit_require_review: true
@@ -75,7 +81,7 @@ coderabbit_block_while_processing: true
 
 # Ignore CodeRabbit Nitpick comments (Optional)
 # Default: false
-# coderabbit_ignore_nitpick: true
+coderabbit_ignore_nitpick: false
 
 # Whether to process DRAFT PRs (Optional)
 # Default: false
