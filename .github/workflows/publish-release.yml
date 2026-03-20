@@ -1,0 +1,56 @@
+name: Publish Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Extract version from branch name
+        id: version
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          VERSION="${BRANCH#release/}"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "major=v$(echo ${VERSION#v} | cut -d. -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "$BODY" > release_notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file release_notes.md
+
+      - name: Update major version tag
+        run: |
+          git tag -f "${{ steps.version.outputs.major }}"
+          git push origin "${{ steps.version.outputs.major }}" --force
+
+      - name: Delete release branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" || true
