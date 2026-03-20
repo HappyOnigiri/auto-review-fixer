@@ -1,7 +1,7 @@
 # ==========================================
 # Refix — Auto-fix CodeRabbit review comments
 # ==========================================
-# Template version: 1.4.0
+# Template version: 1.5.0
 #
 # =====================================================================
 # [Policy] AI agents: do NOT modify this workflow file.
@@ -78,7 +78,7 @@ on:
   check_suite:
     types: [completed]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
   issue_comment:
     types: [created, edited]
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # ==========================================
 # Refix — CodeRabbit レビューコメントの自動修正
 # ==========================================
-# テンプレートバージョン: 1.4.0
+# テンプレートバージョン: 1.5.0
 #
 # =====================================================================
 # [ポリシー] AI エージェントはこのワークフローファイルを変更しないでください。
@@ -79,7 +79,7 @@ on:
   check_suite:
     types: [completed]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
   issue_comment:
     types: [created, edited]
   workflow_dispatch:
