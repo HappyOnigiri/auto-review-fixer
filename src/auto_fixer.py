@@ -147,6 +147,7 @@ class PRContext:
     enabled_pr_label_keys: set[str]
     coderabbit_auto_resume: bool
     coderabbit_auto_resume_triggers: dict[str, bool]
+    coderabbit_auto_resume_stale_minutes: int
     auto_resume_run_state: dict[str, int]
     process_draft_prs: bool
     state_comment_timezone: str
@@ -412,6 +413,7 @@ def _handle_coderabbit_status(
             ),
             dry_run=ctx.dry_run,
             summarize_only=ctx.summarize_only,
+            stale_minutes=ctx.coderabbit_auto_resume_stale_minutes,
             error_collector=error_collector,
         )
         if posted_resume_comment:
@@ -456,6 +458,7 @@ def _handle_coderabbit_status(
                 ),
                 dry_run=ctx.dry_run,
                 summarize_only=ctx.summarize_only,
+                stale_minutes=ctx.coderabbit_auto_resume_stale_minutes,
                 error_collector=error_collector,
             )
             if posted_review_failed_comment:
@@ -505,6 +508,7 @@ def _handle_coderabbit_status(
                 dry_run=ctx.dry_run,
                 summarize_only=ctx.summarize_only,
                 is_draft=ctx.is_draft,
+                stale_minutes=ctx.coderabbit_auto_resume_stale_minutes,
                 error_collector=error_collector,
             )
             if posted_review_comment:
@@ -1286,6 +1290,7 @@ def _process_single_pr(
     base_update_method: str,
     coderabbit_auto_resume_enabled: bool,
     coderabbit_auto_resume_triggers: dict[str, bool],
+    coderabbit_auto_resume_stale_minutes: int,
     auto_resume_run_state: dict[str, int],
     process_draft_prs: bool,
     state_comment_timezone: str,
@@ -1517,6 +1522,7 @@ def _process_single_pr(
         enabled_pr_label_keys=enabled_pr_label_keys,
         coderabbit_auto_resume=coderabbit_auto_resume_enabled,
         coderabbit_auto_resume_triggers=coderabbit_auto_resume_triggers,
+        coderabbit_auto_resume_stale_minutes=coderabbit_auto_resume_stale_minutes,
         auto_resume_run_state=auto_resume_run_state,
         process_draft_prs=process_draft_prs,
         state_comment_timezone=state_comment_timezone,
@@ -2107,6 +2113,12 @@ def process_repo(
     coderabbit_auto_resume_triggers = get_coderabbit_auto_resume_triggers(
         runtime_config, DEFAULT_CONFIG
     )
+    _raw_stale_minutes = runtime_config.get("coderabbit_auto_resume_stale_minutes")
+    coderabbit_auto_resume_stale_minutes = int(
+        DEFAULT_CONFIG["coderabbit_auto_resume_stale_minutes"]
+        if _raw_stale_minutes is None
+        else _raw_stale_minutes
+    )
     auto_resume_run_state = normalize_auto_resume_state(
         runtime_config, DEFAULT_CONFIG, auto_resume_run_state
     )
@@ -2293,6 +2305,7 @@ def process_repo(
                     base_update_method=base_update_method,
                     coderabbit_auto_resume_enabled=coderabbit_auto_resume_enabled,
                     coderabbit_auto_resume_triggers=coderabbit_auto_resume_triggers,
+                    coderabbit_auto_resume_stale_minutes=coderabbit_auto_resume_stale_minutes,
                     auto_resume_run_state=auto_resume_run_state,
                     process_draft_prs=process_draft_prs,
                     state_comment_timezone=state_comment_timezone,

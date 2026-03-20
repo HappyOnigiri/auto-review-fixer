@@ -376,35 +376,50 @@ def get_active_coderabbit_review_skipped(
 
 
 def _has_issue_comment_with_body_after(
-    issue_comments: list[GitHubComment], threshold: datetime, target_body: str
+    issue_comments: list[GitHubComment],
+    threshold: datetime,
+    target_body: str,
+    *,
+    max_age: timedelta | None = None,
 ) -> bool:
-    """指定日時以降に特定本文のコメントが存在するか確認する。"""
+    """指定日時以降に特定本文のコメントが存在するか確認する。
+
+    max_age が指定された場合、その期間より古いコメントは「存在しない」とみなす。
+    """
     normalized_target = target_body.strip().lower()
+    staleness_cutoff = (datetime.now(timezone.utc) - max_age) if max_age else None
     for comment in issue_comments:
         body = str(comment.get("body") or "").strip().lower()
         if body != normalized_target:
             continue
         posted_at = _comment_last_updated_at(comment)
         if posted_at is not None and posted_at >= threshold:
-            return True
+            if staleness_cutoff is None or posted_at >= staleness_cutoff:
+                return True
     return False
 
 
 def _has_resume_comment_after(
-    issue_comments: list[GitHubComment], threshold: datetime
+    issue_comments: list[GitHubComment],
+    threshold: datetime,
+    *,
+    max_age: timedelta | None = None,
 ) -> bool:
     """指定日時以降に resume コメントが存在するか確認する。"""
     return _has_issue_comment_with_body_after(
-        issue_comments, threshold, CODERABBIT_RESUME_COMMENT
+        issue_comments, threshold, CODERABBIT_RESUME_COMMENT, max_age=max_age
     )
 
 
 def _has_review_comment_after(
-    issue_comments: list[GitHubComment], threshold: datetime
+    issue_comments: list[GitHubComment],
+    threshold: datetime,
+    *,
+    max_age: timedelta | None = None,
 ) -> bool:
     """指定日時以降に review コメントが存在するか確認する。"""
     return _has_issue_comment_with_body_after(
-        issue_comments, threshold, CODERABBIT_REVIEW_COMMENT
+        issue_comments, threshold, CODERABBIT_REVIEW_COMMENT, max_age=max_age
     )
 
 
@@ -460,6 +475,7 @@ def maybe_auto_resume_coderabbit_review(
     dry_run: bool,
     summarize_only: bool,
     trigger_enabled: bool = True,
+    stale_minutes: int = 30,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """レート制限解除後に CodeRabbit の resume コメントを自動投稿する。"""
@@ -496,7 +512,8 @@ def maybe_auto_resume_coderabbit_review(
         return False
 
     threshold = rate_limit_status.get("updated_at", _EPOCH)
-    if _has_resume_comment_after(issue_comments, threshold):
+    _max_age = timedelta(minutes=stale_minutes) if stale_minutes > 0 else None
+    if _has_resume_comment_after(issue_comments, threshold, max_age=_max_age):
         print(
             "Resume comment already exists after the latest CodeRabbit "
             f"rate-limit notice on {_pr_ref(repo, pr_number)}."
@@ -531,6 +548,7 @@ def maybe_auto_resume_coderabbit_review_failed(
     remaining_resume_posts: int,
     dry_run: bool,
     summarize_only: bool,
+    stale_minutes: int = 30,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """レビュー失敗後に CodeRabbit の resume コメントを自動投稿する。"""
@@ -550,7 +568,8 @@ def maybe_auto_resume_coderabbit_review_failed(
         return False
 
     threshold = review_failed_status.get("updated_at", _EPOCH)
-    if _has_resume_comment_after(issue_comments, threshold):
+    _max_age = timedelta(minutes=stale_minutes) if stale_minutes > 0 else None
+    if _has_resume_comment_after(issue_comments, threshold, max_age=_max_age):
         print(
             "Resume comment already exists after the latest CodeRabbit "
             f"review-failed notice on {_pr_ref(repo, pr_number)}."
@@ -587,6 +606,7 @@ def maybe_auto_trigger_coderabbit_review_skipped(
     dry_run: bool,
     summarize_only: bool,
     is_draft: bool,
+    stale_minutes: int = 30,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """Review skipped 後に CodeRabbit の単発 review を再トリガする。"""
@@ -624,7 +644,8 @@ def maybe_auto_trigger_coderabbit_review_skipped(
         return False
 
     threshold = review_skipped_status.get("updated_at", _EPOCH)
-    if _has_review_comment_after(issue_comments, threshold):
+    _max_age = timedelta(minutes=stale_minutes) if stale_minutes > 0 else None
+    if _has_review_comment_after(issue_comments, threshold, max_age=_max_age):
         print(
             "Review command already exists after the latest CodeRabbit "
             f"review-skipped notice on {_pr_ref(repo, pr_number)}."

@@ -209,7 +209,9 @@ class TestCodeRabbitRateLimitHelpers:
         )
 
     def test_maybe_auto_resume_skips_when_resume_already_exists(self, mocker):
-        threshold = datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(minutes=5)
+        fresh_resume_at = now - timedelta(minutes=1)
         status: RateLimitStatus = {
             "updated_at": threshold,
             "resume_after": threshold,
@@ -217,7 +219,7 @@ class TestCodeRabbitRateLimitHelpers:
         issue_comments: list[GitHubComment] = [
             {
                 "body": "@coderabbitai resume",
-                "updated_at": "2026-03-11T12:01:00Z",
+                "updated_at": fresh_resume_at.isoformat().replace("+00:00", "Z"),
             }
         ]
         mock_post = mocker.patch("coderabbit._post_issue_comment")
@@ -407,6 +409,179 @@ class TestCodeRabbitRateLimitHelpers:
         assert result is False
         assert ec.has_errors
         assert ec._errors[0].scope == "owner/repo#5"
+
+    def test_maybe_auto_resume_reposts_when_resume_is_stale(self, mocker):
+        """stale_minutes 経過した resume コメントは鮮度切れとみなし再投稿する。"""
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(hours=2)
+        stale_posted_at = now - timedelta(minutes=35)  # 30分より古い
+        status: RateLimitStatus = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        issue_comments: list[GitHubComment] = [
+            {
+                "body": "@coderabbitai resume",
+                "updated_at": stale_posted_at.isoformat().replace("+00:00", "Z"),
+            }
+        ]
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=issue_comments,
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            stale_minutes=30,
+        )
+
+        assert posted is True
+        mock_post.assert_called_once()
+
+    def test_maybe_auto_resume_skips_when_resume_is_fresh(self, mocker):
+        """stale_minutes 以内の resume コメントは新鮮とみなし再投稿しない。"""
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(hours=2)
+        fresh_posted_at = now - timedelta(minutes=5)  # 30分より新しい
+        status: RateLimitStatus = {
+            "updated_at": threshold,
+            "resume_after": threshold,
+        }
+        issue_comments: list[GitHubComment] = [
+            {
+                "body": "@coderabbitai resume",
+                "updated_at": fresh_posted_at.isoformat().replace("+00:00", "Z"),
+            }
+        ]
+        mock_post = mocker.patch("coderabbit._post_issue_comment")
+        posted = coderabbit.maybe_auto_resume_coderabbit_review(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=issue_comments,
+            rate_limit_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            stale_minutes=30,
+        )
+
+        assert posted is False
+        mock_post.assert_not_called()
+
+    def test_maybe_auto_resume_review_failed_reposts_when_stale(self, mocker):
+        """review_failed: stale_minutes 経過した resume は鮮度切れとみなし再投稿する。"""
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(hours=2)
+        stale_posted_at = now - timedelta(minutes=35)
+        status: ReviewFailedStatus = {"updated_at": threshold}
+        issue_comments: list[GitHubComment] = [
+            {
+                "body": "@coderabbitai resume",
+                "updated_at": stale_posted_at.isoformat().replace("+00:00", "Z"),
+            }
+        ]
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_resume_coderabbit_review_failed(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=issue_comments,
+            review_failed_status=status,
+            auto_resume_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            stale_minutes=30,
+        )
+
+        assert posted is True
+        mock_post.assert_called_once()
+
+    def test_maybe_auto_trigger_review_skipped_reposts_when_stale(self, mocker):
+        """review_skipped: stale_minutes 経過した review コメントは鮮度切れとみなし再投稿する。"""
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(hours=2)
+        stale_posted_at = now - timedelta(minutes=35)
+        status: ReviewSkippedStatus = {
+            "updated_at": threshold,
+            "reason": "draft_detected",
+            "reason_label": "Draft detected",
+        }
+        issue_comments: list[GitHubComment] = [
+            {
+                "body": "@coderabbitai review",
+                "updated_at": stale_posted_at.isoformat().replace("+00:00", "Z"),
+            }
+        ]
+        mock_post = mocker.patch("coderabbit._post_issue_comment", return_value=True)
+        posted = coderabbit.maybe_auto_trigger_coderabbit_review_skipped(
+            repo="owner/repo",
+            pr_number=1,
+            issue_comments=issue_comments,
+            review_skipped_status=status,
+            auto_resume_enabled=True,
+            trigger_enabled=True,
+            remaining_resume_posts=1,
+            dry_run=False,
+            summarize_only=False,
+            is_draft=False,
+            stale_minutes=30,
+        )
+
+        assert posted is True
+        mock_post.assert_called_once()
+
+    def test_has_issue_comment_with_body_after_max_age(self):
+        """max_age が指定された場合、古いコメントを無視する。"""
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(hours=2)
+        stale_at = now - timedelta(minutes=35)
+        fresh_at = now - timedelta(minutes=5)
+
+        stale_comment: GitHubComment = {
+            "body": "@coderabbitai resume",
+            "updated_at": stale_at.isoformat().replace("+00:00", "Z"),
+        }
+        fresh_comment: GitHubComment = {
+            "body": "@coderabbitai resume",
+            "updated_at": fresh_at.isoformat().replace("+00:00", "Z"),
+        }
+
+        # 鮮度切れ: stale_minutes=30 で 35 分前は False
+        assert (
+            coderabbit._has_issue_comment_with_body_after(
+                [stale_comment],
+                threshold,
+                "@coderabbitai resume",
+                max_age=timedelta(minutes=30),
+            )
+            is False
+        )
+
+        # 新鮮: stale_minutes=30 で 5 分前は True
+        assert (
+            coderabbit._has_issue_comment_with_body_after(
+                [fresh_comment],
+                threshold,
+                "@coderabbitai resume",
+                max_age=timedelta(minutes=30),
+            )
+            is True
+        )
+
+        # max_age=None なら従来通り古くても True
+        assert (
+            coderabbit._has_issue_comment_with_body_after(
+                [stale_comment],
+                threshold,
+                "@coderabbitai resume",
+                max_age=None,
+            )
+            is True
+        )
 
 
 class TestHasCoderabbitComments:

@@ -49,6 +49,7 @@ class RepositoryEntry(_RepositoryEntryBase, total=False):
     coderabbit_auto_resume: bool
     coderabbit_auto_resume_triggers: dict
     coderabbit_auto_resume_max_per_run: int
+    coderabbit_auto_resume_stale_minutes: int
     coderabbit_require_review: bool
     coderabbit_block_while_processing: bool
     coderabbit_ignore_nitpick: bool
