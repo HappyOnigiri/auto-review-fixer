@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/HappyOnigiri/Refix/compare/v1.0.0...v1.1.0) (2026-03-20)
+
+
+### Features
+
+* **config:** バッチモードの global セクションに setup を追加し global→repo の順で実行 ([fc69f91](https://github.com/HappyOnigiri/Refix/commit/fc69f9113658085443099417dac3eccd47809613))
+
+
+### Bug Fixes
+
+* **templates:** DRAFT→Ready 変更時のトリガーに ready_for_review を追加しバージョンを 1.5.0 に bump ([396469b](https://github.com/HappyOnigiri/Refix/commit/396469ba4815fea251b4922d8213720364abf53c))
+
+
+### Documentation
+
+* **readme:** README に Refix イメージ画像を追加 ([9b33197](https://github.com/HappyOnigiri/Refix/commit/9b3319741c566edb2b3ea738f4419e4cbaf82572))
+
 ## [1.0.0](https://github.com/HappyOnigiri/Refix/compare/v0.5.0...v1.0.0) (2026-03-19)
 
 
