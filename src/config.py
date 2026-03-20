@@ -134,6 +134,7 @@ class FieldSpec:
     min_value: int | None = None
     clamp: bool = False  # True の場合、下限未満を拒否せず min_value にクランプ
     reject_bool: bool = False  # int フィールドで bool 値を拒否する
+    allow_zero: bool = False  # True の場合、0 は min_value チェックをスキップして許可
 
 
 _SCALAR_FIELDS: dict[str, FieldSpec] = {
@@ -149,7 +150,7 @@ _SCALAR_FIELDS: dict[str, FieldSpec] = {
     "ci_log_max_lines": FieldSpec(int, min_value=20, clamp=True),
     "coderabbit_auto_resume_max_per_run": FieldSpec(int, min_value=1, reject_bool=True),
     "coderabbit_auto_resume_stale_minutes": FieldSpec(
-        int, min_value=5, reject_bool=True, clamp=True
+        int, min_value=5, reject_bool=True, clamp=True, allow_zero=True
     ),
     "max_modified_prs_per_run": FieldSpec(int, min_value=0, reject_bool=True),
     "max_committed_prs_per_run": FieldSpec(int, min_value=0, reject_bool=True),
@@ -175,7 +176,7 @@ def _validate_scalar_field(key: str, value: Any, spec: FieldSpec) -> Any:
         int_value = int(value)
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"{key} must be an integer.") from exc
-    if spec.min_value is not None:
+    if spec.min_value is not None and not (spec.allow_zero and int_value == 0):
         if spec.clamp:
             int_value = max(spec.min_value, int_value)
         elif int_value < spec.min_value:
