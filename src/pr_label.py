@@ -305,7 +305,7 @@ def set_pr_running_label(
         and (not running_enabled or _pr_has_label(pr_data, REFIX_RUNNING_LABEL))
         and (not done_enabled or not _pr_has_label(pr_data, REFIX_DONE_LABEL))
     ):
-        return False
+        return _workflow_updated
     if enabled_pr_label_keys is None:
         _ensure_refix_labels(repo, error_collector=error_collector)
     else:
