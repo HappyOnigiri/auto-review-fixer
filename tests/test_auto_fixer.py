@@ -1225,6 +1225,8 @@ class TestProcessRepo:
                 "auto_merge_requested",
                 "ci_pending",
             },
+            use_pr_labels=True,
+            state_comment=make_state_comment(),
         )
 
     def test_process_repo_passes_state_comment_timezone_to_create_state_entry(

@@ -400,6 +400,7 @@ def _handle_coderabbit_status(
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+                use_pr_labels=ctx.use_pr_labels,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -441,6 +442,7 @@ def _handle_coderabbit_status(
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+                use_pr_labels=ctx.use_pr_labels,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -487,6 +489,7 @@ def _handle_coderabbit_status(
                 pr_number,
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+                use_pr_labels=ctx.use_pr_labels,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -988,6 +991,8 @@ def _run_review_fix_phase(
             pr_number,
             pr_data=pr_data,
             enabled_pr_label_keys=ctx.enabled_pr_label_keys,
+            use_pr_labels=ctx.use_pr_labels,
+            state_comment=state_comment,
         )
         _remove_running_on_exit = True
         review_fix_started = True
@@ -1266,7 +1271,7 @@ def _run_review_fix_phase(
                 repo, pr_number, result_blocks, state_comment, error_collector
             )
     finally:
-        if _remove_running_on_exit:
+        if _remove_running_on_exit and ctx.use_pr_labels:
             edit_pr_label(
                 repo,
                 pr_number,
