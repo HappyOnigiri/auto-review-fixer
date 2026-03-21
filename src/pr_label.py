@@ -1025,10 +1025,8 @@ def update_done_label_if_completed(
         # 完了時: ci-pending ラベルを除去（付いている場合のみ）
         ci_pending_changed = False
         has_ci_pending = (
-            state_comment.workflow_status == "ci_pending"
-            if state_comment is not None and state_comment.workflow_status
-            else _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
-        )
+            state_comment is not None and state_comment.workflow_status == "ci_pending"
+        ) or _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
         if has_ci_pending:
             if use_pr_labels:
                 ci_pending_changed = edit_pr_label(
@@ -1099,9 +1097,11 @@ def update_done_label_if_completed(
         False
         if _stale_ci_pending
         else (
-            state_comment.workflow_status == "ci_pending"
-            if state_comment is not None and state_comment.workflow_status
-            else _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
+            (
+                state_comment is not None
+                and state_comment.workflow_status == "ci_pending"
+            )
+            or _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
         )
     )
     if target_add != current_has_ci_pending:
