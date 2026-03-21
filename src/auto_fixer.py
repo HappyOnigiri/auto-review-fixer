@@ -2636,7 +2636,17 @@ def _resolve_action_targets(repo: str, use_pr_labels: bool = True) -> list[int]:
         if not head_sha:
             return []
         pr_numbers = _resolve_prs_from_sha(repo, head_sha)
-        return [n for n in pr_numbers if _pr_has_ci_pending_label(repo, n)]
+        if use_pr_labels:
+            return [n for n in pr_numbers if _pr_has_ci_pending_label(repo, n)]
+        result = []
+        for n in pr_numbers:
+            try:
+                sc = load_state_comment(repo, n)
+                if sc.workflow_status == "ci_pending":
+                    result.append(n)
+            except Exception:
+                pass
+        return result
 
     if event_name == "schedule":
         ci_pending = _fetch_ci_pending_prs(repo, use_pr_labels=use_pr_labels)
