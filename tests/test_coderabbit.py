@@ -83,20 +83,70 @@ class TestCodeRabbitRateLimitHelpers:
         Issue comments can be from different runs; only a review submission indicates
         the rate limit is resolved. See: GamePortal PR #44.
         """
+        # updated_at を1分前に設定（wait=5分11秒 → resume_after は4分後でまだ有効）
+        updated_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        updated_at_str = updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        nitpick_at = updated_at + timedelta(minutes=4)
+        nitpick_str = nitpick_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         pr_data: PRData = {"reviews": []}
         issue_comments: list[GitHubComment] = [
             {
                 "id": 55,
                 "body": self.RATE_LIMIT_BODY,
                 "user": {"login": "coderabbitai[bot]"},
-                "updated_at": "2026-03-11T12:00:00Z",
+                "updated_at": updated_at_str,
             },
             {
                 "id": 56,
                 "body": "Nitpick: consider adding a fallback link.",
                 "user": {"login": "coderabbitai[bot]"},
-                "updated_at": "2026-03-11T12:04:00Z",
+                "updated_at": nitpick_str,
             },
+        ]
+
+        status = auto_fixer.get_active_coderabbit_rate_limit(
+            pr_data, [], issue_comments
+        )
+        assert status is not None
+        assert status.get("comment_id") == 55
+
+    def test_get_active_coderabbit_rate_limit_returns_none_when_resume_after_passed(
+        self,
+    ):
+        """resume_after を過ぎた rate limit は None を返す（期限切れ扱い）。"""
+        # updated_at を1時間前に設定し、wait は5分 → resume_after は55分前
+        updated_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        updated_at_str = updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        pr_data: PRData = {"reviews": []}
+        issue_comments: list[GitHubComment] = [
+            {
+                "id": 55,
+                "body": self.RATE_LIMIT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": updated_at_str,
+            }
+        ]
+
+        status = auto_fixer.get_active_coderabbit_rate_limit(
+            pr_data, [], issue_comments
+        )
+        assert status is None
+
+    def test_get_active_coderabbit_rate_limit_returns_status_when_resume_after_not_yet(
+        self,
+    ):
+        """resume_after をまだ過ぎていない rate limit は status を返す（active 扱い）。"""
+        # updated_at を1分前に設定し、wait は5分 → resume_after は4分後
+        updated_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        updated_at_str = updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        pr_data: PRData = {"reviews": []}
+        issue_comments: list[GitHubComment] = [
+            {
+                "id": 55,
+                "body": self.RATE_LIMIT_BODY,
+                "user": {"login": "coderabbitai[bot]"},
+                "updated_at": updated_at_str,
+            }
         ]
 
         status = auto_fixer.get_active_coderabbit_rate_limit(

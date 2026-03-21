@@ -306,7 +306,13 @@ def get_active_coderabbit_rate_limit(
     if latest_rate_limit is None:
         return None
 
-    # レビュー送信があった場合のみレート制限を「解消済み」とみなす
+    # resume_after を過ぎていればレート制限は解消済み
+    now = datetime.now(timezone.utc)
+    resume_after = latest_rate_limit.get("resume_after")
+    if resume_after is not None and now >= resume_after:
+        return None
+
+    # レビュー送信があった場合もレート制限を「解消済み」とみなす
     latest_review = _latest_coderabbit_review_submitted_at(pr_data)
     if latest_review is not None and latest_review > latest_rate_limit.get(
         "updated_at", _EPOCH
