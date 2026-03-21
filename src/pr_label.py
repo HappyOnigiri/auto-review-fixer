@@ -1085,16 +1085,31 @@ def update_done_label_if_completed(
     # それ以外: ci-pending を除去（状態が変わる場合のみ呼び出す）
     target_add = ci_is_blocking or commits_only_blocking
     ci_pending_changed = False
+    # set_pr_running_label が "running" に更新した後も state_comment は frozen で
+    # 古い workflow_status を保持する。元々 ci_pending だった場合は stale になるため、
+    # running_changed=True かつ state_comment ベースの場合は現在の ci_pending を False とみなす。
+    _stale_ci_pending = (
+        running_changed
+        and state_comment is not None
+        and state_comment.workflow_status == "ci_pending"
+    )
     current_has_ci_pending = (
-        state_comment.workflow_status == "ci_pending"
-        if state_comment is not None
-        else _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
+        False
+        if _stale_ci_pending
+        else (
+            state_comment.workflow_status == "ci_pending"
+            if state_comment is not None
+            else _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
+        )
     )
     if target_add != current_has_ci_pending:
         if target_add:
             try:
                 update_workflow_status(
-                    repo, pr_number, "ci_pending", _preloaded_state=state_comment
+                    repo,
+                    pr_number,
+                    "ci_pending",
+                    _preloaded_state=None if _stale_ci_pending else state_comment,
                 )
             except Exception as e:
                 print(
