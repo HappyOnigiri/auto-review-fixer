@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.0](https://github.com/HappyOnigiri/Refix/compare/v1.0.0...v1.1.0) (2026-03-21)
+
+
+### Features
+
+* **config:** バッチモードの global セクションに setup を追加し global→repo の順で実行 ([fc69f91](https://github.com/HappyOnigiri/Refix/commit/fc69f9113658085443099417dac3eccd47809613))
+
+
+### Bug Fixes
+
+* **auto_fixer:** stale_minutes=0 が or フォールバックでデフォルト値に置換される不具合を修正 ([c3ec2a4](https://github.com/HappyOnigiri/Refix/commit/c3ec2a4e031e35d29afa61eda4b4d11801c06d5a))
+* **coderabbit:** rate limit の resume_after を過ぎた場合に期限切れと判定するよう修正 ([f645a2f](https://github.com/HappyOnigiri/Refix/commit/f645a2f6498e4372f02b40ca22f620a0e661695e))
+* **coderabbit:** rate limit の resume_after を過ぎた場合に期限切れと判定するよう修正 ([bf3c2cd](https://github.com/HappyOnigiri/Refix/commit/bf3c2cdfe97fe524ac8dc15183b488484b2df1ca))
+* **coderabbit:** resume コメントに鮮度チェックを追加し stale_minutes 超過時に再投稿するよう修正 ([84d329e](https://github.com/HappyOnigiri/Refix/commit/84d329e01802f3999199712bc251e54efade25f5))
+* **coderabbit:** resume コメントに鮮度チェックを追加し stale_minutes 超過時に再投稿するよう修正 ([1adb19c](https://github.com/HappyOnigiri/Refix/commit/1adb19c479d3d94c7784988d6529c37ed48ac432))
+* **config:** coderabbit_auto_resume_stale_minutes に 0（無効化）を許可する allow_zero 対応を追加 ([62db535](https://github.com/HappyOnigiri/Refix/commit/62db5353544028ffbe61c7500fe648eddf6957b2))
+* **templates:** DRAFT→Ready 変更時のトリガーに ready_for_review を追加しバージョンを 1.5.0 に bump ([396469b](https://github.com/HappyOnigiri/Refix/commit/396469ba4815fea251b4922d8213720364abf53c))
+
+
+### Documentation
+
+* **config:** サンプル設定ファイルに coderabbit_auto_resume_stale_minutes と coderabbit_ignore_nitpick を明示追記 ([a628b12](https://github.com/HappyOnigiri/Refix/commit/a628b120e9f72478c82addca96dfa879c9ba4240))
+* **readme:** README に Refix イメージ画像を追加 ([9b33197](https://github.com/HappyOnigiri/Refix/commit/9b3319741c566edb2b3ea738f4419e4cbaf82572))
+
 ## [1.0.0](https://github.com/HappyOnigiri/Refix/compare/v0.5.0...v1.0.0) (2026-03-19)
 
 
