@@ -535,11 +535,12 @@ def _mark_pr_merged_label_if_needed(
     pr_number: int,
     *,
     enabled_pr_label_keys: set[str] | None = None,
+    use_pr_labels: bool = True,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """マージ済みの PR に refix: merged ラベルを追加する。"""
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
-    if not ({"running", "auto_merge_requested", "merged"} & enabled):
+    if use_pr_labels and not ({"running", "auto_merge_requested", "merged"} & enabled):
         return False
     cmd = [
         "gh",
@@ -583,20 +584,30 @@ def _mark_pr_merged_label_if_needed(
     merged_at = str(pr_data_typed.get("mergedAt") or "").strip()
     if not merged_at:
         return False
-    if "done" in enabled and not _pr_has_label(pr_data_typed, REFIX_DONE_LABEL):
-        return False
-    if "auto_merge_requested" in enabled and not _pr_has_label(
-        pr_data_typed, REFIX_AUTO_MERGE_REQUESTED_LABEL
-    ):
-        return False
+    if use_pr_labels:
+        if "done" in enabled and not _pr_has_label(pr_data_typed, REFIX_DONE_LABEL):
+            return False
+        if "auto_merge_requested" in enabled and not _pr_has_label(
+            pr_data_typed, REFIX_AUTO_MERGE_REQUESTED_LABEL
+        ):
+            return False
     if _pr_has_label(pr_data_typed, REFIX_MERGED_LABEL):
         return False
 
     print(f"{_pr_ref(repo, pr_number)} is merged; adding {REFIX_MERGED_LABEL} label.")
     if enabled_pr_label_keys is None:
-        return _set_pr_merged_label(repo, pr_number, error_collector=error_collector)
+        return _set_pr_merged_label(
+            repo,
+            pr_number,
+            use_pr_labels=use_pr_labels,
+            error_collector=error_collector,
+        )
     return _set_pr_merged_label(
-        repo, pr_number, enabled_pr_label_keys=enabled, error_collector=error_collector
+        repo,
+        pr_number,
+        use_pr_labels=use_pr_labels,
+        enabled_pr_label_keys=enabled,
+        error_collector=error_collector,
     )
 
 
@@ -747,6 +758,7 @@ def _trigger_pr_auto_merge(
     *,
     merge_method: str = "auto",
     enabled_pr_label_keys: set[str] | None = None,
+    use_pr_labels: bool = True,
     error_collector: ErrorCollector | None = None,
 ) -> tuple[bool, bool]:
     """auto-merge を要求する。(merge_state_reached, modified) を返す。"""
@@ -754,6 +766,8 @@ def _trigger_pr_auto_merge(
 
     def _on_success() -> tuple[bool, bool]:
         print(f"Auto-merge requested for {_pr_ref(repo, pr_number)}.")
+        if not use_pr_labels:
+            return True, False
         _ensure_refix_labels(
             repo, enabled_pr_label_keys=enabled, error_collector=error_collector
         )
@@ -769,6 +783,8 @@ def _trigger_pr_auto_merge(
 
     def _on_already_merged() -> tuple[bool, bool]:
         print(f"{_pr_ref(repo, pr_number)} is already merged.")
+        if not use_pr_labels:
+            return True, False
         _ensure_refix_labels(
             repo, enabled_pr_label_keys=enabled, error_collector=error_collector
         )
@@ -999,6 +1015,7 @@ def update_done_label_if_completed(
                     repo,
                     pr_number,
                     merge_method=merge_method,
+                    use_pr_labels=use_pr_labels,
                     error_collector=error_collector,
                 )
             else:
@@ -1007,18 +1024,23 @@ def update_done_label_if_completed(
                     pr_number,
                     merge_method=merge_method,
                     enabled_pr_label_keys=enabled_pr_label_keys,
+                    use_pr_labels=use_pr_labels,
                     error_collector=error_collector,
                 )
             if merge_state_reached:
                 if enabled_pr_label_keys is None:
                     _mark_pr_merged_label_if_needed(
-                        repo, pr_number, error_collector=error_collector
+                        repo,
+                        pr_number,
+                        use_pr_labels=use_pr_labels,
+                        error_collector=error_collector,
                     )
                 else:
                     _mark_pr_merged_label_if_needed(
                         repo,
                         pr_number,
                         enabled_pr_label_keys=enabled_pr_label_keys,
+                        use_pr_labels=use_pr_labels,
                         error_collector=error_collector,
                     )
             merge_triggered = label_modified

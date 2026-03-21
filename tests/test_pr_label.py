@@ -265,7 +265,9 @@ class TestRefixLabeling:
         )
         ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 21)
         assert ok is True
-        mock_set_merged.assert_called_once_with("owner/repo", 21, error_collector=None)
+        mock_set_merged.assert_called_once_with(
+            "owner/repo", 21, use_pr_labels=True, error_collector=None
+        )
 
     def test_mark_pr_merged_label_if_needed_skips_when_not_merged(
         self, mocker, make_cmd_result
@@ -425,9 +427,15 @@ class TestRefixLabeling:
         )
         mock_set_running.assert_not_called()
         mock_auto_merge.assert_called_once_with(
-            "owner/repo", 3, merge_method="auto", error_collector=None
+            "owner/repo",
+            3,
+            merge_method="auto",
+            use_pr_labels=True,
+            error_collector=None,
         )
-        mock_mark_merged.assert_called_once_with("owner/repo", 3, error_collector=None)
+        mock_mark_merged.assert_called_once_with(
+            "owner/repo", 3, use_pr_labels=True, error_collector=None
+        )
 
     def test_update_done_label_sets_running_when_review_fix_added_commit(self, mocker):
         mock_marker = mocker.patch("pr_label.contains_coderabbit_processing_marker")
