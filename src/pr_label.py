@@ -248,22 +248,22 @@ def resolve_workflow_status(state_comment: StateComment, pr_data: PRData) -> str
     """コメントからステータスを取得。マーカーがなければラベルにフォールバック。"""
     if state_comment.workflow_status:
         return state_comment.workflow_status
-    # ラベルにフォールバック
+    # ラベルにフォールバック（優先順位付きで確定的に解決）
     labels = pr_data.get("labels") or []
-    for label in labels:
-        if not isinstance(label, dict):
-            continue
-        name = str(label.get("name", "")).strip()
-        if name == REFIX_RUNNING_LABEL:
-            return "running"
-        if name == REFIX_DONE_LABEL:
-            return "done"
-        if name == REFIX_MERGED_LABEL:
-            return "merged"
-        if name == REFIX_AUTO_MERGE_REQUESTED_LABEL:
-            return "auto_merge_requested"
-        if name == REFIX_CI_PENDING_LABEL:
-            return "ci_pending"
+    label_names = {
+        str(label.get("name", "")).strip()
+        for label in labels
+        if isinstance(label, dict)
+    }
+    for label_name, status in [
+        (REFIX_MERGED_LABEL, "merged"),
+        (REFIX_AUTO_MERGE_REQUESTED_LABEL, "auto_merge_requested"),
+        (REFIX_CI_PENDING_LABEL, "ci_pending"),
+        (REFIX_RUNNING_LABEL, "running"),
+        (REFIX_DONE_LABEL, "done"),
+    ]:
+        if label_name in label_names:
+            return status
     return ""
 
 
