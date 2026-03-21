@@ -1819,9 +1819,7 @@ def _process_single_pr(
     except Exception:
         if _ran_set_running:
             try:
-                update_workflow_status(
-                    repo, pr_number, "done", _preloaded_state=state_comment
-                )
+                update_workflow_status(repo, pr_number, "done", _preloaded_state=None)
             except Exception:
                 pass
             if use_pr_labels:
@@ -1830,6 +1828,14 @@ def _process_single_pr(
                     pr_number,
                     add=False,
                     label=REFIX_RUNNING_LABEL,
+                    enabled_pr_label_keys=enabled_pr_label_keys,
+                    error_collector=error_collector,
+                )
+                edit_pr_label(
+                    repo,
+                    pr_number,
+                    add=True,
+                    label=REFIX_DONE_LABEL,
                     enabled_pr_label_keys=enabled_pr_label_keys,
                     error_collector=error_collector,
                 )
@@ -2081,9 +2087,7 @@ def _process_single_pr(
     except Exception:
         if _ran_set_running:
             try:
-                update_workflow_status(
-                    repo, pr_number, "done", _preloaded_state=state_comment
-                )
+                update_workflow_status(repo, pr_number, "done", _preloaded_state=None)
             except Exception:
                 pass
             if use_pr_labels:
@@ -2092,6 +2096,14 @@ def _process_single_pr(
                     pr_number,
                     add=False,
                     label=REFIX_RUNNING_LABEL,
+                    enabled_pr_label_keys=enabled_pr_label_keys,
+                    error_collector=error_collector,
+                )
+                edit_pr_label(
+                    repo,
+                    pr_number,
+                    add=True,
+                    label=REFIX_DONE_LABEL,
                     enabled_pr_label_keys=enabled_pr_label_keys,
                     error_collector=error_collector,
                 )
