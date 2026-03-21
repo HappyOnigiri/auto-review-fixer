@@ -578,9 +578,9 @@ def _mark_pr_merged_label_if_needed(
     if not merged_at:
         return False
 
-    # コメントベースで done/auto_merge_requested を確認
+    # コメントベースで done/auto_merge_requested/merged を確認
     sc_status = state_comment.workflow_status if state_comment else ""
-    if sc_status not in ("done", "auto_merge_requested"):
+    if sc_status not in ("done", "auto_merge_requested", "merged"):
         return False
 
     if _pr_has_label(pr_data_typed, REFIX_MERGED_LABEL):
@@ -661,12 +661,16 @@ def backfill_merged_labels(
         pr_number = pr.get("number")
         if not isinstance(pr_number, int):
             continue
-        # state comment をロードし、done/auto_merge_requested の PR のみ対象にする
+        # state comment をロードし、done/auto_merge_requested/merged の PR のみ対象にする
         try:
             sc = _load_state_comment(repo, pr_number)
         except Exception:
             sc = None
-        if sc is None or sc.workflow_status not in ("done", "auto_merge_requested"):
+        if sc is None or sc.workflow_status not in (
+            "done",
+            "auto_merge_requested",
+            "merged",
+        ):
             continue
         if enabled_pr_label_keys is None:
             marked = _mark_pr_merged_label_if_needed(
