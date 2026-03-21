@@ -378,6 +378,7 @@ class TestRefixLabeling:
             1,
             pr_data={"reviews": [], "comments": []},
             use_pr_labels=True,
+            state_comment=None,
             error_collector=None,
         )
         mock_set_running.assert_not_called()
@@ -419,6 +420,7 @@ class TestRefixLabeling:
             3,
             pr_data={"reviews": [], "comments": []},
             use_pr_labels=True,
+            state_comment=None,
             error_collector=None,
         )
         mock_set_running.assert_not_called()

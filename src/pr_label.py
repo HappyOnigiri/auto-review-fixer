@@ -979,6 +979,7 @@ def update_done_label_if_completed(
                 pr_number,
                 pr_data=current_pr_data,
                 use_pr_labels=use_pr_labels,
+                state_comment=state_comment,
                 error_collector=error_collector,
             )
         else:
@@ -988,6 +989,7 @@ def update_done_label_if_completed(
                 pr_data=current_pr_data,
                 enabled_pr_label_keys=enabled_pr_label_keys,
                 use_pr_labels=use_pr_labels,
+                state_comment=state_comment,
                 error_collector=error_collector,
             )
         merge_triggered = False
