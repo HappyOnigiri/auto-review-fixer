@@ -2495,8 +2495,11 @@ def _fetch_prs_by_workflow_status(
             sc = load_state_comment(repo, pr_number)
             if sc.workflow_status in statuses:
                 result[sc.workflow_status].append(pr_number)
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                f"Warning: failed to load state comment for {repo}#{pr_number}: {e}",
+                file=sys.stderr,
+            )
     return result
 
 
