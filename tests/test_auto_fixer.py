@@ -1071,7 +1071,10 @@ class TestProcessRepo:
         mocker.patch("auto_fixer.fetch_review_threads", return_value={})
         mocker.patch("auto_fixer.fetch_issue_comments", return_value=[])
         mocker.patch("auto_fixer.get_branch_compare_status", return_value=("behind", 1))
-        mocker.patch("auto_fixer.load_state_comment", return_value=make_state_comment())
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=make_state_comment(workflow_status="done"),
+        )
         mocker.patch("auto_fixer.prepare_repository", return_value=tmp_path)
         mocker.patch("auto_fixer.merge_base_branch", return_value=(False, False))
         mock_set_running = mocker.patch("auto_fixer.set_pr_running_label")
@@ -1093,7 +1096,7 @@ class TestProcessRepo:
                 "ci_pending",
             },
             use_pr_labels=True,
-            state_comment=make_state_comment(),
+            state_comment=make_state_comment(workflow_status="done"),
         )
 
     def test_non_done_pr_does_not_set_running_in_merge_phase(self, mocker, tmp_path):
@@ -1145,7 +1148,10 @@ class TestProcessRepo:
         mocker.patch("auto_fixer.fetch_review_threads", return_value={})
         mocker.patch("auto_fixer.fetch_issue_comments", return_value=[])
         mocker.patch("auto_fixer.get_branch_compare_status", return_value=("ahead", 0))
-        mocker.patch("auto_fixer.load_state_comment", return_value=make_state_comment())
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=make_state_comment(workflow_status="done"),
+        )
         mocker.patch("auto_fixer.prepare_repository", return_value=tmp_path)
         mocker.patch("auto_fixer.collect_ci_failure_materials", return_value=[])
         mocker.patch(
@@ -1176,7 +1182,7 @@ class TestProcessRepo:
                 "ci_pending",
             },
             use_pr_labels=True,
-            state_comment=make_state_comment(),
+            state_comment=make_state_comment(workflow_status="done"),
         )
 
     def test_review_fix_start_sets_running_label(
@@ -2174,119 +2180,137 @@ class TestResolvePrsFromSha:
         assert result == [42, 43]
 
 
-class TestPrHasCiPendingLabel:
-    def test_returns_true_when_label_present(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "true"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+class TestPrHasCiPendingStatus:
+    def test_returns_true_when_status_ci_pending(self, mocker):
+        sc = make_state_comment(workflow_status="ci_pending")
+        mocker.patch("auto_fixer.load_state_comment", return_value=sc)
 
-        assert auto_fixer._pr_has_ci_pending_label("owner/repo", 42) is True
+        assert auto_fixer._pr_has_ci_pending_status("owner/repo", 42) is True
 
-    def test_returns_false_when_label_absent(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "false"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+    def test_returns_false_when_status_not_ci_pending(self, mocker):
+        sc = make_state_comment(workflow_status="running")
+        mocker.patch("auto_fixer.load_state_comment", return_value=sc)
 
-        assert auto_fixer._pr_has_ci_pending_label("owner/repo", 42) is False
+        assert auto_fixer._pr_has_ci_pending_status("owner/repo", 42) is False
 
-    def test_raises_on_nonzero_returncode(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "Not Found"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+    def test_raises_on_load_failure(self, mocker):
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=RuntimeError("api error"),
+        )
 
-        with pytest.raises(RuntimeError, match="_pr_has_ci_pending_label"):
-            auto_fixer._pr_has_ci_pending_label("owner/repo", 42)
+        with pytest.raises(RuntimeError, match="_pr_has_ci_pending_status"):
+            auto_fixer._pr_has_ci_pending_status("owner/repo", 42)
 
 
 class TestFetchCiPendingPrs:
     def test_returns_pr_numbers(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "10\n20\n"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+        mocker.patch(
+            "auto_fixer._fetch_all_open_pr_numbers",
+            return_value=[10, 20, 30],
+        )
+        sc_map = {
+            10: make_state_comment(workflow_status="ci_pending"),
+            20: make_state_comment(workflow_status="running"),
+            30: make_state_comment(workflow_status="ci_pending"),
+        }
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=lambda repo, n: sc_map[n],
+        )
 
         result = auto_fixer._fetch_ci_pending_prs("owner/repo")
 
-        assert result == [10, 20]
+        assert result == [10, 30]
 
-    def test_raises_on_failure(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+    def test_returns_empty_when_no_ci_pending(self, mocker):
+        mocker.patch("auto_fixer._fetch_all_open_pr_numbers", return_value=[1, 2])
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=make_state_comment(workflow_status="running"),
+        )
 
-        with pytest.raises(
-            RuntimeError, match="_fetch_ci_pending_prs: gh pr list failed"
-        ):
-            auto_fixer._fetch_ci_pending_prs("owner/repo")
+        result = auto_fixer._fetch_ci_pending_prs("owner/repo")
+
+        assert result == []
 
 
 class TestFetchRunningPrs:
     def test_returns_pr_numbers(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "14\n22\n"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+        mocker.patch(
+            "auto_fixer._fetch_all_open_pr_numbers",
+            return_value=[14, 22, 99],
+        )
+        sc_map = {
+            14: make_state_comment(workflow_status="running"),
+            22: make_state_comment(workflow_status="running"),
+            99: make_state_comment(workflow_status="done"),
+        }
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=lambda repo, n: sc_map[n],
+        )
 
         result = auto_fixer._fetch_running_prs("owner/repo")
 
         assert result == [14, 22]
 
     def test_returns_empty_on_blank_output(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+        mocker.patch("auto_fixer._fetch_all_open_pr_numbers", return_value=[])
 
         result = auto_fixer._fetch_running_prs("owner/repo")
 
         assert result == []
 
-    def test_raises_on_failure(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "Not Found"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+    def test_returns_empty_when_no_running(self, mocker):
+        mocker.patch("auto_fixer._fetch_all_open_pr_numbers", return_value=[1])
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=make_state_comment(workflow_status="done"),
+        )
 
-        with pytest.raises(RuntimeError, match="_fetch_running_prs: gh pr list failed"):
-            auto_fixer._fetch_running_prs("owner/repo")
+        result = auto_fixer._fetch_running_prs("owner/repo")
+
+        assert result == []
 
 
 class TestFetchDonePrs:
     def test_returns_pr_numbers(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "19\n25\n"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+        mocker.patch(
+            "auto_fixer._fetch_all_open_pr_numbers",
+            return_value=[19, 25, 99],
+        )
+        sc_map = {
+            19: make_state_comment(workflow_status="done"),
+            25: make_state_comment(workflow_status="done"),
+            99: make_state_comment(workflow_status="running"),
+        }
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=lambda repo, n: sc_map[n],
+        )
 
         result = auto_fixer._fetch_done_prs("owner/repo")
 
         assert result == [19, 25]
 
     def test_returns_empty_on_blank_output(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+        mocker.patch("auto_fixer._fetch_all_open_pr_numbers", return_value=[])
 
         result = auto_fixer._fetch_done_prs("owner/repo")
 
         assert result == []
 
-    def test_raises_on_failure(self, mocker):
-        mock_result = mocker.MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "Not Found"
-        mocker.patch("auto_fixer.run_command", return_value=mock_result)
+    def test_returns_empty_when_no_done(self, mocker):
+        mocker.patch("auto_fixer._fetch_all_open_pr_numbers", return_value=[1])
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            return_value=make_state_comment(workflow_status="running"),
+        )
 
-        with pytest.raises(RuntimeError, match="_fetch_done_prs: gh pr list failed"):
-            auto_fixer._fetch_done_prs("owner/repo")
+        result = auto_fixer._fetch_done_prs("owner/repo")
+
+        assert result == []
 
 
 class TestResolveActionTargets:
@@ -2338,7 +2362,7 @@ class TestResolveActionTargets:
         )
         mocker.patch("auto_fixer._resolve_prs_from_sha", return_value=[10, 20, 30])
         mocker.patch(
-            "auto_fixer._pr_has_ci_pending_label",
+            "auto_fixer._pr_has_ci_pending_status",
             side_effect=lambda repo, n: n in (10, 30),
         )
 
@@ -2365,9 +2389,10 @@ class TestResolveActionTargets:
             "os.environ",
             {"GITHUB_EVENT_NAME": "schedule", "GITHUB_EVENT_PATH": str(event_file)},
         )
-        mocker.patch("auto_fixer._fetch_ci_pending_prs", return_value=[5, 6])
-        mocker.patch("auto_fixer._fetch_running_prs", return_value=[])
-        mocker.patch("auto_fixer._fetch_done_prs", return_value=[])
+        mocker.patch(
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [5, 6], "running": [], "done": []},
+        )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
@@ -2380,9 +2405,10 @@ class TestResolveActionTargets:
             "os.environ",
             {"GITHUB_EVENT_NAME": "schedule", "GITHUB_EVENT_PATH": str(event_file)},
         )
-        mocker.patch("auto_fixer._fetch_ci_pending_prs", return_value=[5, 6])
-        mocker.patch("auto_fixer._fetch_running_prs", return_value=[14])
-        mocker.patch("auto_fixer._fetch_done_prs", return_value=[])
+        mocker.patch(
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [5, 6], "running": [14], "done": []},
+        )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
@@ -2395,9 +2421,10 @@ class TestResolveActionTargets:
             "os.environ",
             {"GITHUB_EVENT_NAME": "schedule", "GITHUB_EVENT_PATH": str(event_file)},
         )
-        mocker.patch("auto_fixer._fetch_ci_pending_prs", return_value=[5, 6])
-        mocker.patch("auto_fixer._fetch_running_prs", return_value=[6, 7])
-        mocker.patch("auto_fixer._fetch_done_prs", return_value=[])
+        mocker.patch(
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [5, 6], "running": [6, 7], "done": []},
+        )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
@@ -2410,9 +2437,10 @@ class TestResolveActionTargets:
             "os.environ",
             {"GITHUB_EVENT_NAME": "schedule", "GITHUB_EVENT_PATH": str(event_file)},
         )
-        mocker.patch("auto_fixer._fetch_ci_pending_prs", return_value=[])
-        mocker.patch("auto_fixer._fetch_running_prs", return_value=[])
-        mocker.patch("auto_fixer._fetch_done_prs", return_value=[19])
+        mocker.patch(
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [], "running": [], "done": [19]},
+        )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
@@ -2457,25 +2485,17 @@ class TestResolveActionTargets:
                 "GITHUB_EVENT_PATH": str(event_file),
             },
         )
-        mock_ci_pending = mocker.patch(
-            "auto_fixer._fetch_ci_pending_prs",
-            return_value=[99],
-        )
-        mock_running = mocker.patch(
-            "auto_fixer._fetch_running_prs",
-            return_value=[],
-        )
-        mock_done = mocker.patch(
-            "auto_fixer._fetch_done_prs",
-            return_value=[],
+        mock_fetch = mocker.patch(
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [99], "running": [], "done": []},
         )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
 
         assert result == [99]
-        mock_ci_pending.assert_called_once_with("owner/repo", use_pr_labels=True)
-        mock_running.assert_called_once_with("owner/repo", use_pr_labels=True)
-        mock_done.assert_called_once_with("owner/repo", use_pr_labels=True)
+        mock_fetch.assert_called_once_with(
+            "owner/repo", {"ci_pending", "running", "done"}
+        )
 
     def test_workflow_dispatch_event_without_pr_falls_back_to_labels(
         self, mocker, tmp_path
@@ -2490,16 +2510,8 @@ class TestResolveActionTargets:
             },
         )
         mocker.patch(
-            "auto_fixer._fetch_ci_pending_prs",
-            return_value=[10, 20],
-        )
-        mocker.patch(
-            "auto_fixer._fetch_running_prs",
-            return_value=[20, 30],
-        )
-        mocker.patch(
-            "auto_fixer._fetch_done_prs",
-            return_value=[],
+            "auto_fixer._fetch_prs_by_workflow_status",
+            return_value={"ci_pending": [10, 20], "running": [20, 30], "done": []},
         )
 
         result = auto_fixer._resolve_action_targets("owner/repo")
@@ -2719,11 +2731,11 @@ class TestFetchAllOpenPrNumbers:
             auto_fixer._fetch_all_open_pr_numbers("owner/repo")
 
 
-class TestFetchPrsUsesStateCommentWhenNoLabels:
+class TestFetchPrsByWorkflowStatus:
     def _make_sc(self, status: str) -> StateComment:
         return make_state_comment(workflow_status=status)
 
-    def test_fetch_ci_pending_prs_uses_state_comment_when_no_labels(
+    def test_fetch_prs_by_workflow_status_returns_grouped_results(
         self, mocker, make_cmd_result
     ):
         mocker.patch(
@@ -2740,31 +2752,14 @@ class TestFetchPrsUsesStateCommentWhenNoLabels:
             side_effect=lambda repo, n: sc_map[n],
         )
 
-        result = auto_fixer._fetch_ci_pending_prs("owner/repo", use_pr_labels=False)
-
-        assert result == [1, 3]
-
-    def test_fetch_running_prs_uses_state_comment_when_no_labels(
-        self, mocker, make_cmd_result
-    ):
-        mocker.patch(
-            "auto_fixer._fetch_all_open_pr_numbers",
-            return_value=[1, 2],
-        )
-        sc_map = {
-            1: self._make_sc("done"),
-            2: self._make_sc("running"),
-        }
-        mocker.patch(
-            "auto_fixer.load_state_comment",
-            side_effect=lambda repo, n: sc_map[n],
+        result = auto_fixer._fetch_prs_by_workflow_status(
+            "owner/repo", {"ci_pending", "running"}
         )
 
-        result = auto_fixer._fetch_running_prs("owner/repo", use_pr_labels=False)
+        assert result["ci_pending"] == [1, 3]
+        assert result["running"] == [2]
 
-        assert result == [2]
-
-    def test_fetch_done_prs_uses_state_comment_when_no_labels(
+    def test_fetch_prs_by_workflow_status_ignores_unmatched_statuses(
         self, mocker, make_cmd_result
     ):
         mocker.patch(
@@ -2781,6 +2776,22 @@ class TestFetchPrsUsesStateCommentWhenNoLabels:
             side_effect=lambda repo, n: sc_map[n],
         )
 
-        result = auto_fixer._fetch_done_prs("owner/repo", use_pr_labels=False)
+        result = auto_fixer._fetch_prs_by_workflow_status("owner/repo", {"done"})
 
-        assert result == [10, 30]
+        assert result["done"] == [10, 30]
+
+    def test_fetch_prs_by_workflow_status_skips_on_exception(
+        self, mocker, make_cmd_result
+    ):
+        mocker.patch(
+            "auto_fixer._fetch_all_open_pr_numbers",
+            return_value=[1, 2],
+        )
+        mocker.patch(
+            "auto_fixer.load_state_comment",
+            side_effect=RuntimeError("api error"),
+        )
+
+        result = auto_fixer._fetch_prs_by_workflow_status("owner/repo", {"ci_pending"})
+
+        assert result["ci_pending"] == []

@@ -251,19 +251,19 @@ class TestRefixLabeling:
     ):
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
-            "labels": [
-                {"name": "refix: done"},
-                {"name": "refix: auto-merge-requested"},
-            ],
+            "labels": [],
         }
         mocker.patch(
             "pr_label.run_command",
             return_value=make_cmd_result(json.dumps(pr_view)),
         )
+        sc = _make_state_comment("done")
         mock_set_merged = mocker.patch(
             "pr_label._set_pr_merged_label", return_value=True
         )
-        ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 21)
+        ok = pr_label._mark_pr_merged_label_if_needed(
+            "owner/repo", 21, state_comment=sc
+        )
         assert ok is True
         mock_set_merged.assert_called_once_with(
             "owner/repo", 21, use_pr_labels=True, error_collector=None
@@ -293,14 +293,18 @@ class TestRefixLabeling:
     ):
         pr_view = {
             "mergedAt": "2026-03-11T00:00:00Z",
-            "labels": [{"name": "refix: done"}],
+            "labels": [],
         }
         mocker.patch(
             "pr_label.run_command",
             return_value=make_cmd_result(json.dumps(pr_view)),
         )
+        # workflow_status が done/auto_merge_requested でなければスキップ
+        sc = _make_state_comment("running")
         mock_set_merged = mocker.patch("pr_label._set_pr_merged_label")
-        ok = pr_label._mark_pr_merged_label_if_needed("owner/repo", 23)
+        ok = pr_label._mark_pr_merged_label_if_needed(
+            "owner/repo", 23, state_comment=sc
+        )
         assert ok is False
         mock_set_merged.assert_not_called()
 
@@ -312,6 +316,8 @@ class TestRefixLabeling:
             "pr_label.run_command",
             return_value=make_cmd_result(json.dumps(merged_prs)),
         )
+        sc_done = _make_state_comment("done")
+        mocker.patch("state_manager.load_state_comment", return_value=sc_done)
         mock_mark = mocker.patch(
             "pr_label._mark_pr_merged_label_if_needed", return_value=True
         )
@@ -319,8 +325,8 @@ class TestRefixLabeling:
         assert count == 2
         mock_mark.assert_has_calls(
             [
-                call("owner/repo", 31, error_collector=None),
-                call("owner/repo", 32, error_collector=None),
+                call("owner/repo", 31, state_comment=sc_done, error_collector=None),
+                call("owner/repo", 32, state_comment=sc_done, error_collector=None),
             ]
         )
 
@@ -434,7 +440,10 @@ class TestRefixLabeling:
             error_collector=None,
         )
         mock_mark_merged.assert_called_once_with(
-            "owner/repo", 3, use_pr_labels=True, error_collector=None
+            "owner/repo",
+            3,
+            use_pr_labels=True,
+            error_collector=None,
         )
 
     def test_update_done_label_sets_running_when_review_fix_added_commit(self, mocker):
@@ -832,12 +841,7 @@ class TestCiPendingLabel:
         mocker.patch("pr_label.set_pr_running_label", return_value=True)
         mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
 
-        # review_fix_failed=True → non-CI block; pr_data has ci-pending label already
-        pr_data_with_label: PRData = {
-            "reviews": [],
-            "comments": [],
-            "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
-        }
+        # review_fix_failed=True → non-CI block; state_comment has ci_pending status
         pr_label.update_done_label_if_completed(
             repo="owner/repo",
             pr_number=6,
@@ -847,14 +851,15 @@ class TestCiPendingLabel:
             review_fix_failed=True,
             state_saved=True,
             commits_by_phase=[],
-            pr_data=pr_data_with_label,
+            pr_data={"reviews": [], "comments": []},
             review_comments=[],
             issue_comments=[],
             dry_run=False,
             summarize_only=False,
+            state_comment=_make_state_comment("ci_pending"),
         )
 
-        # ci-pending should be removed (add=False) when non-CI is blocking and label is present
+        # ci-pending should be removed (add=False) when non-CI is blocking and ci_pending status present
         ci_pending_calls = [
             c
             for c in mock_edit.call_args_list
@@ -920,11 +925,7 @@ class TestCiPendingLabel:
             mocker,
             commits_by_phase=[("review", "abc123")],
             review_fix_failed=True,
-            pr_data={
-                "reviews": [],
-                "comments": [],
-                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
-            },
+            state_comment=_make_state_comment("ci_pending"),
         )
 
         ci_pending_calls = [
@@ -949,11 +950,7 @@ class TestCiPendingLabel:
             commits_by_phase=[("review", "abc123")],
             has_review_targets=True,
             review_fix_started=False,
-            pr_data={
-                "reviews": [],
-                "comments": [],
-                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
-            },
+            state_comment=_make_state_comment("ci_pending"),
         )
 
         ci_pending_calls = [
@@ -977,11 +974,7 @@ class TestCiPendingLabel:
             mocker,
             commits_by_phase=[("review", "abc123")],
             state_saved=False,
-            pr_data={
-                "reviews": [],
-                "comments": [],
-                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
-            },
+            state_comment=_make_state_comment("ci_pending"),
         )
 
         ci_pending_calls = [
@@ -1016,6 +1009,7 @@ class TestCiPendingLabel:
     def test_update_done_label_removes_ci_pending_when_completed(self, mocker):
         mocker.patch("pr_label.fetch_pr_review_comments", return_value=[])
         mocker.patch("pr_label.fetch_issue_comments", return_value=[])
+        mocker.patch("pr_label.has_coderabbit_comments", return_value=True)
         mocker.patch(
             "pr_label.contains_coderabbit_processing_marker", return_value=False
         )
@@ -1025,6 +1019,8 @@ class TestCiPendingLabel:
         mocker.patch("pr_label._trigger_pr_auto_merge")
         mock_edit = mocker.patch("pr_label.edit_pr_label", return_value=True)
 
+        # state_comment に ci_pending ステータスを持たせる
+        sc = _make_state_comment("ci_pending")
         pr_label.update_done_label_if_completed(
             repo="owner/repo",
             pr_number=7,
@@ -1034,15 +1030,12 @@ class TestCiPendingLabel:
             review_fix_failed=False,
             state_saved=True,
             commits_by_phase=[],
-            pr_data={
-                "reviews": [],
-                "comments": [],
-                "labels": [{"name": pr_label.REFIX_CI_PENDING_LABEL}],
-            },
+            pr_data={"reviews": [], "comments": []},
             review_comments=[],
             issue_comments=[],
             dry_run=False,
             summarize_only=False,
+            state_comment=sc,
         )
 
         # ci-pending should be removed (add=False) when PR is completed
@@ -1290,11 +1283,11 @@ class TestResolveWorkflowStatus:
         result = pr_label.resolve_workflow_status(sc, {"labels": []})
         assert result == "done"
 
-    def test_falls_back_to_label(self):
+    def test_no_fallback_to_label_when_status_empty(self):
         sc = _make_state_comment("")
         pr_data: PRData = {"labels": [{"name": "refix: running"}]}
         result = pr_label.resolve_workflow_status(sc, pr_data)
-        assert result == "running"
+        assert result == ""  # ラベルへのフォールバックなし
 
     def test_returns_empty_without_status_or_label(self):
         sc = _make_state_comment("")

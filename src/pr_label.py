@@ -245,26 +245,8 @@ def _pr_has_label(pr_data: PRData, label_name: str) -> bool:
 
 
 def resolve_workflow_status(state_comment: StateComment, pr_data: PRData) -> str:
-    """コメントからステータスを取得。マーカーがなければラベルにフォールバック。"""
-    if state_comment.workflow_status:
-        return state_comment.workflow_status
-    # ラベルにフォールバック（優先順位付きで確定的に解決）
-    labels = pr_data.get("labels") or []
-    label_names = {
-        str(label.get("name", "")).strip()
-        for label in labels
-        if isinstance(label, dict)
-    }
-    for label_name, status in [
-        (REFIX_MERGED_LABEL, "merged"),
-        (REFIX_AUTO_MERGE_REQUESTED_LABEL, "auto_merge_requested"),
-        (REFIX_CI_PENDING_LABEL, "ci_pending"),
-        (REFIX_RUNNING_LABEL, "running"),
-        (REFIX_DONE_LABEL, "done"),
-    ]:
-        if label_name in label_names:
-            return status
-    return ""
+    """コメントからステータスを取得する（ラベルへのフォールバックなし）。"""
+    return state_comment.workflow_status or ""
 
 
 def set_pr_running_label(
@@ -536,12 +518,23 @@ def _mark_pr_merged_label_if_needed(
     *,
     enabled_pr_label_keys: set[str] | None = None,
     use_pr_labels: bool = True,
+    state_comment: "StateComment | None" = None,
     error_collector: ErrorCollector | None = None,
 ) -> bool:
     """マージ済みの PR に refix: merged ラベルを追加する。"""
+    from state_manager import load_state_comment as _load_state_comment
+
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     if use_pr_labels and not ({"running", "auto_merge_requested", "merged"} & enabled):
         return False
+
+    # state_comment が渡されていない場合はロード
+    if state_comment is None:
+        try:
+            state_comment = _load_state_comment(repo, pr_number)
+        except Exception:
+            state_comment = None
+
     cmd = [
         "gh",
         "pr",
@@ -584,13 +577,12 @@ def _mark_pr_merged_label_if_needed(
     merged_at = str(pr_data_typed.get("mergedAt") or "").strip()
     if not merged_at:
         return False
-    if use_pr_labels:
-        if "done" in enabled and not _pr_has_label(pr_data_typed, REFIX_DONE_LABEL):
-            return False
-        if "auto_merge_requested" in enabled and not _pr_has_label(
-            pr_data_typed, REFIX_AUTO_MERGE_REQUESTED_LABEL
-        ):
-            return False
+
+    # コメントベースで done/auto_merge_requested/merged を確認
+    sc_status = state_comment.workflow_status if state_comment else ""
+    if sc_status not in ("done", "auto_merge_requested", "merged"):
+        return False
+
     if _pr_has_label(pr_data_typed, REFIX_MERGED_LABEL):
         return False
 
@@ -618,25 +610,12 @@ def backfill_merged_labels(
     enabled_pr_label_keys: set[str] | None = None,
     error_collector: ErrorCollector | None = None,
 ) -> int:
-    """マージ済みで refix: done が付いている PR に refix: merged ラベルをバックフィルする。"""
+    """最近マージされた PR に refix: merged ラベルをバックフィルする。"""
+    from state_manager import load_state_comment as _load_state_comment
+
     enabled = _resolve_enabled_pr_label_keys(enabled_pr_label_keys)
     if "merged" not in enabled:
         return 0
-    if (
-        "done" not in enabled
-        and "auto_merge_requested" not in enabled
-        and "running" not in enabled
-    ):
-        return 0
-    search_parts = []
-    if "done" in enabled:
-        search_parts.append(f'label:"{REFIX_DONE_LABEL}"')
-    if "auto_merge_requested" in enabled:
-        search_parts.append(f'label:"{REFIX_AUTO_MERGE_REQUESTED_LABEL}"')
-    if not search_parts and "running" in enabled:
-        search_parts.append(f'label:"{REFIX_RUNNING_LABEL}"')
-    search_parts.append(f'-label:"{REFIX_MERGED_LABEL}"')
-    search_query = " ".join(search_parts)
     cmd = [
         "gh",
         "pr",
@@ -645,12 +624,10 @@ def backfill_merged_labels(
         repo,
         "--state",
         "merged",
-        "--search",
-        search_query,
-        "--json",
-        "number",
         "--limit",
         str(limit),
+        "--json",
+        "number",
     ]
     try:
         result = run_command(cmd, check=False)
@@ -684,15 +661,27 @@ def backfill_merged_labels(
         pr_number = pr.get("number")
         if not isinstance(pr_number, int):
             continue
+        # state comment をロードし、done/auto_merge_requested/merged の PR のみ対象にする
+        try:
+            sc = _load_state_comment(repo, pr_number)
+        except Exception:
+            sc = None
+        if sc is None or sc.workflow_status not in (
+            "done",
+            "auto_merge_requested",
+            "merged",
+        ):
+            continue
         if enabled_pr_label_keys is None:
             marked = _mark_pr_merged_label_if_needed(
-                repo, pr_number, error_collector=error_collector
+                repo, pr_number, state_comment=sc, error_collector=error_collector
             )
         else:
             marked = _mark_pr_merged_label_if_needed(
                 repo,
                 pr_number,
                 enabled_pr_label_keys=enabled,
+                state_comment=sc,
                 error_collector=error_collector,
             )
         if marked:
@@ -1126,7 +1115,11 @@ def update_done_label_if_completed(
             or _pr_has_label(pr_data, REFIX_CI_PENDING_LABEL)
         )
     )
-    if target_add != current_has_ci_pending:
+    # stale かつ target_add=False の場合もラベルを除去する必要がある
+    _needs_label_update = (target_add != current_has_ci_pending) or (
+        _stale_ci_pending and not target_add
+    )
+    if _needs_label_update:
         if target_add:
             try:
                 update_workflow_status(

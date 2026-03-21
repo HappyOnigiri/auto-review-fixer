@@ -78,7 +78,6 @@ from git_ops import (
 )
 from github_pr_fetcher import fetch_open_prs, fetch_single_pr
 from pr_label import (
-    REFIX_CI_PENDING_LABEL,
     REFIX_DONE_LABEL,
     REFIX_RUNNING_LABEL,
     backfill_merged_labels,
@@ -374,6 +373,7 @@ def _handle_coderabbit_status(
     review_comments: list[GitHubComment],
     issue_comments: list[GitHubComment],
     coderabbit_resumed_prs: set,
+    state_comment: StateComment | None = None,
     error_collector: ErrorCollector | None = None,
 ) -> tuple[Any, Any, Any]:
     """Handle CodeRabbit rate-limit and review-failed detection.
@@ -401,6 +401,7 @@ def _handle_coderabbit_status(
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
                 use_pr_labels=ctx.use_pr_labels,
+                state_comment=state_comment,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -443,6 +444,7 @@ def _handle_coderabbit_status(
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
                 use_pr_labels=ctx.use_pr_labels,
+                state_comment=state_comment,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -490,6 +492,7 @@ def _handle_coderabbit_status(
                 pr_data=pr_data,
                 enabled_pr_label_keys=ctx.enabled_pr_label_keys,
                 use_pr_labels=ctx.use_pr_labels,
+                state_comment=state_comment,
             ):
                 ctx.modified_prs.add((repo, pr_number))
                 _mark_pr_data_as_running(pr_data)
@@ -1565,6 +1568,7 @@ def _process_single_pr(
             gc_review_comments,
             gc_issue_comments,
             coderabbit_resumed_prs,
+            state_comment=state_comment,
             error_collector=error_collector,
         )
     )
@@ -1606,6 +1610,8 @@ def _process_single_pr(
             enabled_pr_label_keys=enabled_pr_label_keys,
             ci_empty_as_success=ci_empty_as_success,
             ci_empty_grace_minutes=ci_empty_grace_minutes,
+            use_pr_labels=use_pr_labels,
+            state_comment=state_comment,
             error_collector=error_collector,
         )
         if _done_updated:
@@ -2440,27 +2446,15 @@ def _resolve_prs_from_sha(repo: str, sha: str) -> list[int]:
     return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
 
 
-def _pr_has_ci_pending_label(repo: str, pr_number: int) -> bool:
-    """PR に ci-pending ラベルが付いているか確認する。"""
-    cmd = [
-        "gh",
-        "pr",
-        "view",
-        str(pr_number),
-        "--repo",
-        repo,
-        "--json",
-        "labels",
-        "--jq",
-        f'[.labels[].name] | any(. == "{REFIX_CI_PENDING_LABEL}")',
-    ]
-    result = run_command(cmd, check=False)
-    if result.returncode != 0:
+def _pr_has_ci_pending_status(repo: str, pr_number: int) -> bool:
+    """PR の state comment を確認し、workflow_status == 'ci_pending' なら True を返す。"""
+    try:
+        sc = load_state_comment(repo, pr_number)
+        return sc.workflow_status == "ci_pending"
+    except Exception as exc:
         raise RuntimeError(
-            f"_pr_has_ci_pending_label: gh pr view failed for PR #{pr_number} "
-            f"(exit {result.returncode}): {result.stderr}"
-        )
-    return result.stdout.strip() == "true"
+            f"_pr_has_ci_pending_status: failed to load state comment for PR #{pr_number}: {exc}"
+        ) from exc
 
 
 def _fetch_all_open_pr_numbers(repo: str) -> list[int]:
@@ -2490,130 +2484,41 @@ def _fetch_all_open_pr_numbers(repo: str) -> list[int]:
     return [int(n) for n in result.stdout.strip().splitlines() if n.strip().isdigit()]
 
 
-def _fetch_ci_pending_prs(repo: str, use_pr_labels: bool = True) -> list[int]:
-    """ci-pending ラベル付きの open PR 番号リストを返す。"""
-    if not use_pr_labels:
-        all_prs = _fetch_all_open_pr_numbers(repo)
-        result = []
-        for pr_number in all_prs:
-            try:
-                sc = load_state_comment(repo, pr_number)
-                if sc.workflow_status == "ci_pending":
-                    result.append(pr_number)
-            except Exception:
-                pass
-        return result
-    cmd = [
-        "gh",
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--label",
-        REFIX_CI_PENDING_LABEL,
-        "--state",
-        "open",
-        "--limit",
-        "1000",
-        "--json",
-        "number",
-        "--jq",
-        ".[].number",
-    ]
-    result_cmd = run_command(cmd, check=False)
-    if result_cmd.returncode != 0:
-        raise RuntimeError(
-            f"_fetch_ci_pending_prs: gh pr list failed (exit {result_cmd.returncode}): {result_cmd.stderr}"
-        )
-    if not result_cmd.stdout.strip():
-        return []
-    return [
-        int(n) for n in result_cmd.stdout.strip().splitlines() if n.strip().isdigit()
-    ]
+def _fetch_prs_by_workflow_status(
+    repo: str, statuses: set[str]
+) -> dict[str, list[int]]:
+    """指定ステータスの open PR を返す。"""
+    all_prs = _fetch_all_open_pr_numbers(repo)
+    result: dict[str, list[int]] = {s: [] for s in statuses}
+    for pr_number in all_prs:
+        try:
+            sc = load_state_comment(repo, pr_number)
+            if sc.workflow_status in statuses:
+                result[sc.workflow_status].append(pr_number)
+        except Exception as e:
+            print(
+                f"Warning: failed to load state comment for {repo}#{pr_number}: {e}",
+                file=sys.stderr,
+            )
+    return result
 
 
-def _fetch_running_prs(repo: str, use_pr_labels: bool = True) -> list[int]:
-    """running ラベル付きの open PR 番号リストを返す。"""
-    if not use_pr_labels:
-        all_prs = _fetch_all_open_pr_numbers(repo)
-        result = []
-        for pr_number in all_prs:
-            try:
-                sc = load_state_comment(repo, pr_number)
-                if sc.workflow_status == "running":
-                    result.append(pr_number)
-            except Exception:
-                pass
-        return result
-    cmd = [
-        "gh",
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--label",
-        REFIX_RUNNING_LABEL,
-        "--state",
-        "open",
-        "--limit",
-        "1000",
-        "--json",
-        "number",
-        "--jq",
-        ".[].number",
-    ]
-    result_cmd = run_command(cmd, check=False)
-    if result_cmd.returncode != 0:
-        raise RuntimeError(
-            f"_fetch_running_prs: gh pr list failed (exit {result_cmd.returncode}): {result_cmd.stderr}"
-        )
-    if not result_cmd.stdout.strip():
-        return []
-    return [
-        int(n) for n in result_cmd.stdout.strip().splitlines() if n.strip().isdigit()
-    ]
+def _fetch_ci_pending_prs(repo: str) -> list[int]:
+    """ci-pending ステータスの open PR 番号リストを返す。"""
+    result = _fetch_prs_by_workflow_status(repo, {"ci_pending"})
+    return result.get("ci_pending", [])
 
 
-def _fetch_done_prs(repo: str, use_pr_labels: bool = True) -> list[int]:
-    """done ラベル付きの open PR 番号リストを返す。"""
-    if not use_pr_labels:
-        all_prs = _fetch_all_open_pr_numbers(repo)
-        result = []
-        for pr_number in all_prs:
-            try:
-                sc = load_state_comment(repo, pr_number)
-                if sc.workflow_status == "done":
-                    result.append(pr_number)
-            except Exception:
-                pass
-        return result
-    cmd = [
-        "gh",
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--label",
-        REFIX_DONE_LABEL,
-        "--state",
-        "open",
-        "--limit",
-        "1000",
-        "--json",
-        "number",
-        "--jq",
-        ".[].number",
-    ]
-    result_cmd = run_command(cmd, check=False)
-    if result_cmd.returncode != 0:
-        raise RuntimeError(
-            f"_fetch_done_prs: gh pr list failed (exit {result_cmd.returncode}): {result_cmd.stderr}"
-        )
-    if not result_cmd.stdout.strip():
-        return []
-    return [
-        int(n) for n in result_cmd.stdout.strip().splitlines() if n.strip().isdigit()
-    ]
+def _fetch_running_prs(repo: str) -> list[int]:
+    """running ステータスの open PR 番号リストを返す。"""
+    result = _fetch_prs_by_workflow_status(repo, {"running"})
+    return result.get("running", [])
+
+
+def _fetch_done_prs(repo: str) -> list[int]:
+    """done ステータスの open PR 番号リストを返す。"""
+    result = _fetch_prs_by_workflow_status(repo, {"done"})
+    return result.get("done", [])
 
 
 def _resolve_action_targets(repo: str, use_pr_labels: bool = True) -> list[int]:
@@ -2636,23 +2541,22 @@ def _resolve_action_targets(repo: str, use_pr_labels: bool = True) -> list[int]:
         if not head_sha:
             return []
         pr_numbers = _resolve_prs_from_sha(repo, head_sha)
-        if use_pr_labels:
-            return [n for n in pr_numbers if _pr_has_ci_pending_label(repo, n)]
         result = []
         for n in pr_numbers:
             try:
-                sc = load_state_comment(repo, n)
-                if sc.workflow_status == "ci_pending":
+                if _pr_has_ci_pending_status(repo, n):
                     result.append(n)
             except Exception:
                 pass
         return result
 
     if event_name == "schedule":
-        ci_pending = _fetch_ci_pending_prs(repo, use_pr_labels=use_pr_labels)
-        running = _fetch_running_prs(repo, use_pr_labels=use_pr_labels)
-        done = _fetch_done_prs(repo, use_pr_labels=use_pr_labels)
-        merged = set(ci_pending) | set(running) | set(done)
+        status_map = _fetch_prs_by_workflow_status(
+            repo, {"ci_pending", "running", "done"}
+        )
+        merged: set[int] = set()
+        for prs in status_map.values():
+            merged.update(prs)
         return sorted(merged)
 
     if event_name == "issue_comment":
@@ -2666,10 +2570,13 @@ def _resolve_action_targets(repo: str, use_pr_labels: bool = True) -> list[int]:
         pr_str = event.get("inputs", {}).get("pr-number")
         if pr_str and str(pr_str).strip().isdigit():
             return [int(pr_str)]
-        ci_pending = _fetch_ci_pending_prs(repo, use_pr_labels=use_pr_labels)
-        running = _fetch_running_prs(repo, use_pr_labels=use_pr_labels)
-        done = _fetch_done_prs(repo, use_pr_labels=use_pr_labels)
-        return sorted(set(ci_pending) | set(running) | set(done))
+        status_map = _fetch_prs_by_workflow_status(
+            repo, {"ci_pending", "running", "done"}
+        )
+        merged = set()
+        for prs in status_map.values():
+            merged.update(prs)
+        return sorted(merged)
 
     print(f"Unsupported event: {event_name}; skipping.")
     return []
