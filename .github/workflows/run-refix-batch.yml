@@ -28,5 +28,3 @@ jobs:
           gh-token: ${{ secrets.GH_TOKEN }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           config-batch-yaml: ${{ vars.REFIX_CONFIG_BATCH_YAML }}
-          # Use current branch code for self-testing; remove this line when copying to other repos.
-          ref: ${{ github.head_ref || github.ref_name }}
