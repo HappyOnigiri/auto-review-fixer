@@ -53,11 +53,15 @@ runs:
       run: echo "action_path=$(cd "${{ github.action_path }}" && pwd)" >> "$GITHUB_OUTPUT"
       shell: bash
 
+    - name: Copy requirements.txt to workspace
+      run: cp "${{ github.action_path }}/requirements.txt" "${{ github.workspace }}/.refix-requirements.txt"
+      shell: bash
+
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
         cache: pip
-        cache-dependency-path: ${{ steps.resolve.outputs.action_path }}/requirements.txt
+        cache-dependency-path: .refix-requirements.txt
 
     - name: Install Python dependencies
       run: pip install -r ${{ github.action_path }}/requirements.txt
