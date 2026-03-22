@@ -28,10 +28,6 @@ inputs:
     description: "Run in batch mode (scans all repos from config)"
     required: false
     default: "false"
-  ref:
-    description: "Ref (tag, branch, or SHA) of HappyOnigiri/Refix to check out"
-    required: false
-    default: "v1"
   dry-run:
     description: "Run without making changes"
     required: false
@@ -52,38 +48,19 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout Refix
-      id: checkout-refix
-      continue-on-error: true
-      uses: actions/checkout@v4
-      with:
-        repository: HappyOnigiri/Refix
-        path: .refix-tool
-        ref: ${{ inputs.ref }}
-        token: ${{ inputs.gh-token }}
-
-    - name: Warn on fallback checkout
-      if: steps.checkout-refix.outcome == 'failure'
-      run: echo "::warning::Checkout of ref '${{ inputs.ref }}' failed. Falling back to 'main' branch."
+    - name: Resolve action path
+      id: resolve
+      run: echo "action_path=$(cd "${{ github.action_path }}" && pwd)" >> "$GITHUB_OUTPUT"
       shell: bash
-
-    - name: Checkout Refix (fallback to main)
-      if: steps.checkout-refix.outcome == 'failure'
-      uses: actions/checkout@v4
-      with:
-        repository: HappyOnigiri/Refix
-        path: .refix-tool
-        ref: main
-        token: ${{ inputs.gh-token }}
 
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
         cache: pip
-        cache-dependency-path: .refix-tool/requirements.txt
+        cache-dependency-path: ${{ steps.resolve.outputs.action_path }}/requirements.txt
 
     - name: Install Python dependencies
-      run: pip install -r .refix-tool/requirements.txt
+      run: pip install -r ${{ github.action_path }}/requirements.txt
       shell: bash
 
     - name: Generate single-mode config
@@ -108,7 +85,7 @@ runs:
         if [ -z "$CONFIG_PATH" ] && [ -f "$GITHUB_WORKSPACE/.refix.yaml" ]; then
           CONFIG_PATH="$GITHUB_WORKSPACE/.refix.yaml"
         fi
-        REFIX_CONFIG_PATH="$CONFIG_PATH" python .refix-tool/src/filter_event.py
+        REFIX_CONFIG_PATH="$CONFIG_PATH" python ${{ github.action_path }}/src/filter_event.py
       shell: bash
 
     - name: Install Claude Code CLI
@@ -127,7 +104,7 @@ runs:
     - name: Run Refix
       if: steps.filter.outputs.skip != 'true'
       run: |
-        cd .refix-tool/src
+        cd ${{ github.action_path }}/src
         if [ "${{ inputs.batch }}" = "true" ]; then
           ARGS=()
         elif [ -n "${{ inputs.pr-number }}" ]; then
