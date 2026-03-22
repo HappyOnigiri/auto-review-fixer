@@ -47,13 +47,14 @@ global:
   base_update_method: "merge"
 
   # Enable only selected Refix PR labels (Optional)
-  # Allowed: running, done, merged, auto_merge_requested
+  # Allowed: running, done, merged, auto_merge_requested, ci_pending
   # Default: all labels enabled
   enabled_pr_labels:
     - running
     - done
     - merged
     - auto_merge_requested
+    - ci_pending
 
   # Whether to add GitHub PR labels for visual status display (Optional)
   # When false, only state comment markers are used; labels are not created or modified.
@@ -98,6 +99,11 @@ global:
   # Whether to include fork repositories when expanding owner/* targets (Optional)
   # Default: true
   include_fork_repositories: true
+
+  # Language for prompts and UI messages (Optional)
+  # "en": English (default)
+  # "ja": Japanese
+  language: "en"
 
   # State comment timestamp timezone (Optional)
   # Default: JST
