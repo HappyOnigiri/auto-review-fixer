@@ -47,7 +47,7 @@ global:
   base_update_method: "merge"
 
   # Enable only selected Refix PR labels (Optional)
-  # Allowed: running, done, merged, auto_merge_requested
+  # Allowed: running, done, merged, auto_merge_requested, ci_pending
   # Default: all labels enabled
   enabled_pr_labels:
     - running
