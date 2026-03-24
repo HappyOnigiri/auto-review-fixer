@@ -557,6 +557,8 @@ def upsert_state_comment(
                     merged_entries.append(entry)
             if fresh.result_log_body and not next_result_log_body:
                 next_result_log_body = fresh.result_log_body
+            if fresh.workflow_status and not next_workflow_status:
+                next_workflow_status = fresh.workflow_status
             body = render_state_comment(
                 merged_entries,
                 archived_ids=state.archived_ids | fresh.archived_ids,

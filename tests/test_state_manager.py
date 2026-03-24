@@ -319,6 +319,53 @@ def test_upsert_state_comment_deduplicates_when_stale_state(mocker, make_cmd_res
     assert "PATCH" in cmd
 
 
+def test_upsert_state_comment_deduplicates_merges_workflow_status(
+    mocker, make_cmd_result
+):
+    """stale state の workflow_status が空のとき、fresh state の workflow_status をマージする。"""
+    stale_state = state_manager.StateComment(
+        github_comment_id=None,
+        body="",
+        entries=[],
+        processed_ids=set(),
+        archived_ids=set(),
+        workflow_status="",
+    )
+    fresh_state = state_manager.StateComment(
+        github_comment_id=4121167344,
+        body="existing body",
+        entries=[],
+        processed_ids=set(),
+        archived_ids=set(),
+        workflow_status="running",
+    )
+    mocker.patch(
+        "state_manager.load_state_comment",
+        side_effect=[stale_state, fresh_state],
+    )
+    mock_run = mocker.patch(
+        "state_manager.run_command",
+        return_value=make_cmd_result(""),
+    )
+    state_manager.upsert_state_comment(
+        "owner/repo",
+        7,
+        [
+            state_manager.StateEntry(
+                comment_id="r200",
+                url="https://github.com/owner/repo/pull/7#discussion_r200",
+                processed_at="2026-03-11 12:05:00",
+            )
+        ],
+        workflow_status=None,
+    )
+
+    cmd = mock_run.call_args.args[0]
+    assert "PATCH" in cmd
+    body_arg = next(a for a in cmd if "refix-status" in a)
+    assert "running" in body_arg
+
+
 def test_upsert_state_comment_updates_when_existing(mocker, make_cmd_result):
     existing = state_manager.StateComment(
         github_comment_id=99,
