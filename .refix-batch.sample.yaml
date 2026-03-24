@@ -61,6 +61,11 @@ global:
   # Default: true
   use_pr_labels: true
 
+  # Store state in local files instead of PR comments (Optional)
+  # When true, state is saved to state/{org}/{repo}/{pr-number}.md
+  # Default: false
+  use_local_state: false
+
   # Automatically post `@coderabbitai resume` when CodeRabbit can be resumed (Optional)
   # Default: false
   coderabbit_auto_resume: false

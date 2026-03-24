@@ -6,11 +6,26 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from subprocess_helpers import run_command
 from i18n import t
+
+# --- ローカルファイルモード設定 ---
+_use_local_state: bool = False
+_local_state_dir: str = "state"
+
+
+def configure_local_state(
+    *, use_local_state: bool, local_state_dir: str = "state"
+) -> None:
+    """ローカルファイルモードの設定。main() で一度呼び出す。"""
+    global _use_local_state, _local_state_dir
+    _use_local_state = use_local_state
+    _local_state_dir = local_state_dir
+
 
 LEGACY_STATE_COMMENT_MARKER = "<!-- auto-review-fixer-state-comment -->"
 STATE_COMMENT_MARKER = "<!-- refix-state-comment -->"
@@ -322,6 +337,52 @@ def create_state_entry(
     )
 
 
+def _local_state_path(repo: str, pr_number: int) -> Path:
+    """ローカルステートファイルのパスを返す。repo は 'org/repo_name' 形式。"""
+    parts = repo.split("/", 1)
+    org = parts[0] if len(parts) == 2 else repo
+    repo_name = parts[1] if len(parts) == 2 else repo
+    return Path(_local_state_dir) / org / repo_name / f"{pr_number}.md"
+
+
+def _load_state_from_file(repo: str, pr_number: int) -> StateComment:
+    """ローカルファイルからステートを読み込む。ファイルが存在しなければ空を返す。"""
+    path = _local_state_path(repo, pr_number)
+    if not path.exists():
+        return StateComment(
+            github_comment_id=None,
+            body="",
+            entries=[],
+            processed_ids=set(),
+            archived_ids=set(),
+            result_log_body="",
+        )
+    body = path.read_text(encoding="utf-8")
+    entries = parse_state_entries(body)
+    archived_ids: set[str] = set()
+    m = ARCHIVED_IDS_PATTERN.search(body)
+    if m:
+        archived_ids = {aid.strip() for aid in m.group(1).split(",") if aid.strip()}
+    status_match = WORKFLOW_STATUS_MARKER_PATTERN.search(body)
+    workflow_status = status_match.group(1) if status_match else ""
+    return StateComment(
+        github_comment_id=None,
+        body=body,
+        entries=entries,
+        processed_ids={entry.comment_id for entry in entries} | archived_ids,
+        archived_ids=archived_ids,
+        result_log_body=extract_result_log_body(body),
+        workflow_status=workflow_status,
+    )
+
+
+def _save_state_to_file(repo: str, pr_number: int, body: str) -> None:
+    """ローカルファイルにステートを書き込む。"""
+    path = _local_state_path(repo, pr_number)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
 def _get_authenticated_github_user() -> str | None:
     """Return the login of the currently authenticated GitHub user, or None on failure."""
     result = run_command(
@@ -337,6 +398,8 @@ def _get_authenticated_github_user() -> str | None:
 
 def load_state_comment(repo: str, pr_number: int) -> StateComment:
     """Load the current state comment for a PR."""
+    if _use_local_state:
+        return _load_state_from_file(repo, pr_number)
     cmd = [
         "gh",
         "api",
@@ -473,6 +536,9 @@ def upsert_state_comment(
         result_log_body=next_result_log_body,
         workflow_status=next_workflow_status,
     )
+    if _use_local_state:
+        _save_state_to_file(repo, pr_number, body)
+        return
     if state.github_comment_id is None:
         cmd = [
             "gh",

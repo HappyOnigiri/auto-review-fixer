@@ -61,6 +61,7 @@ DEFAULT_CONFIG: AppConfig = {
     "target_authors": [],
     "auto_merge_authors": [],
     "use_pr_labels": True,
+    "use_local_state": False,
     "triggers": {},
     "repositories": [],
 }
@@ -96,6 +97,7 @@ _BASE_OPERATIONAL_KEYS = {
     "target_authors",
     "auto_merge_authors",
     "use_pr_labels",
+    "use_local_state",
     "triggers",
 }
 
@@ -145,6 +147,7 @@ _SCALAR_FIELDS: dict[str, FieldSpec] = {
     "write_result_to_comment": FieldSpec(bool),
     "auto_merge": FieldSpec(bool),
     "use_pr_labels": FieldSpec(bool),
+    "use_local_state": FieldSpec(bool),
     "coderabbit_auto_resume": FieldSpec(bool),
     "coderabbit_require_review": FieldSpec(bool),
     "coderabbit_block_while_processing": FieldSpec(bool),
@@ -505,6 +508,7 @@ def _make_default_config() -> AppConfig:
         "target_authors": [],
         "auto_merge_authors": [],
         "use_pr_labels": DEFAULT_CONFIG["use_pr_labels"],
+        "use_local_state": DEFAULT_CONFIG["use_local_state"],
         "triggers": {},
         "repositories": [],
     }

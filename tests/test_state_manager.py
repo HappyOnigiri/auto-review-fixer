@@ -582,3 +582,136 @@ def test_load_state_comment_deletes_duplicate_comments(mocker, make_cmd_result):
     ]
     assert len(delete_calls) == 1
     assert "repos/owner/repo/issues/comments/10" in delete_calls[0].args[0]
+
+
+# --- ローカルファイルモードのテスト ---
+
+
+def test_configure_local_state():
+    """configure_local_state がモジュール変数を更新することを確認。"""
+    original_use = state_manager._use_local_state
+    original_dir = state_manager._local_state_dir
+    try:
+        state_manager.configure_local_state(
+            use_local_state=True, local_state_dir="/tmp/mystate"
+        )
+        assert state_manager._use_local_state is True
+        assert state_manager._local_state_dir == "/tmp/mystate"
+    finally:
+        state_manager.configure_local_state(
+            use_local_state=original_use, local_state_dir=original_dir
+        )
+
+
+def test_load_state_from_file_missing(tmp_path, monkeypatch):
+    """ファイルが存在しない場合に空の StateComment を返す。"""
+    monkeypatch.setattr(state_manager, "_use_local_state", True)
+    monkeypatch.setattr(state_manager, "_local_state_dir", str(tmp_path))
+
+    result = state_manager.load_state_comment("owner/repo", 42)
+
+    assert result.github_comment_id is None
+    assert result.body == ""
+    assert result.entries == []
+    assert result.processed_ids == set()
+    assert result.archived_ids == set()
+
+
+def test_load_state_from_file_with_content(tmp_path, monkeypatch):
+    """ファイル内容からエントリ・ステータス・archived_ids を正しくパースできる。"""
+    monkeypatch.setattr(state_manager, "_use_local_state", True)
+    monkeypatch.setattr(state_manager, "_local_state_dir", str(tmp_path))
+
+    state_dir = tmp_path / "owner" / "repo"
+    state_dir.mkdir(parents=True)
+    body = (
+        "<!-- refix-state-comment -->\n"
+        "### 🤖 Refix Status\n\n"
+        "| Comment ID | 処理日時 |\n"
+        "|---|---|\n"
+        "| [r123](https://github.com/owner/repo/pull/5#discussion_r123) | 2026-01-01 00:00:00 JST |\n"
+        "<!-- archived-ids: r999 -->\n"
+        "<!-- refix-status: done -->\n"
+    )
+    (state_dir / "5.md").write_text(body, encoding="utf-8")
+
+    result = state_manager.load_state_comment("owner/repo", 5)
+
+    assert result.github_comment_id is None
+    assert "r123" in result.processed_ids
+    assert "r999" in result.archived_ids
+    assert result.workflow_status == "done"
+    assert len(result.entries) == 1
+    assert result.entries[0].comment_id == "r123"
+
+
+def test_save_state_to_file_creates_dirs(tmp_path, monkeypatch):
+    """ディレクトリが自動作成される。"""
+    monkeypatch.setattr(state_manager, "_use_local_state", True)
+    monkeypatch.setattr(state_manager, "_local_state_dir", str(tmp_path))
+
+    state_manager._save_state_to_file("owner/repo", 7, "hello")
+
+    path = tmp_path / "owner" / "repo" / "7.md"
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == "hello"
+
+
+def test_upsert_local_mode(tmp_path, monkeypatch):
+    """_use_local_state=True 時に upsert_state_comment がファイルに書き込む（gh コマンド未呼出し）。"""
+    monkeypatch.setattr(state_manager, "_use_local_state", True)
+    monkeypatch.setattr(state_manager, "_local_state_dir", str(tmp_path))
+
+    mock_calls = []
+
+    def fake_run(cmd, **kwargs):
+        mock_calls.append(cmd)
+
+        class R:
+            returncode = 0
+            stdout = "[]"
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr(state_manager, "run_command", fake_run)
+
+    entry = state_manager.StateEntry(
+        comment_id="r1",
+        url="https://example.com",
+        processed_at="2026-01-01 00:00:00 JST",
+    )
+    state_manager.upsert_state_comment("owner/repo", 10, [entry])
+
+    path = tmp_path / "owner" / "repo" / "10.md"
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    assert "r1" in content
+    # gh コマンドは呼ばれていない
+    assert all("gh" not in str(c) for c in mock_calls)
+
+
+def test_load_local_mode_routing(tmp_path, monkeypatch):
+    """_use_local_state=True 時に load_state_comment がファイルから読む（gh コマンド未呼出し）。"""
+    monkeypatch.setattr(state_manager, "_use_local_state", True)
+    monkeypatch.setattr(state_manager, "_local_state_dir", str(tmp_path))
+
+    mock_calls = []
+
+    def fake_run(cmd, **kwargs):
+        mock_calls.append(cmd)
+
+        class R:
+            returncode = 0
+            stdout = "[]"
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr(state_manager, "run_command", fake_run)
+
+    result = state_manager.load_state_comment("owner/repo", 99)
+
+    assert result.entries == []
+    # gh コマンドは呼ばれていない
+    assert mock_calls == []

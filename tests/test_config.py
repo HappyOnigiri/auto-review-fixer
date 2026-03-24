@@ -1110,3 +1110,29 @@ class TestGetUsePrLabels:
         cfg = config.load_config(str(config_file))
         result = config.get_use_pr_labels(cfg, config.DEFAULT_CONFIG)
         assert result is False
+
+
+class TestUseLocalState:
+    def test_use_local_state_default_false(self):
+        runtime_config = config._make_default_config()
+        assert runtime_config.get("use_local_state") is False
+
+    def test_use_local_state_accepted_in_single_config(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("use_local_state: true\n")
+        cfg = config.load_single_config(str(config_file))
+        assert cfg.get("use_local_state") is True
+
+    def test_use_local_state_accepted_in_batch_config(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            "global:\n  use_local_state: true\nrepositories:\n  - repo: owner/repo\n"
+        )
+        cfg = config.load_config(str(config_file))
+        assert cfg.get("use_local_state") is True
+
+    def test_use_local_state_rejects_non_bool(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("use_local_state: yes_string\n")
+        with pytest.raises(ConfigError):
+            config.load_single_config(str(config_file))

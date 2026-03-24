@@ -138,6 +138,7 @@ Thumbs.db
 .claude/worktrees/
 works/
 data/
+state/
 .refix-batch.yaml
 .refix.yaml
 
