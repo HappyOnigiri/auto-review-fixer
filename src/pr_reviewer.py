@@ -120,9 +120,7 @@ def _flatten_paginated_response(data: Any) -> list[dict[str, Any]]:  # dict-any:
 
 
 def _fetch_check_runs_via_rest(repo: str, ref: str) -> list[CheckStatus]:
-    """Fetch check runs for a commit via REST API.
-    NOTE: statusCheckRollup (GraphQL) must NOT be used - Fine-grained PAT cannot access it.
-    Use REST check-runs API only. On 403 or error, returns []."""
+    """Fetch check runs for a commit via REST API. On error, returns []."""
     cmd = [
         "gh",
         "api",
@@ -203,8 +201,7 @@ def _fetch_classic_statuses_via_rest(repo: str, sha: str) -> list[CheckStatus]:
 
 def fetch_pr_details(repo: str, pr_number: int) -> PRData:
     """Fetch PR details including commits, reviews, comments, and branch name.
-    NOTE: statusCheckRollup (GraphQL) must NOT be used - Fine-grained PAT cannot access it.
-    Uses REST check-runs API for CI status only."""
+    Uses REST check-runs API for CI status."""
     base_json = "number,title,body,commits,reviews,comments,createdAt,updatedAt,labels,headRefName,baseRefName,headRefOid"
     cmd = [
         "gh",
@@ -230,7 +227,7 @@ def fetch_pr_details(repo: str, pr_number: int) -> PRData:
             f"Failed to parse gh pr view output for {repo}#{pr_number}"
         ) from exc
 
-    # Fetch check runs via REST (works with Fine-grained PAT for repos with access)
+    # Fetch check runs via REST API
     # Use headRefOid as primary source to avoid the 100-commit limit of gh pr view --json commits
     head_oid = str(pr_data.get("headRefOid") or "").strip()
     if not head_oid:

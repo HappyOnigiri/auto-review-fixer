@@ -35,7 +35,7 @@ def _pr_ref(repo: str, pr_number: int) -> str:
 def extract_failing_ci_contexts(pr_data: PRData) -> list[dict[str, str]]:
     """pr_data['check_runs']（REST check-runs 形式）から失敗した CI コンテキストを抽出する。
 
-    NOTE: statusCheckRollup (GraphQL) は Fine-grained PAT ではアクセス不可のため使用禁止。
+    NOTE: statusCheckRollup (GraphQL) は PAT ではアクセスできない場合があるため REST check-runs API を使用。
     """
     status_rollup = pr_data.get("check_runs") or []
     if not isinstance(status_rollup, list):
@@ -302,7 +302,7 @@ def are_all_ci_checks_successful(
 ) -> bool | None:
     """REST API 経由で全 CI チェックが成功しているか確認する。
 
-    NOTE: statusCheckRollup / gh pr checks (GraphQL) は Fine-grained PAT ではアクセス不可のため使用禁止。
+    NOTE: statusCheckRollup / gh pr checks (GraphQL) は PAT ではアクセスできない場合があるため REST check-runs API を使用。
     """
     # head commit SHA を取得
     try:
@@ -356,24 +356,14 @@ def are_all_ci_checks_successful(
         return None
     runs: list[CheckRunData] = []
     if result.returncode != 0:
-        stderr_text = result.stderr or ""
-        if "403" in stderr_text:
-            # CI (GitHub Actions / Checks App) が設定されていないリポジトリでは
-            # PAT で check-runs API にアクセスすると 403 が返る（GitHub の仕様）。
-            # これは正常系であり、CI なし (runs=[]) として処理を続行する。
-            print(
-                f"Info: {_pr_ref(repo, pr_number)} has no CI configured"
-                " (check-runs API returned 403); treating as no CI runs."
-            )
-        else:
-            msg = (
-                f"check-runs API failed for {_pr_ref(repo, pr_number)} "
-                f"(exit {result.returncode}); skip refix: done labeling."
-            )
-            print(f"Warning: {msg}", file=sys.stderr)
-            if error_collector:
-                error_collector.add_pr_error(repo, pr_number, msg)
-            return None
+        msg = (
+            f"check-runs API failed for {_pr_ref(repo, pr_number)} "
+            f"(exit {result.returncode}); skip refix: done labeling."
+        )
+        print(f"Warning: {msg}", file=sys.stderr)
+        if error_collector:
+            error_collector.add_pr_error(repo, pr_number, msg)
+        return None
     else:
         try:
             data = json.loads(result.stdout) if result.stdout else []
