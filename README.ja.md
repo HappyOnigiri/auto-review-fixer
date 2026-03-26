@@ -33,7 +33,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/HappyOnigiri/Refix/main/scri
 
 - **`GH_TOKEN`** — Classic Personal Access Token
   - GitHub Settings > Developer settings > Personal access tokens > Tokens (classic) で作成
-  - 必要なスコープ: `repo`（プライベートリポジトリのフルコントロール）
+  - 必要なスコープ: `repo`、`read:org`、`read:discussion`
 - **`CLAUDE_CODE_OAUTH_TOKEN`** — Claude Code の OAuth トークン
   - `claude setup-token` コマンドで発行
 

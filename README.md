@@ -38,7 +38,7 @@ Go to your repository's **Settings > Secrets and variables > Actions** and add:
 - **`GH_TOKEN`** - Classic Personal Access Token
   - Create at: GitHub Settings > Developer settings > Personal access tokens >
     Tokens (classic)
-  - Required scopes: `repo` (Full control of private repositories)
+  - Required scopes: `repo`, `read:org`, `read:discussion`
 - **`CLAUDE_CODE_OAUTH_TOKEN`** - Claude Code OAuth token
   - Generate with the `claude setup-token` command
 
