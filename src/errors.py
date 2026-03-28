@@ -19,8 +19,9 @@ class SubprocessError(RefixError):
 
     def __str__(self) -> str:
         base = super().__str__()
-        if self.stderr.strip():
-            return f"{base}\nstderr: {self.stderr.strip()}"
+        stderr = self.stderr.strip()
+        if stderr and stderr not in base:
+            return f"{base}\nstderr: {stderr}"
         return base
 
 
