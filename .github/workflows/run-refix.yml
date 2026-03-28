@@ -23,15 +23,17 @@ permissions:
 
 jobs:
   run-refix:
+    # Dependabot PRs lack access to secrets, so Refix cannot run.
     if: |
-      github.event_name == 'schedule' ||
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'schedule' ||
       ((github.event_name != 'check_suite' || (github.event.check_suite.pull_requests && github.event.check_suite.pull_requests[0] != null)) &&
       !(github.event_name == 'pull_request' && github.event.pull_request.state == 'closed') &&
-      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null))
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null)))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # NOTE: `uses: ./` references the checked-out action.yml on the current branch,
       # enabling testing of unreleased changes within this repository.
